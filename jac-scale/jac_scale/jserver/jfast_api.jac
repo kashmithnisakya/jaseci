@@ -223,7 +223,7 @@ obj JFastApiServer(JServer[FastAPI]) {
     }
 
     """Get the default status code for an HTTP method."""
-    def _get_default_status_code(self: JFastApiServer, method: HTTPMethod) -> int {
+    def _get_default_status_code(method: HTTPMethod) -> int {
         status_codes = {
             HTTPMethod.GET: 200,
             HTTPMethod.POST: 201,
