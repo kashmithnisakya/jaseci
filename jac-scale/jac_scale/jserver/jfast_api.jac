@@ -236,7 +236,6 @@ obj JFastApiServer(JServer[FastAPI]) {
 
     """Create the actual endpoint function with parameter injection."""
     def _create_endpoint_function(
-        self: JFastApiServer,
         callback: Callable[(..., Any)],
         parameters: list[APIParameter],
         dependencies: list[Any]
@@ -509,8 +508,7 @@ def endpoint_wrapper({params}):
     }
 
     """Create a Pydantic response model from configuration."""
-    def _create_response_model(
-        self: JFastApiServer, response_config: (dict[(str, Any)] | None) = None
+    def _create_response_model(response_config: (dict[(str, Any)] | None) = None
     ) -> (type[BaseModel] | None) {
         if not response_config {
             return None;
@@ -544,13 +542,12 @@ def endpoint_wrapper({params}):
     }
 
     """\n        Get the underlying FastAPI application instance.\n        """
-    def get_app(self: JFastApiServer) -> FastAPI {
+    def get_app() -> FastAPI {
         return self.app;
     }
 
     """Run the FastAPI server using Uvicorn."""
-    def run_server(
-        self: JFastApiServer, host: str = '0.0.0.0', port: int = 8000
+    def run_server(host: str = '0.0.0.0', port: int = 8000
     ) -> None {
         app = self.create_server();
         uvicorn.run(app, host=host, port=port);
