@@ -508,7 +508,8 @@ def endpoint_wrapper({params}):
     }
 
     """Create a Pydantic response model from configuration."""
-    def _create_response_model(response_config: (dict[(str, Any)] | None) = None
+    def _create_response_model(
+        response_config: (dict[(str, Any)] | None) = None
     ) -> (type[BaseModel] | None) {
         if not response_config {
             return None;
@@ -542,13 +543,12 @@ def endpoint_wrapper({params}):
     }
 
     """\n        Get the underlying FastAPI application instance.\n        """
-    def get_app() -> FastAPI {
+    def get_app()  -> FastAPI {
         return self.app;
     }
 
     """Run the FastAPI server using Uvicorn."""
-    def run_server(host: str = '0.0.0.0', port: int = 8000
-    ) -> None {
+    def run_server(host: str = '0.0.0.0', port: int = 8000) -> None {
         app = self.create_server();
         uvicorn.run(app, host=host, port=port);
     }
