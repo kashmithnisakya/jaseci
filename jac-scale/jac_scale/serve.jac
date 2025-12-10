@@ -16,11 +16,11 @@ import from jac_scale.jserver.jserver {
 import from jaclang.runtimelib.runtime { JacRuntime as Jac }
 import from jaclang.runtimelib.server { JacAPIServer as JServer }
 import from jaclang.runtimelib.server { JsonValue }
-with entry {
-    JWT_SECRET = 'supersecretkey';
-    JWT_ALGORITHM = 'HS256';
-    JWT_EXP_DELTA_DAYS = 7;
-}
+
+glob JWT_SECRET = 'supersecretkey';
+glob JWT_ALGORITHM = 'HS256';
+glob JWT_EXP_DELTA_DAYS = 7;
+
 
 class JacAPIServer(JServer) {
     static def create_jwt_token(username: str) -> str {
