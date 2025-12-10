@@ -4,14 +4,13 @@ import from uuid { UUID }
 import from jaclang.compiler.constant { Constants as Con }
 import from jaclang.runtimelib.runtime { ExecutionContext }
 
-
 """Jac Scale Execution Context with custom memory backend."""
 obj JScaleExecutionContext(ExecutionContext) {
     has session: (str | None) = None;
     has <>root: (str | None) = None;
 
     """Initialize JScaleExecutionContext."""
-    def init() -> None {
+    def init()  -> None {
         import from jac_scale.memory_hierarchy { MultiHierarchyMemory }
         import from jaclang.runtimelib.constructs { Anchor, NodeAnchor, Root }
 
@@ -27,6 +26,8 @@ obj JScaleExecutionContext(ExecutionContext) {
             self.mem.set(system_root_anchor);
         }
         self.system_root = system_root_anchor;
-        self.entry_node = self.root_state=self._get_anchor(<>root) if <>root else self.system_root;
+        self.entry_node = self.root_state=self._get_anchor(<>root)
+        if <>root
+        else self.system_root;
     }
 }

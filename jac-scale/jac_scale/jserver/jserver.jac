@@ -7,20 +7,19 @@ import from enum { StrEnum }
 
 glob T = TypeVar('T');
 
-
 class HTTPMethod(StrEnum) {
-    has GET:str = 'GET';
-    has POST:str = 'POST';
-    has PUT:str = 'PUT';
-    has PATCH:str = 'PATCH';
-    has DELETE:str = 'DELETE';
+    has GET: str = 'GET';
+    has POST: str = 'POST';
+    has PUT: str = 'PUT';
+    has PATCH: str = 'PATCH';
+    has DELETE: str = 'DELETE';
 }
 
 class ParameterType(StrEnum) {
-    has QUERY:str = 'query';
-    has PATH:str = 'path';
-    has BODY:str = 'body';
-    has HEADER:str = 'header';
+    has QUERY: str = 'query';
+    has PATH: str = 'path';
+    has BODY: str = 'body';
+    has HEADER: str = 'header';
 }
 
 obj APIParameter {
@@ -67,7 +66,7 @@ obj JServer(ABC , Generic[T]) {
     Args:
         end_points (list[JEndPoint]): List of endpoint definitions to register
     """
-    def init() -> None {
+    def init()  -> None {
         super.init();
         self._endpoints = self.end_points;
     }
@@ -76,18 +75,18 @@ obj JServer(ABC , Generic[T]) {
     Return the list of registered endpoints.
     This method should return only the endpoints that have been registered
     with this server implementation, not create new ones.
-    
+
     Returns:
         List[JEndPoint]: List of registered endpoint definitions
     """
-    def get_endpoints() -> list[JEndPoint] {
+    def get_endpoints()  -> list[JEndPoint] {
         return self._endpoints;
     }
 
     """
     Add a single endpoint to the server implementation.
-    
-    Args:           
+
+    Args:
     endpoint (JEndPoint): The endpoint to add
     """
     def add_endpoint(endpoint: JEndPoint) -> None {
@@ -100,7 +99,7 @@ obj JServer(ABC , Generic[T]) {
     This method iterates through the endpoint list and calls the appropriate
     method (get, post, put, patch, delete) based on each endpoint's HTTP method.
     """
-    def execute() -> None {
+    def execute()  -> None {
         for endpoint in self._endpoints {
             if (endpoint.method == HTTPMethod.GET) {
                 self._get(endpoint);
@@ -159,9 +158,9 @@ obj JServer(ABC , Generic[T]) {
             Any: Implementation-specific configured server
         """
     @abstractmethod
-    def create_server() -> T {}
+    def create_server()  -> T { }
 
     """Run the server on the specified host and port."""
     @abstractmethod
-    def run_server(host: str = 'localhost', port: int = 8000) -> None {}
+    def run_server(host: str = 'localhost', port: int = 8000) -> None { }
 }

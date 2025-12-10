@@ -21,7 +21,6 @@ glob JWT_SECRET = 'supersecretkey';
 glob JWT_ALGORITHM = 'HS256';
 glob JWT_EXP_DELTA_DAYS = 7;
 
-
 class JacAPIServer(JServer) {
     static def create_jwt_token(username: str) -> str {
         now = datetime.now(UTC);

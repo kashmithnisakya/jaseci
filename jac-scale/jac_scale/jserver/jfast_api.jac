@@ -27,8 +27,8 @@ import from pydantic { BaseModel, Field, create_model }
 import from .jserver { APIParameter, HTTPMethod, JEndPoint, JServer, ParameterType }
 
 glob EndpointResponse: TypeAlias = Response | BaseModel | <>dict[(str, object)] | <>list[
-        object
-    ] | str | <>bytes | None;
+    object
+] | str | <>bytes | None;
 
 """
 JFastApiServer: FastAPI implementation of JServer for programmatic endpoint creation.
@@ -60,7 +60,7 @@ obj JFastApiServer(JServer[FastAPI]) {
     has endpoints: (list[JEndPoint] | None) = None;
     has app: (FastAPI | None) = None;
 
-    def __init__() -> None {
+    def __init__()  -> None {
         super.init((endpoints or []));
         self.app = self.app or FastAPI();
         self._models: dict[(str, type[BaseModel])] = {};
@@ -90,6 +90,7 @@ obj JFastApiServer(JServer[FastAPI]) {
         self._create_fastapi_route(HTTPMethod.POST, endpoint);
         return self;
     }
+
     """
     Handle execution of a PUT endpoint by registering it with FastAPI.
     Args:
@@ -129,7 +130,7 @@ obj JFastApiServer(JServer[FastAPI]) {
     """
     Calculate route priority for sorting. More specific routes get higher priority (lower number).
     Priority rules:
-        1. Static paths (no parameters) come first 
+        1. Static paths (no parameters) come first
         2. Paths with fewer parameters come before paths with more parameters
         3. Longer paths come before shorter paths
         4. Alphabetical order for tie-breaking
@@ -153,7 +154,7 @@ obj JFastApiServer(JServer[FastAPI]) {
     Routes are sorted to ensure more specific paths are registered before generic ones
     to avoid path matching conflicts.
     """
-    def execute() -> None {
+    def execute()  -> None {
         self._endpoints = sorted(self._endpoints, key=self._route_priority);
         super.execute();
     }
@@ -162,11 +163,11 @@ obj JFastApiServer(JServer[FastAPI]) {
     Create a complete FastAPI server with all endpoints registered.
     This method executes all registered endpoints to create FastAPI routes
     and returns the configured FastAPI application.
-    
+
     Returns:
         FastAPI: The configured FastAPI application instance
     """
-    def create_server() -> FastAPI {
+    def create_server()  -> FastAPI {
         if not self.__server_created {
             self.execute();
             self.__server_created = True;
@@ -180,9 +181,7 @@ obj JFastApiServer(JServer[FastAPI]) {
         method (HTTPMethod): The HTTP method for the route
         endpoint (JEndPoint): The endpoint configuration
     """
-    def _create_fastapi_route(
-        method: HTTPMethod, endpoint: JEndPoint
-    ) -> None {
+    def _create_fastapi_route(method: HTTPMethod, endpoint: JEndPoint) -> None {
         endpoint_func = self._create_endpoint_function(
             endpoint.callback, (endpoint.parameters or []), []
         );
