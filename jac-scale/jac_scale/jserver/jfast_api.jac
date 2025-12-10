@@ -487,7 +487,7 @@ def endpoint_wrapper({params}):
     }
 
     """Convert string type to Python type."""
-    def _get_python_type(self: JFastApiServer, type_string: str) -> type[Any] {
+    def _get_python_type(type_string: str) -> type[Any] {
         if (type_string.startswith("<class '") and type_string.endswith("'>")) {
             type_string = type_string[8:-2];
         }
