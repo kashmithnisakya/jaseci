@@ -15,7 +15,6 @@ import from jaclang.runtimelib.memory { Memory }
 
 glob ID = TypeVar('ID');
 
-
 @dataclass
 class MultiHierarchyMemory(Memory[(UUID, Anchor)]) {
     def __init__(self: MultiHierarchyMemory) -> None {
