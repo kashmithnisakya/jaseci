@@ -170,7 +170,7 @@ class JFastApiServer(JServer[FastAPI]) {
     Returns:
         FastAPI: The configured FastAPI application instance
     """
-    def create_server(self: JFastApiServer)  -> FastAPI {
+    def create_server(self: JFastApiServer) -> FastAPI {
         if not self.__server_created {
             self.execute();
             self.__server_created = True;
@@ -184,7 +184,9 @@ class JFastApiServer(JServer[FastAPI]) {
         method (HTTPMethod): The HTTP method for the route
         endpoint (JEndPoint): The endpoint configuration
     """
-    def _create_fastapi_route(self: JFastApiServer, method: HTTPMethod, endpoint: JEndPoint) -> None {
+    def _create_fastapi_route(
+        self: JFastApiServer, method: HTTPMethod, endpoint: JEndPoint
+    ) -> None {
         endpoint_func = self._create_endpoint_function(
             endpoint.callback, (endpoint.parameters or []), []
         );
@@ -513,8 +515,7 @@ def endpoint_wrapper({params}):
 
     """Create a Pydantic response model from configuration."""
     def _create_response_model(
-        self: JFastApiServer,
-        response_config: (dict[(str, Any)] | None) = None
+        self: JFastApiServer, response_config: (dict[(str, Any)] | None) = None
     ) -> (type[BaseModel] | None) {
         if not response_config {
             return None;
@@ -548,12 +549,14 @@ def endpoint_wrapper({params}):
     }
 
     """\n        Get the underlying FastAPI application instance.\n        """
-    def get_app(self: JFastApiServer)  -> FastAPI {
+    def get_app(self: JFastApiServer) -> FastAPI {
         return self.app;
     }
 
     """Run the FastAPI server using Uvicorn."""
-    def run_server(self: JFastApiServer, host: str = '0.0.0.0', port: int = 8000) -> None {
+    def run_server(
+        self: JFastApiServer, host: str = '0.0.0.0', port: int = 8000
+    ) -> None {
         app = self.create_server();
         uvicorn.run(app, host=host, port=port);
     }
