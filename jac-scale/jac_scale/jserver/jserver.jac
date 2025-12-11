@@ -58,7 +58,7 @@ obj JEndPoint {
 }
 
 """Abstract base class for server implementations."""
-obj JServer(ABC , Generic[T]) {
+class JServer(ABC , Generic[T]) {
     has end_points: list[JEndPoint] = [];
 
     """
@@ -66,9 +66,9 @@ obj JServer(ABC , Generic[T]) {
     Args:
         end_points (list[JEndPoint]): List of endpoint definitions to register
     """
-    def init()  -> None {
+    def __init__(self: JServer, end_points: list[JEndPoint]) -> None {
         super.init();
-        self._endpoints = self.end_points;
+        self._endpoints = end_points;
     }
 
     """
@@ -79,7 +79,7 @@ obj JServer(ABC , Generic[T]) {
     Returns:
         List[JEndPoint]: List of registered endpoint definitions
     """
-    def get_endpoints()  -> list[JEndPoint] {
+    def get_endpoints(self: JServer)  -> list[JEndPoint] {
         return self._endpoints;
     }
 
@@ -89,7 +89,7 @@ obj JServer(ABC , Generic[T]) {
     Args:
     endpoint (JEndPoint): The endpoint to add
     """
-    def add_endpoint(endpoint: JEndPoint) -> None {
+    def add_endpoint(self: JServer, endpoint: JEndPoint) -> None {
         self._endpoints.append(endpoint);
     }
 
@@ -99,7 +99,7 @@ obj JServer(ABC , Generic[T]) {
     This method iterates through the endpoint list and calls the appropriate
     method (get, post, put, patch, delete) based on each endpoint's HTTP method.
     """
-    def execute()  -> None {
+    def execute(self: JServer)  -> None {
         for endpoint in self._endpoints {
             if (endpoint.method == HTTPMethod.GET) {
                 self._get(endpoint);
@@ -117,31 +117,31 @@ obj JServer(ABC , Generic[T]) {
 
     """Handle execution of a GET endpoint."""
     @abstractmethod
-    def _get(endpoint: JEndPoint) -> 'JServer[T]' {
+    def _get(self: JServer, endpoint: JEndPoint) -> 'JServer[T]' {
         ;
     }
 
     """Handle execution of a POST endpoint."""
     @abstractmethod
-    def _post(endpoint: JEndPoint) -> 'JServer[T]' {
+    def _post(self: JServer, endpoint: JEndPoint) -> 'JServer[T]' {
         ;
     }
 
     """Handle execution of a PUT endpoint."""
     @abstractmethod
-    def _put(endpoint: JEndPoint) -> 'JServer[T]' {
+    def _put(self: JServer, endpoint: JEndPoint) -> 'JServer[T]' {
         ;
     }
 
     """Handle execution of a PATCH endpoint."""
     @abstractmethod
-    def _patch(endpoint: JEndPoint) -> 'JServer[T]' {
+    def _patch(self: JServer, endpoint: JEndPoint) -> 'JServer[T]' {
         ;
     }
 
     """Handle execution of a DELETE endpoint."""
     @abstractmethod
-    def _delete(endpoint: JEndPoint) -> 'JServer[T]' {
+    def _delete(self: JServer, endpoint: JEndPoint) -> 'JServer[T]' {
         ;
     }
 
@@ -158,9 +158,9 @@ obj JServer(ABC , Generic[T]) {
             Any: Implementation-specific configured server
         """
     @abstractmethod
-    def create_server()  -> T { }
+    def create_server(self: JServer)  -> T { }
 
     """Run the server on the specified host and port."""
     @abstractmethod
-    def run_server(host: str = 'localhost', port: int = 8000) -> None { }
+    def run_server(self: JServer, host: str = 'localhost', port: int = 8000) -> None { }
 }

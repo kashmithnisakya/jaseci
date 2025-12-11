@@ -16,8 +16,9 @@ import from jaclang.runtimelib.memory { Memory }
 glob ID = TypeVar('ID');
 
 
-obj MultiHierarchyMemory(Memory[(UUID, Anchor)]) {
-    def init() -> None {
+@dataclass
+class MultiHierarchyMemory(Memory[(UUID, Anchor)]) {
+    def __init__(self: MultiHierarchyMemory) -> None {
         super.init();
         self.mem = Memory[(UUID, Anchor)]();
         self.redis = RedisDB();
@@ -27,7 +28,7 @@ obj MultiHierarchyMemory(Memory[(UUID, Anchor)]) {
         }
     }
 
-    def find_by_id(id: UUID) -> (Anchor | None) {
+    def find_by_id(self: MultiHierarchyMemory, id: UUID) -> (Anchor | None) {
         if (anchor := self.mem.find_by_id(id)) {
             return anchor;
         }
@@ -110,7 +111,7 @@ obj MongoDB {
     );
 
     """Initialize Mongodb."""
-    def postinit () -> None {
+    def postinit() -> None {
         if (self.client is None) {
             self.client = MongoClient(self.mongo_url);
         }
@@ -199,12 +200,12 @@ obj MongoDB {
         );
     }
 
-    def remove(self: MongoDB, anchor: TANCH) -> None {
+    def remove(anchor: TANCH) -> None {
         _id = self._to_uuid(anchor.id);
         self.collection.delete_one({'_id': str(_id)});
     }
 
-    def find_by_id(self: MongoDB, id: UUID) -> (Anchor | None) {
+    def find_by_id(id: UUID) -> (Anchor | None) {
         _id = self._to_uuid(id);
         db_obj = self.collection.find_one({'_id': str(_id)});
         if db_obj {

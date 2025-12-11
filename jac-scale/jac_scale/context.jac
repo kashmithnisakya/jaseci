@@ -5,12 +5,14 @@ import from jaclang.compiler.constant { Constants as Con }
 import from jaclang.runtimelib.runtime { ExecutionContext }
 
 """Jac Scale Execution Context with custom memory backend."""
-obj JScaleExecutionContext(ExecutionContext) {
-    has session: (str | None) = None;
-    has <>root: (str | None) = None;
+class JScaleExecutionContext(ExecutionContext) {
 
     """Initialize JScaleExecutionContext."""
-    def init()  -> None {
+    def __init__(
+        self: JScaleExecutionContext,
+        session: (str | None) = None,
+        <>root: (str | None) = None
+    ) -> None {
         import from jac_scale.memory_hierarchy { MultiHierarchyMemory }
         import from jaclang.runtimelib.constructs { Anchor, NodeAnchor, Root }
 

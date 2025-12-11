@@ -548,7 +548,7 @@ def endpoint_wrapper({params}):
         return model;
     }
 
-    """\n        Get the underlying FastAPI application instance.\n        """
+    """Get the underlying FastAPI application instance."""
     def get_app(self: JFastApiServer) -> FastAPI {
         return self.app;
     }
