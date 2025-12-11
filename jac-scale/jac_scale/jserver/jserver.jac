@@ -79,7 +79,7 @@ class JServer(ABC , Generic[T]) {
     Returns:
         List[JEndPoint]: List of registered endpoint definitions
     """
-    def get_endpoints(self: JServer)  -> list[JEndPoint] {
+    def get_endpoints(self: JServer) -> list[JEndPoint] {
         return self._endpoints;
     }
 
@@ -99,7 +99,7 @@ class JServer(ABC , Generic[T]) {
     This method iterates through the endpoint list and calls the appropriate
     method (get, post, put, patch, delete) based on each endpoint's HTTP method.
     """
-    def execute(self: JServer)  -> None {
+    def execute(self: JServer) -> None {
         for endpoint in self._endpoints {
             if (endpoint.method == HTTPMethod.GET) {
                 self._get(endpoint);
@@ -158,7 +158,7 @@ class JServer(ABC , Generic[T]) {
             Any: Implementation-specific configured server
         """
     @abstractmethod
-    def create_server(self: JServer)  -> T { }
+    def create_server(self: JServer) -> T { }
 
     """Run the server on the specified host and port."""
     @abstractmethod

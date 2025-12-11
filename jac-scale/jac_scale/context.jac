@@ -6,7 +6,6 @@ import from jaclang.runtimelib.runtime { ExecutionContext }
 
 """Jac Scale Execution Context with custom memory backend."""
 class JScaleExecutionContext(ExecutionContext) {
-
     """Initialize JScaleExecutionContext."""
     def __init__(
         self: JScaleExecutionContext,
