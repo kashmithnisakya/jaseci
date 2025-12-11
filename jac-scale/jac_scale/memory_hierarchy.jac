@@ -102,16 +102,19 @@ class MultiHierarchyMemory(Memory[(UUID, Anchor)]) {
 }
 
 """MongoDB handler."""
-obj MongoDB {
-    has client: (MongoClient | None) = field(<>default=None);
-    has db_name: str = 'jac_db';
-    has collection_name: str = 'anchors';
-    has mongo_url = os.environ.get(
-        'MONGODB_URI', 'mongodb://root:rootpassword123@localhost:27017/'
-    );
+@dataclass
+class MongoDB {
+    with entry {
+        client: (MongoClient | None) = field(<>default=None);
+        db_name: str = 'jac_db';
+        collection_name: str = 'anchors';
+        mongo_url = os.environ.get(
+            'MONGODB_URI', 'mongodb://root:rootpassword123@localhost:27017/'
+        );
+    }
 
     """Initialize Mongodb."""
-    def postinit() -> None {
+    def __post_init__(self: MongoDB) -> None {
         if (self.client is None) {
             self.client = MongoClient(self.mongo_url);
         }
@@ -119,14 +122,14 @@ obj MongoDB {
         self.collection = self.db[self.collection_name];
     }
 
-    def _to_uuid(id: (UUID | str)) -> UUID {
+    def _to_uuid(self: MongoDB, id: (UUID | str)) -> UUID {
         if not isinstance(id, UUID) {
             return UUID(str(id));
         }
         return id;
     }
 
-    def _load_anchor(raw: dict[(str, Any)]) -> (TANCH | None) {
+    def _load_anchor(self: MongoDB, raw: dict[(str, Any)]) -> (TANCH | None) {
         try {
             return loads(raw['data']);
         } except Exception {
@@ -140,10 +143,9 @@ obj MongoDB {
         - Update NodeAnchor edges
         - Respect write and connect access
     """
-    def <>set(anchor: Anchor) -> None {
+    def <>set(self: MongoDB, anchor: Anchor) -> None {
         import from jaclang.runtimelib.archetype { NodeAnchor }
         import from jaclang.runtimelib.runtime { JacRuntimeInterface as Jac }
-
         _id = self._to_uuid(anchor.id);
         try {
             current_hash = hash(dumps(anchor));
@@ -200,12 +202,12 @@ obj MongoDB {
         );
     }
 
-    def remove(anchor: TANCH) -> None {
+    def remove(self: MongoDB, anchor: TANCH) -> None {
         _id = self._to_uuid(anchor.id);
         self.collection.delete_one({'_id': str(_id)});
     }
 
-    def find_by_id(id: UUID) -> (Anchor | None) {
+    def find_by_id(self: MongoDB, id: UUID) -> (Anchor | None) {
         _id = self._to_uuid(id);
         db_obj = self.collection.find_one({'_id': str(_id)});
         if db_obj {
@@ -219,14 +221,13 @@ obj MongoDB {
 
     """
     Faster bulk commit:
-        - Deletes anchors in GC
-        - Saves only updated anchors
-        - Uses MongoDB bulk_write for speed
+        - Save all anchors (no empty NodeAnchor skipping)
+        - Update NodeAnchor edges
+        - Respect write and connect access
     """
-    def commit_bulk(anchors: Iterable[Anchor]) -> None {
+    def commit_bulk(self: MongoDB, anchors: Iterable[Anchor]) -> None {
         import from jaclang.runtimelib.archetype { NodeAnchor }
         import from jaclang.runtimelib.runtime { JacRuntimeInterface as Jac }
-
         ops: list = [];
         for anc in anchors {
             _id = self._to_uuid(anc.id);
@@ -291,7 +292,9 @@ obj MongoDB {
         }
     }
 
-    def commit(anchor: (TANCH | None) = None, keys: Iterable[Anchor] = []) -> None {
+    def commit(
+        self: MongoDB, anchor: (TANCH | None) = None, keys: Iterable[Anchor] = []
+    ) -> None {
         if anchor {
             self.set(anchor);
             return;
@@ -303,21 +306,24 @@ obj MongoDB {
 }
 
 """Redis-based Memory Handler."""
-obj RedisDB {
-    has redis_url: str = os.environ.get(
+@dataclass
+class RedisDB {
+    with entry {
+        redis_url: str = os.environ.get(
             'REDIS_URL', 'redis://:mypassword123@localhost:6379/0'
-    );
-    has redis_client: (redis.Redis | None) = field(<>default=None);
+        );
+        redis_client: (redis.Redis | None) = field(<>default=None);
+    }
 
     """Initialize Redis."""
-    def postinit() -> None {
+    def __post_init__(self: RedisDB) -> None {
         if (self.redis_client is None) {
             self.redis_client = redis.from_url(self.redis_url);
         }
     }
 
     """Check whether Redis connection is alive and reachable."""
-    def redis_is_available() -> bool {
+    def redis_is_available(self: RedisDB) -> bool {
         try {
             if (self.redis_client is None) {
                 return False;
@@ -328,18 +334,18 @@ obj RedisDB {
         }
     }
 
-    def _redis_key(id: UUID) -> str {
+    def _redis_key(self: RedisDB, id: UUID) -> str {
         return f"anchor:{str(id)}";
     }
 
-    def _to_uuid(id: (UUID | str)) -> UUID {
+    def _to_uuid(self: RedisDB, id: (UUID | str)) -> UUID {
         if not isinstance(id, UUID) {
             return UUID(str(id));
         }
         return id;
     }
 
-    def _load_anchor_from_redis(id: UUID) -> (Anchor | None) {
+    def _load_anchor_from_redis(self: RedisDB, id: UUID) -> (Anchor | None) {
         if (self.redis_client is None) {
             return None;
         }
@@ -356,7 +362,7 @@ obj RedisDB {
     }
 
     """Save to MongoDB AND Redis."""
-    def <>set(anchor: Anchor) -> None {
+    def <>set(self: RedisDB, anchor: Anchor) -> None {
         if (self.redis_client is None) {
             return;
         }
@@ -364,21 +370,23 @@ obj RedisDB {
     }
 
     """Delete from MongoDB AND Redis."""
-    def remove(anchor: Anchor) -> None {
+    def remove(self: RedisDB, anchor: Anchor) -> None {
         if (self.redis_client is None) {
             return None;
         }
         self.redis_client.delete(self._redis_key(anchor.id));
     }
 
-    def find_by_id(id: UUID) -> (Anchor | None) {
+    def find_by_id(self: RedisDB, id: UUID) -> (Anchor | None) {
         _id = self._to_uuid(id);
         data = self._load_anchor_from_redis(_id);
         return data;
     }
 
     """Commit behaves like MongoDB but also syncs Redis."""
-    def commit(anchor: (Anchor | None) = None, keys: Iterable[Anchor] = []) -> None {
+    def commit(
+        self: RedisDB, anchor: (Anchor | None) = None, keys: Iterable[Anchor] = []
+    ) -> None {
         if anchor {
             self.set(anchor);
             return;
@@ -391,21 +399,27 @@ obj RedisDB {
     }
 }
 
-"""Shelf-based Memory Handler — file-backed key/value storage.\n    Uses dbm.dumb on all platforms to avoid gdbm locking issues in Linux.\n    """
-obj ShelfDB {
-    has shelf_path: str = field(
+"""
+Shelf-based Memory Handler — file-backed key/value storage.
+Uses dbm.dumb on all platforms to avoid gdbm locking issues in Linux.
+"""
+@dataclass
+class ShelfDB {
+    with entry {
+        shelf_path: str = field(
             <>default=os.environ.get('SHELF_DB_PATH', 'anchor_store.db')
-    );
-    has _shelf: (shelve.Shelf | None) = field(<>init=False, <>default=None);
-    has _lock: RLock = field(default_factory=RLock, <>init=False);
+        );
+        _shelf: (shelve.Shelf | None) = field(<>init=False, <>default=None);
+        _lock: RLock = field(default_factory=RLock, <>init=False);
+    }
 
     """Initialize shelf DB on startup."""
-    def postinit() {
+    def __post_init__(self: ShelfDB) {
         self._open_shelf();
     }
 
     """Always use dbm.dumb backend to avoid Linux gdbm locking."""
-    def _open_shelf() -> shelve.Shelf {
+    def _open_shelf(self: ShelfDB) -> shelve.Shelf {
         import dbm.dumb;
         if (self._shelf is None) {
             raw_db = dbm.dumb.open(self.shelf_path, 'c');
@@ -415,7 +429,7 @@ obj ShelfDB {
         return self._shelf;
     }
 
-    def _ensure_shelf() -> shelve.Shelf {
+    def _ensure_shelf(self: ShelfDB) -> shelve.Shelf {
         if (self._shelf is None) {
             self._shelf = self._open_shelf();
         }
@@ -423,7 +437,7 @@ obj ShelfDB {
     }
 
     """Cleanly close shelf storage."""
-    def close() -> None {
+    def close(self: ShelfDB) {
         self._shelf = self._ensure_shelf();
         if (self._shelf is not None) {
             self._shelf.close();
@@ -432,18 +446,18 @@ obj ShelfDB {
     }
 
     """Match key format used by Redis for consistency."""
-    def _redis_key(id: UUID) -> str {
+    def _redis_key(self: ShelfDB, id: UUID) -> str {
         return f"anchor:{str(id)}";
     }
 
-    def _to_uuid(id: (UUID | str)) -> UUID {
+    def _to_uuid(self: ShelfDB, id: (UUID | str)) -> UUID {
         if not isinstance(id, UUID) {
             return UUID(str(id));
         }
         return id;
     }
 
-    def _load_anchor_from_shelf(id: UUID) -> (Anchor | None) {
+    def _load_anchor_from_shelf(self: ShelfDB, id: UUID) -> (Anchor | None) {
         key = self._redis_key(id);
         shelf = self._ensure_shelf();
         with self._lock {
@@ -455,7 +469,7 @@ obj ShelfDB {
     }
 
     """Save anchor to shelf."""
-    def <>set(anchor: Anchor) -> None {
+    def <>set(self: ShelfDB, anchor: Anchor) -> None {
         key = self._redis_key(anchor.id);
         shelf = self._ensure_shelf();
         with self._lock {
@@ -482,7 +496,9 @@ obj ShelfDB {
     }
 
     """Commit one or many anchors."""
-    def commit(anchor: (Anchor | None) = None, keys: Iterable[Anchor] = []) -> None {
+    def commit(
+        self: ShelfDB, anchor: (Anchor | None) = None, keys: Iterable[Anchor] = []
+    ) -> None {
         if anchor {
             self.set(anchor);
             return;
