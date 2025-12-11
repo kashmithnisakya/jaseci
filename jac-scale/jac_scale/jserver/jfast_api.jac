@@ -56,13 +56,14 @@ This class implements the JServer interface by:
     Attributes:
         app (FastAPI): The underlying FastAPI application instance
 """
-obj JFastApiServer(JServer[FastAPI]) {
-    has endpoints: (list[JEndPoint] | None) = None;
-    has app: (FastAPI | None) = None;
-
-    def __init__()  -> None {
+class JFastApiServer(JServer[FastAPI]) {
+    def __init__(
+        self: JFastApiServer,
+        endpoints: (list[JEndPoint] | None) = None,
+        app: (FastAPI | None) = None
+    ) -> None {
         super.init((endpoints or []));
-        self.app = self.app or FastAPI();
+        self.app = app or FastAPI();
         self._models: dict[(str, type[BaseModel])] = {};
         self.__server_created = False;
     }
@@ -74,7 +75,7 @@ obj JFastApiServer(JServer[FastAPI]) {
         Returns:
             JFastApiServer: Self for method chaining
     """
-    def _get(endpoint: JEndPoint) -> 'JFastApiServer' {
+    def _get(self: JFastApiServer, endpoint: JEndPoint) -> 'JFastApiServer' {
         self._create_fastapi_route(HTTPMethod.GET, endpoint);
         return self;
     }
@@ -86,7 +87,7 @@ obj JFastApiServer(JServer[FastAPI]) {
     Returns:
         JFastApiServer: Self for method chaining
     """
-    def _post(endpoint: JEndPoint) -> 'JFastApiServer' {
+    def _post(self: JFastApiServer, endpoint: JEndPoint) -> 'JFastApiServer' {
         self._create_fastapi_route(HTTPMethod.POST, endpoint);
         return self;
     }
@@ -98,7 +99,7 @@ obj JFastApiServer(JServer[FastAPI]) {
     Returns:
         JFastApiServer: Self for method chaining
     """
-    def _put(endpoint: JEndPoint) -> 'JFastApiServer' {
+    def _put(self: JFastApiServer, endpoint: JEndPoint) -> 'JFastApiServer' {
         self._create_fastapi_route(HTTPMethod.PUT, endpoint);
         return self;
     }
@@ -110,7 +111,7 @@ obj JFastApiServer(JServer[FastAPI]) {
     Returns:
         JFastApiServer: Self for method chaining
     """
-    def _patch(endpoint: JEndPoint) -> 'JFastApiServer' {
+    def _patch(self: JFastApiServer, endpoint: JEndPoint) -> 'JFastApiServer' {
         self._create_fastapi_route(HTTPMethod.PATCH, endpoint);
         return self;
     }
@@ -122,7 +123,7 @@ obj JFastApiServer(JServer[FastAPI]) {
     Returns:
         JFastApiServer: Self for method chaining
     """
-    def _delete(endpoint: JEndPoint) -> 'JFastApiServer' {
+    def _delete(self: JFastApiServer, endpoint: JEndPoint) -> 'JFastApiServer' {
         self._create_fastapi_route(HTTPMethod.DELETE, endpoint);
         return self;
     }
@@ -135,7 +136,9 @@ obj JFastApiServer(JServer[FastAPI]) {
         3. Longer paths come before shorter paths
         4. Alphabetical order for tie-breaking
     """
-    def _route_priority(endpoint: JEndPoint) -> tuple[int, int, str] {
+    def _route_priority(
+        self: JFastApiServer, endpoint: JEndPoint
+    ) -> tuple[int, int, str] {
         path = endpoint.path;
         param_count = path.count('{');
         segment_count = len(
@@ -154,7 +157,7 @@ obj JFastApiServer(JServer[FastAPI]) {
     Routes are sorted to ensure more specific paths are registered before generic ones
     to avoid path matching conflicts.
     """
-    def execute()  -> None {
+    def execute(self: JFastApiServer) -> None {
         self._endpoints = sorted(self._endpoints, key=self._route_priority);
         super.execute();
     }
@@ -167,7 +170,7 @@ obj JFastApiServer(JServer[FastAPI]) {
     Returns:
         FastAPI: The configured FastAPI application instance
     """
-    def create_server()  -> FastAPI {
+    def create_server(self: JFastApiServer)  -> FastAPI {
         if not self.__server_created {
             self.execute();
             self.__server_created = True;
@@ -181,7 +184,7 @@ obj JFastApiServer(JServer[FastAPI]) {
         method (HTTPMethod): The HTTP method for the route
         endpoint (JEndPoint): The endpoint configuration
     """
-    def _create_fastapi_route(method: HTTPMethod, endpoint: JEndPoint) -> None {
+    def _create_fastapi_route(self: JFastApiServer, method: HTTPMethod, endpoint: JEndPoint) -> None {
         endpoint_func = self._create_endpoint_function(
             endpoint.callback, (endpoint.parameters or []), []
         );
@@ -223,7 +226,7 @@ obj JFastApiServer(JServer[FastAPI]) {
     }
 
     """Get the default status code for an HTTP method."""
-    def _get_default_status_code(method: HTTPMethod) -> int {
+    def _get_default_status_code(self: JFastApiServer, method: HTTPMethod) -> int {
         status_codes = {
             HTTPMethod.GET: 200,
             HTTPMethod.POST: 201,
@@ -236,6 +239,7 @@ obj JFastApiServer(JServer[FastAPI]) {
 
     """Create the actual endpoint function with parameter injection."""
     def _create_endpoint_function(
+        self: JFastApiServer,
         callback: Callable[(..., Any)],
         parameters: list[APIParameter],
         dependencies: list[Any]
@@ -487,7 +491,7 @@ def endpoint_wrapper({params}):
     }
 
     """Convert string type to Python type."""
-    def _get_python_type(type_string: str) -> type[Any] {
+    def _get_python_type(self: JFastApiServer, type_string: str) -> type[Any] {
         if (type_string.startswith("<class '") and type_string.endswith("'>")) {
             type_string = type_string[8:-2];
         }
@@ -509,6 +513,7 @@ def endpoint_wrapper({params}):
 
     """Create a Pydantic response model from configuration."""
     def _create_response_model(
+        self: JFastApiServer,
         response_config: (dict[(str, Any)] | None) = None
     ) -> (type[BaseModel] | None) {
         if not response_config {
@@ -543,12 +548,12 @@ def endpoint_wrapper({params}):
     }
 
     """\n        Get the underlying FastAPI application instance.\n        """
-    def get_app()  -> FastAPI {
+    def get_app(self: JFastApiServer)  -> FastAPI {
         return self.app;
     }
 
     """Run the FastAPI server using Uvicorn."""
-    def run_server(host: str = '0.0.0.0', port: int = 8000) -> None {
+    def run_server(self: JFastApiServer, host: str = '0.0.0.0', port: int = 8000) -> None {
         app = self.create_server();
         uvicorn.run(app, host=host, port=port);
     }
