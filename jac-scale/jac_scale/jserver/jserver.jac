@@ -59,8 +59,6 @@ obj JEndPoint {
 
 """Abstract base class for server implementations."""
 class JServer(ABC , Generic[T]) {
-    has end_points: list[JEndPoint] = [];
-
     """
     Initialize the server with a list of endpoints.
     Args:
@@ -145,18 +143,19 @@ class JServer(ABC , Generic[T]) {
         ;
     }
 
-    """Create a complete server with all endpoints registered.
+    """
+    Create a complete server with all endpoints registered.
 
-        This is a convenience method that gets all endpoints and executes them
-        to create a fully configured server. The return type depends on the
-        concrete implementation.
+    This is a convenience method that gets all endpoints and executes them
+    to create a fully configured server. The return type depends on the
+    concrete implementation.
 
-        Args:
-            app (Optional[FastAPI]): Optional FastAPI instance to use (ignored in base implementation)
+    Args:
+        app (Optional[FastAPI]): Optional FastAPI instance to use (ignored in base implementation)
 
-        Returns:
-            Any: Implementation-specific configured server
-        """
+    Returns:
+        Any: Implementation-specific configured server
+    """
     @abstractmethod
     def create_server(self: JServer) -> T { }
 
