@@ -1,8 +1,8 @@
 <div align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://www.jac-lang.org//assets/logo.png">
-    <source media="(prefers-color-scheme: light)" srcset="https://www.jac-lang.org//assets/logo.png">
-    <img alt="Jaclang logo" src="https://www.jac-lang.org//assets/logo.png" width="150px">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/docs/assets/logo.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/docs/assets/logo.png">
+    <img alt="Jaclang logo" src="docs/docs/assets/logo.png" width="80px">
   </picture>
 
   <h1>Jaseci</h1>
@@ -136,9 +136,3 @@ All Jaseci open source software is distributed under the terms of both the MIT l
 within with various other licenses that are very permissive.
 
 See [LICENSE-MIT](.github/LICENSE) for details.
-
-<div align="center">
-  <a href="https://www.jaseci.org">
-    <img src="https://www.jac-lang.org//assets/logo.png" width="40px" alt="Jaseci Logo">
-  </a>
-</div>

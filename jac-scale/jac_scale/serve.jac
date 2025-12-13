@@ -4,6 +4,7 @@ import from datetime { UTC, datetime, timedelta }
 import from pathlib { Path }
 import from typing { Any }
 import jwt;
+import os;
 import from fastapi.middleware.cors { CORSMiddleware }
 import from fastapi.responses { HTMLResponse, JSONResponse, Response }
 import from jac_scale.jserver.jfast_api { JFastApiServer }
@@ -17,9 +18,9 @@ import from jaclang.runtimelib.runtime { JacRuntime as Jac }
 import from jaclang.runtimelib.server { JacAPIServer as JServer }
 import from jaclang.runtimelib.server { JsonValue }
 
-glob JWT_SECRET = 'supersecretkey';
-glob JWT_ALGORITHM = 'HS256';
-glob JWT_EXP_DELTA_DAYS = 7;
+glob JWT_SECRET = os.getenv('JWT_SECRET', 'supersecretkey');
+glob JWT_ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256');
+glob JWT_EXP_DELTA_DAYS = os.getenv('JWT_EXP_DELTA_DAYS', 7);
 
 class JacAPIServer(JServer) {
     static def create_jwt_token(username: str) -> str {
@@ -27,7 +28,7 @@ class JacAPIServer(JServer) {
         payload: dict[(str, Any)] = {
             'username': username,
             'exp': (now + timedelta(days=JWT_EXP_DELTA_DAYS)),
-            'iat': now
+            'iat': now.timestamp()
         };
         return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM);
     }
@@ -36,6 +37,26 @@ class JacAPIServer(JServer) {
         try {
             decoded = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM]);
             return decoded['username'];
+        } except Exception {
+            return None;
+        }
+    }
+
+    static def refresh_jwt_token(token: str) -> (str | None) {
+        try {
+            decoded = jwt.decode(
+                token,
+                JWT_SECRET,
+                algorithms=[JWT_ALGORITHM],
+                options={"verify_exp": True}
+            );
+            username = decoded.get('username');
+
+            if not username {
+                return None;
+            }
+
+            return JacAPIServer.create_jwt_token(username);
         } except Exception {
             return None;
         }
@@ -72,7 +93,7 @@ class JacAPIServer(JServer) {
             );
         }
         result['token'] = self.create_jwt_token(email);
-        return JSONResponse(status_code=200, content=<>dict[(str, JsonValue)](result));
+        return JSONResponse(status_code=200, content=dict[(str, JsonValue)](result));
     }
 
     def register_login_endpoint(self: JacAPIServer) -> None {
@@ -86,17 +107,17 @@ class JacAPIServer(JServer) {
                         name='email',
                         data_type='string',
                         required=True,
-                        <>default=None,
+                        default=None,
                         description='Email for login',
-                        <>type=ParameterType.BODY
+                        type=ParameterType.BODY
                     ),
                     APIParameter(
                         name='password',
                         data_type='string',
                         required=True,
-                        <>default=None,
+                        default=None,
                         description='Password for login',
-                        <>type=ParameterType.BODY
+                        type=ParameterType.BODY
                     )
                 ],
                 response_model=None,
@@ -116,6 +137,30 @@ class JacAPIServer(JServer) {
         return JSONResponse(content=res, status_code=201);
     }
 
+    def refresh_token(self: JacAPIServer, token: (str | None) = None) -> JSONResponse {
+        if (not token) {
+            return JSONResponse(
+                status_code=400, content={'error': 'Token is required'}
+            );
+        }
+
+        if token.startswith('Bearer ') {
+            token = token[7:];
+        }
+
+        new_token = self.refresh_jwt_token(token);
+        if (not new_token) {
+            return JSONResponse(
+                status_code=401, content={'error': 'Invalid or expired token'}
+            );
+        }
+
+        return JSONResponse(
+            status_code=200,
+            content={'token': new_token, 'message': 'Token refreshed successfully'}
+        );
+    }
+
     def register_create_user_endpoint(self: JacAPIServer) -> None {
         self.server_impl.add_endpoint(
             JEndPoint(
@@ -127,17 +172,17 @@ class JacAPIServer(JServer) {
                         name='email',
                         data_type='string',
                         required=True,
-                        <>default=None,
+                        default=None,
                         description='Username for new user',
-                        <>type=ParameterType.BODY
+                        type=ParameterType.BODY
                     ),
                     APIParameter(
                         name='password',
                         data_type='string',
                         required=True,
-                        <>default=None,
+                        default=None,
                         description='Password for new user',
-                        <>type=ParameterType.BODY
+                        type=ParameterType.BODY
                     )
                 ],
                 response_model=None,
@@ -148,12 +193,36 @@ class JacAPIServer(JServer) {
         );
     }
 
+    def register_refresh_token_endpoint(self: JacAPIServer) -> None {
+        self.server_impl.add_endpoint(
+            JEndPoint(
+                method=HTTPMethod.POST,
+                path='/user/refresh-token',
+                callback=self.refresh_token,
+                parameters=[
+                    APIParameter(
+                        name='token',
+                        data_type='string',
+                        required=True,
+                        default=None,
+                        description='JWT token to refresh (with or without Bearer prefix)',
+                        type=ParameterType.BODY
+                    )
+                ],
+                response_model=None,
+                tags=['User APIs'],
+                summary='Refresh JWT token',
+                description='Endpoint for refreshing an existing JWT token. Token must be within the refresh window.'
+            )
+        );
+    }
+
     def create_walker_callback(
         self: JacAPIServer, walker_name: str, has_node_param: bool = False
     ) -> Callable[..., dict[(str, JsonValue)]] {
         requires_auth = self.introspector.is_auth_required_for_walker(walker_name);
         def callback(
-            <>node: (str | None) = None, **kwargs: JsonValue
+            node: (str | None) = None, **kwargs: JsonValue
         ) -> dict[str, JsonValue] {
             username: (str | None) = None;
             if requires_auth {
@@ -171,8 +240,8 @@ class JacAPIServer(JServer) {
                     return {'error': 'Unauthorized', 'status': 401};
                 }
             }
-            if <>node {
-                kwargs['_jac_spawn_node'] = <>node;
+            if node {
+                kwargs['_jac_spawn_node'] = node;
             }
             return self.execution_manager.spawn_walker(
                 self.get_walkers()[walker_name], kwargs, (username or '__guest__')
@@ -191,9 +260,9 @@ class JacAPIServer(JServer) {
                     name='Authorization',
                     data_type='string',
                     required=False,
-                    <>default=None,
+                    default=None,
                     description='Bearer token for authentication',
-                    <>type=ParameterType.HEADER
+                    type=ParameterType.HEADER
                 )
             );
         }
@@ -209,9 +278,9 @@ class JacAPIServer(JServer) {
                     name='node' if (field_name == '_jac_spawn_node') else field_name,
                     data_type=walker_fields[field_name]['type'],
                     required=walker_fields[field_name]['required'],
-                    <>default=walker_fields[field_name]['default'],
+                    default=walker_fields[field_name]['default'],
                     description=f"Field {field_name} for walker {walker_name}",
-                    <>type=ParameterType.BODY
+                    type=ParameterType.BODY
                     if (field_name != '_jac_spawn_node')
                     else ParameterType.PATH
                 )
@@ -296,9 +365,9 @@ class JacAPIServer(JServer) {
                     name='Authorization',
                     data_type='string',
                     required=False,
-                    <>default=None,
+                    default=None,
                     description='Bearer token for authentication',
-                    <>type=ParameterType.HEADER
+                    type=ParameterType.HEADER
                 )
             );
         }
@@ -311,8 +380,9 @@ class JacAPIServer(JServer) {
                     name=field_name,
                     data_type=func_fields[field_name]['type'],
                     required=func_fields[field_name]['required'],
-                    <>default=func_fields[field_name]['default'],
-                    description=f"Field {field_name} for function {func_name}"
+                    default=func_fields[field_name]['default'],
+                    description=f"Field {field_name} for function {func_name}",
+                    type=ParameterType.BODY
                 )
             );
         }
@@ -323,7 +393,7 @@ class JacAPIServer(JServer) {
         for func_name in self.get_functions() {
             self.server_impl.add_endpoint(
                 JEndPoint(
-                    method=HTTPMethod.GET,
+                    method=HTTPMethod.POST,
                     path=f"/function/{func_name}",
                     callback=self.create_function_callback(func_name),
                     parameters=self.create_function_parameters(func_name),
@@ -360,9 +430,9 @@ class JacAPIServer(JServer) {
                         name='page_name',
                         data_type='string',
                         required=True,
-                        <>default=None,
+                        default=None,
                         description='Name of the page to render',
-                        <>type=ParameterType.PATH
+                        type=ParameterType.PATH
                     )
                 ],
                 response_model=None,
@@ -420,9 +490,9 @@ class JacAPIServer(JServer) {
                         name='file_path',
                         data_type='string',
                         required=True,
-                        <>default=None,
+                        default=None,
                         description='Path of the static file to serve',
-                        <>type=ParameterType.PATH
+                        type=ParameterType.PATH
                     )
                 ],
                 response_model=None,
@@ -494,9 +564,9 @@ class JacAPIServer(JServer) {
                         name='file_path',
                         data_type='string',
                         required=True,
-                        <>default=None,
+                        default=None,
                         description='Path to asset file (e.g., img.png, icons/logo.svg)',
-                        <>type=ParameterType.PATH
+                        type=ParameterType.PATH
                     )
                 ],
                 response_model=None,
@@ -628,6 +698,7 @@ class JacAPIServer(JServer) {
         self.register_create_user_endpoint();
         self.register_login_endpoint();
         self.register_page_endpoint();
+        self.register_refresh_token_endpoint();
         self.register_client_js_endpoint();
         self.register_static_file_endpoint();
         self.register_walkers_endpoints();
@@ -635,6 +706,6 @@ class JacAPIServer(JServer) {
         self.register_root_asset_endpoint();
         self._configure_openapi_security();
         self.user_manager.create_user('__guest__', '__no_password__');
-        self.server_impl.run_server();
+        self.server_impl.run_server(port=self.port);
     }
 }
