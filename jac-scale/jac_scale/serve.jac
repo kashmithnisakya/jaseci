@@ -4,11 +4,10 @@ import from datetime { UTC, datetime, timedelta }
 import from pathlib { Path }
 import from typing { Any }
 import jwt;
-import os;
+import from os { getenv }
 import from fastapi.middleware.cors { CORSMiddleware }
 import from fastapi.responses { HTMLResponse, JSONResponse, Response, RedirectResponse }
 import from fastapi.requests { Request }
-import from fastapi_sso.sso.google { GoogleSSO }
 import from jac_scale.jserver.jfast_api { JFastApiServer }
 import from jac_scale.jserver.jserver {
     APIParameter,
@@ -19,14 +18,32 @@ import from jac_scale.jserver.jserver {
 import from jaclang.pycore.runtime { JacRuntime as Jac }
 import from jaclang.runtimelib.server { JacAPIServer as JServer }
 import from jaclang.runtimelib.server { JsonValue }
+import from enum { StrEnum }
+import from fastapi_sso.sso.facebook { FacebookSSO }
+import from fastapi_sso.sso.google { GoogleSSO }
+import from fastapi_sso.sso.github { GithubSSO }
+import from fastapi_sso.sso.linkedin { LinkedInSSO }
+import from fastapi_sso.sso.microsoft { MicrosoftSSO }
+import from fastapi_sso.sso.twitter { TwitterSSO }
 
-glob JWT_SECRET = os.getenv('JWT_SECRET', 'supersecretkey');
-glob JWT_ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256');
-glob JWT_EXP_DELTA_DAYS = os.getenv('JWT_EXP_DELTA_DAYS', 7);
+glob JWT_SECRET = getenv('JWT_SECRET', 'supersecretkey');
+glob JWT_ALGORITHM = getenv('JWT_ALGORITHM', 'HS256');
+glob JWT_EXP_DELTA_DAYS = getenv('JWT_EXP_DELTA_DAYS', 7);
+glob SSO_HOST = getenv("SSO_HOST", "http://localhost:8000/sso");
 
-glob GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '');
-glob GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET', '');
-glob GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', 'http://localhost:8000/sso/google/{operation}/callback');
+class Platforms(StrEnum) {
+    has FACEBOOK: str = 'facebook';
+    has GITHUB: str = 'github';
+    has GOOGLE: str = 'google';
+    has LINKEDIN: str = 'linkedin';
+    has MICROSOFT: str = 'microsoft';
+    has TWITTER: str = 'twitter';
+}
+
+class Operations(StrEnum) {
+    has LOGIN: str = 'login';
+    has REGISTER: str = 'register';
+}
 
 class JacAPIServer(JServer) {
     static def create_jwt_token(username: str) -> str {
@@ -84,6 +101,23 @@ class JacAPIServer(JServer) {
             allow_methods=['*'],
             allow_headers=['*']
         );
+        self.SUPPORTED_PLATFORMS: dict ={};
+        for platform in Platforms {
+            key = platform.upper();
+
+            client_id = getenv(f"SSO_{key}_CLIENT_ID");
+            client_secret = getenv(f"SSO_{key}_CLIENT_SECRET");
+
+            if not client_id or not client_secret {
+                continue;
+            }
+
+            self.SUPPORTED_PLATFORMS[platform.value] = {
+                "client_id": client_id,
+                "client_secret": client_secret,
+            };
+        }
+        print("SUPPORTED_PLATFORMS: ", self.SUPPORTED_PLATFORMS);
     }
 
     def login(self: JacAPIServer, email: str, password: str) -> JSONResponse {
@@ -223,42 +257,92 @@ class JacAPIServer(JServer) {
         );
     }
 
-    def get_google_sso(self: JacAPIServer, operation: str) -> (GoogleSSO | None) {
-        if (not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET) {
+    def get_sso(self: JacAPIServer, platform: str, operation: str) -> (GoogleSSO | FacebookSSO | GithubSSO | LinkedInSSO | MicrosoftSSO | TwitterSSO | None) {
+        if (platform not in self.SUPPORTED_PLATFORMS) {
             return None;
         }
-        redirect_uri = GOOGLE_REDIRECT_URI.replace('{operation}', operation);
-        return GoogleSSO(
-            client_id=GOOGLE_CLIENT_ID,
-            client_secret=GOOGLE_CLIENT_SECRET,
-            redirect_uri=redirect_uri,
-            allow_insecure_http=True
-        );
+
+        credentials = self.SUPPORTED_PLATFORMS[platform];
+        redirect_uri = f"{SSO_HOST}/{platform}/{operation}/callback";
+
+        if (platform == Platforms.GOOGLE.value) {
+            return GoogleSSO(
+                client_id=credentials['client_id'],
+                client_secret=credentials['client_secret'],
+                redirect_uri=redirect_uri,
+                allow_insecure_http=True
+            );
+        } elif (platform == Platforms.FACEBOOK.value) {
+            return FacebookSSO(
+                client_id=credentials['client_id'],
+                client_secret=credentials['client_secret'],
+                redirect_uri=redirect_uri,
+                allow_insecure_http=True
+            );
+        } elif (platform == Platforms.GITHUB.value) {
+            return GithubSSO(
+                client_id=credentials['client_id'],
+                client_secret=credentials['client_secret'],
+                redirect_uri=redirect_uri,
+                allow_insecure_http=True
+            );
+        } elif (platform == Platforms.LINKEDIN.value) {
+            return LinkedInSSO(
+                client_id=credentials['client_id'],
+                client_secret=credentials['client_secret'],
+                redirect_uri=redirect_uri,
+                allow_insecure_http=True
+            );
+        } elif (platform == Platforms.MICROSOFT.value) {
+            return MicrosoftSSO(
+                client_id=credentials['client_id'],
+                client_secret=credentials['client_secret'],
+                redirect_uri=redirect_uri,
+                allow_insecure_http=True
+            );
+        } elif (platform == Platforms.TWITTER.value) {
+            return TwitterSSO(
+                client_id=credentials['client_id'],
+                client_secret=credentials['client_secret'],
+                redirect_uri=redirect_uri,
+                allow_insecure_http=True
+            );
+        }
+        return None;
     }
 
     def sso_initiate(self: JacAPIServer, platform: str, operation: str) -> Response {
-        if (platform.lower() != 'google') {
+        print(f"SSO Initiate called with platform='{platform}', operation='{operation}'");
+        print("Supported platforms:", self.SUPPORTED_PLATFORMS.keys());
+
+        if (platform not in [p.value for p in Platforms]) {
             return JSONResponse(
-                status_code=501,
-                content={'error': f"SSO for platform '{platform}' is not implemented"}
+                status_code=400,
+                content={'error': f"Invalid platform '{platform}'. Supported platforms: {', '.join([p.value for p in Platforms])}"}
             );
         }
-        if (operation not in ['login', 'register']) {
+        if (platform not in self.SUPPORTED_PLATFORMS) {
+            return JSONResponse(
+                status_code=501,
+                content={'error': f"SSO for platform '{platform}' is not configured. Please set SSO_{platform.upper()}_CLIENT_ID and SSO_{platform.upper()}_CLIENT_SECRET environment variables."}
+            );
+        }
+        if (operation not in [o.value for o in Operations]) {
             return JSONResponse(
                 status_code=400,
                 content={'error': f"Invalid operation '{operation}'. Must be 'login' or 'register'"}
             );
         }
-        google_sso = self.get_google_sso(operation);
-        if not google_sso {
+        sso = self.get_sso(platform, operation);
+        if not sso {
             return JSONResponse(
                 status_code=500,
-                content={'error': 'Google SSO is not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.'}
+                content={'error': f"Failed to initialize SSO for platform '{platform}'"}
             );
         }
         async def initiate_sso()  -> RedirectResponse {
-            with google_sso {
-                return await google_sso.get_login_redirect();
+            with sso {
+                return await sso.get_login_redirect();
             }
         }
         import asyncio;
@@ -266,37 +350,43 @@ class JacAPIServer(JServer) {
     }
 
     def sso_callback(self: JacAPIServer, platform: str, operation: str, request: Request) -> JSONResponse {
-        if (platform.lower() != 'google') {
+        if (platform not in [p.value for p in Platforms]) {
             return JSONResponse(
-                status_code=501,
-                content={'error': f"SSO for platform '{platform}' is not implemented"}
+                status_code=400,
+                content={'error': f"Invalid platform '{platform}'. Supported platforms: {', '.join([p.value for p in Platforms])}"}
             );
         }
-        if (operation not in ['login', 'register']) {
+        if (platform not in self.SUPPORTED_PLATFORMS) {
+            return JSONResponse(
+                status_code=501,
+                content={'error': f"SSO for platform '{platform}' is not configured. Please set SSO_{platform.upper()}_CLIENT_ID and SSO_{platform.upper()}_CLIENT_SECRET environment variables."}
+            );
+        }
+        if (operation not in [o.value for o in Operations]) {
             return JSONResponse(
                 status_code=400,
                 content={'error': f"Invalid operation '{operation}'. Must be 'login' or 'register'"}
             );
         }
-        google_sso = self.get_google_sso(operation);
-        if not google_sso {
+        sso = self.get_sso(platform, operation);
+        if not sso {
             return JSONResponse(
                 status_code=500,
-                content={'error': 'Google SSO is not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.'}
+                content={'error': f"Failed to initialize SSO for platform '{platform}'"}
             );
         }
         async def process_callback()  -> JSONResponse {
             try {
-                with google_sso {
-                    user_info = await google_sso.verify_and_process(request);
+                with sso {
+                    user_info = await sso.verify_and_process(request);
                     email = user_info.email;
                     if not email {
                         return JSONResponse(
                             status_code=400,
-                            content={'error': 'Email not provided by Google'}
+                            content={'error': f"Email not provided by {platform}"}
                         );
                     }
-                    if (operation == 'login') {
+                    if (operation == Operations.LOGIN.value) {
                         user = self.user_manager.get_user(email);
                         if not user {
                             return JSONResponse(
@@ -311,10 +401,11 @@ class JacAPIServer(JServer) {
                                 'message': 'Login successful',
                                 'email': email,
                                 'token': token,
+                                'platform': platform,
                                 'user': dict[(str, JsonValue)](user)
                             }
                         );
-                    } elif (operation == 'register') {
+                    } elif (operation == Operations.REGISTER.value) {
                         existing_user = self.user_manager.get_user(email);
                         if existing_user {
                             return JSONResponse(
@@ -331,6 +422,7 @@ class JacAPIServer(JServer) {
                         }
                         token = self.create_jwt_token(email);
                         result['token'] = token;
+                        result['platform'] = platform;
                         return JSONResponse(
                             status_code=201,
                             content=result
@@ -349,6 +441,7 @@ class JacAPIServer(JServer) {
     }
 
     def register_sso_endpoints(self: JacAPIServer) -> None {
+        print("Registering SSO endpoints...");
         self.server_impl.add_endpoint(
             JEndPoint(
                 method=HTTPMethod.GET,
@@ -360,7 +453,7 @@ class JacAPIServer(JServer) {
                         data_type='string',
                         required=True,
                         default=None,
-                        description='SSO platform (currently only "google" is supported)',
+                        description='SSO platform: google, facebook, github, linkedin, microsoft, or twitter',
                         type=ParameterType.PATH
                     ),
                     APIParameter(
@@ -375,7 +468,7 @@ class JacAPIServer(JServer) {
                 response_model=None,
                 tags=['SSO APIs'],
                 summary='Initiate SSO authentication',
-                description='Redirects to the SSO provider for authentication'
+                description='Redirects to the SSO provider for authentication. Supported platforms: Google, Facebook, GitHub, LinkedIn, Microsoft, Twitter. Configure each platform by setting SSO_{PLATFORM}_CLIENT_ID and SSO_{PLATFORM}_CLIENT_SECRET environment variables.'
             )
         );
         self.server_impl.add_endpoint(
@@ -389,7 +482,7 @@ class JacAPIServer(JServer) {
                         data_type='string',
                         required=True,
                         default=None,
-                        description='SSO platform (currently only "google" is supported)',
+                        description='SSO platform: google, facebook, github, linkedin, microsoft, or twitter',
                         type=ParameterType.PATH
                     ),
                     APIParameter(
