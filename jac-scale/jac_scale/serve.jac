@@ -6,7 +6,9 @@ import from typing { Any }
 import jwt;
 import os;
 import from fastapi.middleware.cors { CORSMiddleware }
-import from fastapi.responses { HTMLResponse, JSONResponse, Response }
+import from fastapi.responses { HTMLResponse, JSONResponse, Response, RedirectResponse }
+import from fastapi.requests { Request }
+import from fastapi_sso.sso.google { GoogleSSO }
 import from jac_scale.jserver.jfast_api { JFastApiServer }
 import from jac_scale.jserver.jserver {
     APIParameter,
@@ -21,6 +23,10 @@ import from jaclang.runtimelib.server { JsonValue }
 glob JWT_SECRET = os.getenv('JWT_SECRET', 'supersecretkey');
 glob JWT_ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256');
 glob JWT_EXP_DELTA_DAYS = os.getenv('JWT_EXP_DELTA_DAYS', 7);
+
+glob GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '');
+glob GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET', '');
+glob GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', 'http://localhost:8000/sso/google/{operation}/callback');
 
 class JacAPIServer(JServer) {
     static def create_jwt_token(username: str) -> str {
@@ -213,6 +219,192 @@ class JacAPIServer(JServer) {
                 tags=['User APIs'],
                 summary='Refresh JWT token',
                 description='Endpoint for refreshing an existing JWT token. Token must be within the refresh window.'
+            )
+        );
+    }
+
+    def get_google_sso(self: JacAPIServer, operation: str) -> (GoogleSSO | None) {
+        if (not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET) {
+            return None;
+        }
+        redirect_uri = GOOGLE_REDIRECT_URI.replace('{operation}', operation);
+        return GoogleSSO(
+            client_id=GOOGLE_CLIENT_ID,
+            client_secret=GOOGLE_CLIENT_SECRET,
+            redirect_uri=redirect_uri,
+            allow_insecure_http=True
+        );
+    }
+
+    def sso_initiate(self: JacAPIServer, platform: str, operation: str) -> Response {
+        if (platform.lower() != 'google') {
+            return JSONResponse(
+                status_code=501,
+                content={'error': f"SSO for platform '{platform}' is not implemented"}
+            );
+        }
+        if (operation not in ['login', 'register']) {
+            return JSONResponse(
+                status_code=400,
+                content={'error': f"Invalid operation '{operation}'. Must be 'login' or 'register'"}
+            );
+        }
+        google_sso = self.get_google_sso(operation);
+        if not google_sso {
+            return JSONResponse(
+                status_code=500,
+                content={'error': 'Google SSO is not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.'}
+            );
+        }
+        async def initiate_sso()  -> RedirectResponse {
+            with google_sso {
+                return await google_sso.get_login_redirect();
+            }
+        }
+        import asyncio;
+        return asyncio.run(initiate_sso());
+    }
+
+    def sso_callback(self: JacAPIServer, platform: str, operation: str, request: Request) -> JSONResponse {
+        if (platform.lower() != 'google') {
+            return JSONResponse(
+                status_code=501,
+                content={'error': f"SSO for platform '{platform}' is not implemented"}
+            );
+        }
+        if (operation not in ['login', 'register']) {
+            return JSONResponse(
+                status_code=400,
+                content={'error': f"Invalid operation '{operation}'. Must be 'login' or 'register'"}
+            );
+        }
+        google_sso = self.get_google_sso(operation);
+        if not google_sso {
+            return JSONResponse(
+                status_code=500,
+                content={'error': 'Google SSO is not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.'}
+            );
+        }
+        async def process_callback()  -> JSONResponse {
+            try {
+                with google_sso {
+                    user_info = await google_sso.verify_and_process(request);
+                    email = user_info.email;
+                    if not email {
+                        return JSONResponse(
+                            status_code=400,
+                            content={'error': 'Email not provided by Google'}
+                        );
+                    }
+                    if (operation == 'login') {
+                        user = self.user_manager.get_user(email);
+                        if not user {
+                            return JSONResponse(
+                                status_code=404,
+                                content={'error': 'User not found. Please register first.'}
+                            );
+                        }
+                        token = self.create_jwt_token(email);
+                        return JSONResponse(
+                            status_code=200,
+                            content={
+                                'message': 'Login successful',
+                                'email': email,
+                                'token': token,
+                                'user': dict[(str, JsonValue)](user)
+                            }
+                        );
+                    } elif (operation == 'register') {
+                        existing_user = self.user_manager.get_user(email);
+                        if existing_user {
+                            return JSONResponse(
+                                status_code=400,
+                                content={'error': 'User already exists. Please login instead.'}
+                            );
+                        }
+                        result = self.user_manager.create_user(email, '__oauth_user__');
+                        if ('error' in result) {
+                            return JSONResponse(
+                                status_code=400,
+                                content=result
+                            );
+                        }
+                        token = self.create_jwt_token(email);
+                        result['token'] = token;
+                        return JSONResponse(
+                            status_code=201,
+                            content=result
+                        );
+                    }
+                }
+            } except Exception as e {
+                return JSONResponse(
+                    status_code=500,
+                    content={'error': f"Authentication failed: {str(e)}"}
+                );
+            }
+        }
+        import asyncio;
+        return asyncio.run(process_callback());
+    }
+
+    def register_sso_endpoints(self: JacAPIServer) -> None {
+        self.server_impl.add_endpoint(
+            JEndPoint(
+                method=HTTPMethod.GET,
+                path='/sso/{platform}/{operation}',
+                callback=self.sso_initiate,
+                parameters=[
+                    APIParameter(
+                        name='platform',
+                        data_type='string',
+                        required=True,
+                        default=None,
+                        description='SSO platform (currently only "google" is supported)',
+                        type=ParameterType.PATH
+                    ),
+                    APIParameter(
+                        name='operation',
+                        data_type='string',
+                        required=True,
+                        default=None,
+                        description='Operation to perform: "login" or "register"',
+                        type=ParameterType.PATH
+                    )
+                ],
+                response_model=None,
+                tags=['SSO APIs'],
+                summary='Initiate SSO authentication',
+                description='Redirects to the SSO provider for authentication'
+            )
+        );
+        self.server_impl.add_endpoint(
+            JEndPoint(
+                method=HTTPMethod.GET,
+                path='/sso/{platform}/{operation}/callback',
+                callback=self.sso_callback,
+                parameters=[
+                    APIParameter(
+                        name='platform',
+                        data_type='string',
+                        required=True,
+                        default=None,
+                        description='SSO platform (currently only "google" is supported)',
+                        type=ParameterType.PATH
+                    ),
+                    APIParameter(
+                        name='operation',
+                        data_type='string',
+                        required=True,
+                        default=None,
+                        description='Operation to perform: "login" or "register"',
+                        type=ParameterType.PATH
+                    )
+                ],
+                response_model=None,
+                tags=['SSO APIs'],
+                summary='SSO callback endpoint',
+                description='Handles the callback from SSO provider after authentication'
             )
         );
     }
@@ -713,6 +905,7 @@ class JacAPIServer(JServer) {
         self.register_login_endpoint();
         self.register_page_endpoint();
         self.register_refresh_token_endpoint();
+        self.register_sso_endpoints();
         self.register_client_js_endpoint();
         self.register_static_file_endpoint();
         self.register_walkers_endpoints();
