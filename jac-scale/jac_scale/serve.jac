@@ -7,7 +7,6 @@ import jwt;
 import from os { getenv }
 import from fastapi.middleware.cors { CORSMiddleware }
 import from fastapi.responses { HTMLResponse, JSONResponse, Response, RedirectResponse }
-import from fastapi.requests { Request }
 import from jac_scale.jserver.jfast_api { JFastApiServer }
 import from jac_scale.jserver.jserver {
     APIParameter,
@@ -19,12 +18,8 @@ import from jaclang.pycore.runtime { JacRuntime as Jac }
 import from jaclang.runtimelib.server { JacAPIServer as JServer }
 import from jaclang.runtimelib.server { JsonValue }
 import from enum { StrEnum }
-import from fastapi_sso.sso.facebook { FacebookSSO }
 import from fastapi_sso.sso.google { GoogleSSO }
-import from fastapi_sso.sso.github { GithubSSO }
-import from fastapi_sso.sso.linkedin { LinkedInSSO }
-import from fastapi_sso.sso.microsoft { MicrosoftSSO }
-import from fastapi_sso.sso.twitter { TwitterSSO }
+
 
 glob JWT_SECRET = getenv('JWT_SECRET', 'supersecretkey');
 glob JWT_ALGORITHM = getenv('JWT_ALGORITHM', 'HS256');
@@ -32,12 +27,7 @@ glob JWT_EXP_DELTA_DAYS = getenv('JWT_EXP_DELTA_DAYS', 7);
 glob SSO_HOST = getenv("SSO_HOST", "http://localhost:8000/sso");
 
 class Platforms(StrEnum) {
-    has FACEBOOK: str = 'facebook';
-    has GITHUB: str = 'github';
     has GOOGLE: str = 'google';
-    has LINKEDIN: str = 'linkedin';
-    has MICROSOFT: str = 'microsoft';
-    has TWITTER: str = 'twitter';
 }
 
 class Operations(StrEnum) {
@@ -257,7 +247,7 @@ class JacAPIServer(JServer) {
         );
     }
 
-    def get_sso(self: JacAPIServer, platform: str, operation: str) -> (GoogleSSO | FacebookSSO | GithubSSO | LinkedInSSO | MicrosoftSSO | TwitterSSO | None) {
+    def get_sso(self: JacAPIServer, platform: str, operation: str) -> (GoogleSSO | None) {
         if (platform not in self.SUPPORTED_PLATFORMS) {
             return None;
         }
@@ -272,46 +262,13 @@ class JacAPIServer(JServer) {
                 redirect_uri=redirect_uri,
                 allow_insecure_http=True
             );
-        } elif (platform == Platforms.FACEBOOK.value) {
-            return FacebookSSO(
-                client_id=credentials['client_id'],
-                client_secret=credentials['client_secret'],
-                redirect_uri=redirect_uri,
-                allow_insecure_http=True
-            );
-        } elif (platform == Platforms.GITHUB.value) {
-            return GithubSSO(
-                client_id=credentials['client_id'],
-                client_secret=credentials['client_secret'],
-                redirect_uri=redirect_uri,
-                allow_insecure_http=True
-            );
-        } elif (platform == Platforms.LINKEDIN.value) {
-            return LinkedInSSO(
-                client_id=credentials['client_id'],
-                client_secret=credentials['client_secret'],
-                redirect_uri=redirect_uri,
-                allow_insecure_http=True
-            );
-        } elif (platform == Platforms.MICROSOFT.value) {
-            return MicrosoftSSO(
-                client_id=credentials['client_id'],
-                client_secret=credentials['client_secret'],
-                redirect_uri=redirect_uri,
-                allow_insecure_http=True
-            );
-        } elif (platform == Platforms.TWITTER.value) {
-            return TwitterSSO(
-                client_id=credentials['client_id'],
-                client_secret=credentials['client_secret'],
-                redirect_uri=redirect_uri,
-                allow_insecure_http=True
-            );
+        } else {
+            print(f"SSO for platform '{platform}' is not yet implemented.");
         }
         return None;
     }
 
-    def sso_initiate(self: JacAPIServer, platform: str, operation: str) -> Response {
+    async def sso_initiate(self: JacAPIServer, platform: str, operation: str) -> Response {
         print(f"SSO Initiate called with platform='{platform}', operation='{operation}'");
         print("Supported platforms:", self.SUPPORTED_PLATFORMS.keys());
 
@@ -340,16 +297,12 @@ class JacAPIServer(JServer) {
                 content={'error': f"Failed to initialize SSO for platform '{platform}'"}
             );
         }
-        async def initiate_sso()  -> RedirectResponse {
-            with sso {
-                return await sso.get_login_redirect();
-            }
+        with sso {
+            return await sso.get_login_redirect();
         }
-        import asyncio;
-        return asyncio.run(initiate_sso());
     }
 
-    def sso_callback(self: JacAPIServer, platform: str, operation: str, request: Request) -> JSONResponse {
+    async def sso_callback(self: JacAPIServer, request: Request, platform: str, operation: str) -> JSONResponse {
         if (platform not in [p.value for p in Platforms]) {
             return JSONResponse(
                 status_code=400,
@@ -368,6 +321,7 @@ class JacAPIServer(JServer) {
                 content={'error': f"Invalid operation '{operation}'. Must be 'login' or 'register'"}
             );
         }
+        
         sso = self.get_sso(platform, operation);
         if not sso {
             return JSONResponse(
@@ -375,69 +329,66 @@ class JacAPIServer(JServer) {
                 content={'error': f"Failed to initialize SSO for platform '{platform}'"}
             );
         }
-        async def process_callback()  -> JSONResponse {
-            try {
-                with sso {
-                    user_info = await sso.verify_and_process(request);
-                    email = user_info.email;
-                    if not email {
+
+        try {
+            with sso {
+                user_info = await sso.verify_and_process(request);
+                email = user_info.email;
+                if not email {
+                    return JSONResponse(
+                        status_code=400,
+                        content={'error': f"Email not provided by {platform}"}
+                    );
+                }
+                if (operation == Operations.LOGIN.value) {
+                    user = self.user_manager.get_user(email);
+                    if not user {
                         return JSONResponse(
-                            status_code=400,
-                            content={'error': f"Email not provided by {platform}"}
+                            status_code=404,
+                            content={'error': 'User not found. Please register first.'}
                         );
                     }
-                    if (operation == Operations.LOGIN.value) {
-                        user = self.user_manager.get_user(email);
-                        if not user {
-                            return JSONResponse(
-                                status_code=404,
-                                content={'error': 'User not found. Please register first.'}
-                            );
+                    token = self.create_jwt_token(email);
+                    return JSONResponse(
+                        status_code=200,
+                        content={
+                            'message': 'Login successful',
+                            'email': email,
+                            'token': token,
+                            'platform': platform,
+                            'user': dict[(str, JsonValue)](user)
                         }
-                        token = self.create_jwt_token(email);
+                    );
+                } elif (operation == Operations.REGISTER.value) {
+                    existing_user = self.user_manager.get_user(email);
+                    if existing_user {
                         return JSONResponse(
-                            status_code=200,
-                            content={
-                                'message': 'Login successful',
-                                'email': email,
-                                'token': token,
-                                'platform': platform,
-                                'user': dict[(str, JsonValue)](user)
-                            }
+                            status_code=400,
+                            content={'error': 'User already exists. Please login instead.'}
                         );
-                    } elif (operation == Operations.REGISTER.value) {
-                        existing_user = self.user_manager.get_user(email);
-                        if existing_user {
-                            return JSONResponse(
-                                status_code=400,
-                                content={'error': 'User already exists. Please login instead.'}
-                            );
-                        }
-                        result = self.user_manager.create_user(email, '__oauth_user__');
-                        if ('error' in result) {
-                            return JSONResponse(
-                                status_code=400,
-                                content=result
-                            );
-                        }
-                        token = self.create_jwt_token(email);
-                        result['token'] = token;
-                        result['platform'] = platform;
+                    }
+                    result = self.user_manager.create_user(email, '__oauth_user__');
+                    if ('error' in result) {
                         return JSONResponse(
-                            status_code=201,
+                            status_code=400,
                             content=result
                         );
                     }
+                    token = self.create_jwt_token(email);
+                    result['token'] = token;
+                    result['platform'] = platform;
+                    return JSONResponse(
+                        status_code=201,
+                        content=result
+                    );
                 }
-            } except Exception as e {
-                return JSONResponse(
-                    status_code=500,
-                    content={'error': f"Authentication failed: {str(e)}"}
-                );
             }
+        } except Exception as e {
+            return JSONResponse(
+                status_code=500,
+                content={'error': f"Authentication failed: {str(e)}"}
+            );
         }
-        import asyncio;
-        return asyncio.run(process_callback());
     }
 
     def register_sso_endpoints(self: JacAPIServer) -> None {
@@ -453,7 +404,7 @@ class JacAPIServer(JServer) {
                         data_type='string',
                         required=True,
                         default=None,
-                        description='SSO platform: google, facebook, github, linkedin, microsoft, or twitter',
+                        description='SSO platform: google',
                         type=ParameterType.PATH
                     ),
                     APIParameter(
@@ -468,7 +419,7 @@ class JacAPIServer(JServer) {
                 response_model=None,
                 tags=['SSO APIs'],
                 summary='Initiate SSO authentication',
-                description='Redirects to the SSO provider for authentication. Supported platforms: Google, Facebook, GitHub, LinkedIn, Microsoft, Twitter. Configure each platform by setting SSO_{PLATFORM}_CLIENT_ID and SSO_{PLATFORM}_CLIENT_SECRET environment variables.'
+                description='Redirects to the SSO provider for authentication. Supported platforms: Google. Configure each platform by setting SSO_{PLATFORM}_CLIENT_ID and SSO_{PLATFORM}_CLIENT_SECRET environment variables.'
             )
         );
         self.server_impl.add_endpoint(
@@ -482,7 +433,7 @@ class JacAPIServer(JServer) {
                         data_type='string',
                         required=True,
                         default=None,
-                        description='SSO platform: google, facebook, github, linkedin, microsoft, or twitter',
+                        description='SSO platform: google',
                         type=ParameterType.PATH
                     ),
                     APIParameter(

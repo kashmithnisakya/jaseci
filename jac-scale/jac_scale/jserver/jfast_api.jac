@@ -131,15 +131,17 @@ class JFastApiServer(JServer[FastAPI]) {
     """
     Calculate route priority for sorting. More specific routes get higher priority (lower number).
     Priority rules:
-        1. Static paths (no parameters) come first
-        2. Paths with fewer parameters come before paths with more parameters
-        3. Longer paths come before shorter paths
-        4. Alphabetical order for tie-breaking
+        1. Catch-all routes (with :path) come last (highest number)
+        2. Static paths (no parameters) come first (lowest number)
+        3. Paths with fewer parameters come before paths with more parameters
+        4. Longer paths come before shorter paths
+        5. Alphabetical order for tie-breaking
     """
     def _route_priority(
         self: JFastApiServer, endpoint: JEndPoint
-    ) -> tuple[int, int, str] {
+    ) -> tuple[int, int, int, str] {
         path = endpoint.path;
+        is_catchall = ':path}' in path;
         param_count = path.count('{');
         segment_count = len(
             [
@@ -148,8 +150,9 @@ class JFastApiServer(JServer[FastAPI]) {
                 if seg
             ]
         );
+        catchall_priority = 1 if is_catchall else 0;
         priority = param_count;
-        return (priority, -segment_count, path);
+        return (catchall_priority, priority, -segment_count, path);
     }
 
     """
@@ -313,9 +316,13 @@ class JFastApiServer(JServer[FastAPI]) {
         }
         param_strs: list[str] = [];
         param_mapping: dict[(str, str)] = {};
+        needs_request = 'request' in sig.parameters;
         if accepts_kwargs {
             param_strs.append('request: Request');
             param_mapping['__request__'] = 'request';
+        } elif needs_request {
+            param_strs.append('request: Request');
+            param_mapping['request'] = 'request';
         }
         body_model: (type[BaseModel] | None) = None;
         if (len(body_params) >= 1) {
