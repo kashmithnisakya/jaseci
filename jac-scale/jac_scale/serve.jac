@@ -20,7 +20,6 @@ import from jaclang.runtimelib.server { JsonValue }
 import from enum { StrEnum }
 import from fastapi_sso.sso.google { GoogleSSO }
 
-
 glob JWT_SECRET = getenv('JWT_SECRET', 'supersecretkey');
 glob JWT_ALGORITHM = getenv('JWT_ALGORITHM', 'HS256');
 glob JWT_EXP_DELTA_DAYS = getenv('JWT_EXP_DELTA_DAYS', 7);
@@ -91,7 +90,7 @@ class JacAPIServer(JServer) {
             allow_methods=['*'],
             allow_headers=['*']
         );
-        self.SUPPORTED_PLATFORMS: dict ={};
+        self.SUPPORTED_PLATFORMS: dict = {};
         for platform in Platforms {
             key = platform.upper();
 
@@ -105,6 +104,7 @@ class JacAPIServer(JServer) {
             self.SUPPORTED_PLATFORMS[platform.value] = {
                 "client_id": client_id,
                 "client_secret": client_secret,
+
             };
         }
         print("SUPPORTED_PLATFORMS: ", self.SUPPORTED_PLATFORMS);
@@ -247,7 +247,9 @@ class JacAPIServer(JServer) {
         );
     }
 
-    def get_sso(self: JacAPIServer, platform: str, operation: str) -> (GoogleSSO | None) {
+    def get_sso(
+        self: JacAPIServer, platform: str, operation: str
+    ) -> (GoogleSSO | None) {
         if (platform not in self.SUPPORTED_PLATFORMS) {
             return None;
         }
@@ -268,33 +270,47 @@ class JacAPIServer(JServer) {
         return None;
     }
 
-    async def sso_initiate(self: JacAPIServer, platform: str, operation: str) -> Response {
-        print(f"SSO Initiate called with platform='{platform}', operation='{operation}'");
+    async def sso_initiate(
+        self: JacAPIServer, platform: str, operation: str
+    ) -> Response {
+        print(
+            f"SSO Initiate called with platform='{platform}', operation='{operation}'"
+        );
         print("Supported platforms:", self.SUPPORTED_PLATFORMS.keys());
 
         if (platform not in [p.value for p in Platforms]) {
             return JSONResponse(
                 status_code=400,
-                content={'error': f"Invalid platform '{platform}'. Supported platforms: {', '.join([p.value for p in Platforms])}"}
+                content={
+                    'error': f"Invalid platform '{platform}'. Supported platforms: {', '.join(
+                        [p.value for p in Platforms]
+                    )}"
+                }
             );
         }
         if (platform not in self.SUPPORTED_PLATFORMS) {
             return JSONResponse(
                 status_code=501,
-                content={'error': f"SSO for platform '{platform}' is not configured. Please set SSO_{platform.upper()}_CLIENT_ID and SSO_{platform.upper()}_CLIENT_SECRET environment variables."}
+                content={
+                    'error': f"SSO for platform '{platform}' is not configured. Please set SSO_{platform.upper()}_CLIENT_ID and SSO_{platform.upper()}_CLIENT_SECRET environment variables."
+                }
             );
         }
         if (operation not in [o.value for o in Operations]) {
             return JSONResponse(
                 status_code=400,
-                content={'error': f"Invalid operation '{operation}'. Must be 'login' or 'register'"}
+                content={
+                    'error': f"Invalid operation '{operation}'. Must be 'login' or 'register'"
+                }
             );
         }
         sso = self.get_sso(platform, operation);
         if not sso {
             return JSONResponse(
                 status_code=500,
-                content={'error': f"Failed to initialize SSO for platform '{platform}'"}
+                content={
+                    'error': f"Failed to initialize SSO for platform '{platform}'"
+                }
             );
         }
         with sso {
@@ -302,31 +318,43 @@ class JacAPIServer(JServer) {
         }
     }
 
-    async def sso_callback(self: JacAPIServer, request: Request, platform: str, operation: str) -> JSONResponse {
+    async def sso_callback(
+        self: JacAPIServer, request: Request, platform: str, operation: str
+    ) -> JSONResponse {
         if (platform not in [p.value for p in Platforms]) {
             return JSONResponse(
                 status_code=400,
-                content={'error': f"Invalid platform '{platform}'. Supported platforms: {', '.join([p.value for p in Platforms])}"}
+                content={
+                    'error': f"Invalid platform '{platform}'. Supported platforms: {', '.join(
+                        [p.value for p in Platforms]
+                    )}"
+                }
             );
         }
         if (platform not in self.SUPPORTED_PLATFORMS) {
             return JSONResponse(
                 status_code=501,
-                content={'error': f"SSO for platform '{platform}' is not configured. Please set SSO_{platform.upper()}_CLIENT_ID and SSO_{platform.upper()}_CLIENT_SECRET environment variables."}
+                content={
+                    'error': f"SSO for platform '{platform}' is not configured. Please set SSO_{platform.upper()}_CLIENT_ID and SSO_{platform.upper()}_CLIENT_SECRET environment variables."
+                }
             );
         }
         if (operation not in [o.value for o in Operations]) {
             return JSONResponse(
                 status_code=400,
-                content={'error': f"Invalid operation '{operation}'. Must be 'login' or 'register'"}
+                content={
+                    'error': f"Invalid operation '{operation}'. Must be 'login' or 'register'"
+                }
             );
         }
-        
+
         sso = self.get_sso(platform, operation);
         if not sso {
             return JSONResponse(
                 status_code=500,
-                content={'error': f"Failed to initialize SSO for platform '{platform}'"}
+                content={
+                    'error': f"Failed to initialize SSO for platform '{platform}'"
+                }
             );
         }
 
@@ -364,29 +392,24 @@ class JacAPIServer(JServer) {
                     if existing_user {
                         return JSONResponse(
                             status_code=400,
-                            content={'error': 'User already exists. Please login instead.'}
+                            content={
+                                'error': 'User already exists. Please login instead.'
+                            }
                         );
                     }
                     result = self.user_manager.create_user(email, '__oauth_user__');
                     if ('error' in result) {
-                        return JSONResponse(
-                            status_code=400,
-                            content=result
-                        );
+                        return JSONResponse(status_code=400, content=result);
                     }
                     token = self.create_jwt_token(email);
                     result['token'] = token;
                     result['platform'] = platform;
-                    return JSONResponse(
-                        status_code=201,
-                        content=result
-                    );
+                    return JSONResponse(status_code=201, content=result);
                 }
             }
         } except Exception as e {
             return JSONResponse(
-                status_code=500,
-                content={'error': f"Authentication failed: {str(e)}"}
+                status_code=500, content={'error': f"Authentication failed: {str(e)}"}
             );
         }
     }
