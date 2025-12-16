@@ -206,11 +206,7 @@ class UserManager {
             return None;
         }
         user = self._users[username];
-        return {
-            'email': username,
-            'token': user['token'],
-            'root_id': user['root_id']
-        };
+        return {'email': username, 'token': user['token'], 'root_id': user['root_id']};
     }
 
     """Close and persist user data."""

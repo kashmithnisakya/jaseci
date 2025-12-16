@@ -262,7 +262,7 @@ class JacAPIServer(JServer) {
                 redirect_uri=redirect_uri,
                 allow_insecure_http=True
             );
-        } 
+        }
         return None;
     }
 
