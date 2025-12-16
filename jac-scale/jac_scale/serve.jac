@@ -103,11 +103,9 @@ class JacAPIServer(JServer) {
 
             self.SUPPORTED_PLATFORMS[platform.value] = {
                 "client_id": client_id,
-                "client_secret": client_secret,
-
+                "client_secret": client_secret
             };
         }
-        print("SUPPORTED_PLATFORMS: ", self.SUPPORTED_PLATFORMS);
     }
 
     def login(self: JacAPIServer, email: str, password: str) -> JSONResponse {
@@ -264,20 +262,13 @@ class JacAPIServer(JServer) {
                 redirect_uri=redirect_uri,
                 allow_insecure_http=True
             );
-        } else {
-            print(f"SSO for platform '{platform}' is not yet implemented.");
-        }
+        } 
         return None;
     }
 
     async def sso_initiate(
         self: JacAPIServer, platform: str, operation: str
     ) -> Response {
-        print(
-            f"SSO Initiate called with platform='{platform}', operation='{operation}'"
-        );
-        print("Supported platforms:", self.SUPPORTED_PLATFORMS.keys());
-
         if (platform not in [p.value for p in Platforms]) {
             return JSONResponse(
                 status_code=400,
