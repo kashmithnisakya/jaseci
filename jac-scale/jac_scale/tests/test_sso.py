@@ -2,6 +2,8 @@
 
 import contextlib
 from dataclasses import dataclass
+from types import TracebackType
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
 
@@ -38,19 +40,27 @@ class MockGoogleSSO:
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
         self.allow_insecure_http = allow_insecure_http
+        # Set default callables that can be overridden
+        self.get_login_redirect = self._default_get_login_redirect
+        self.verify_and_process = self._default_verify_and_process
 
-    async def get_login_redirect(self) -> RedirectResponse:
+    async def _default_get_login_redirect(self) -> RedirectResponse:
         """Mock get_login_redirect method."""
         return RedirectResponse(url="https://accounts.google.com/oauth/authorize")
 
-    async def verify_and_process(self, request: Request) -> MockUserInfo:
+    async def _default_verify_and_process(self, _request: Request) -> MockUserInfo:
         """Mock verify_and_process method."""
         return MockUserInfo(email="test@example.com")
 
-    def __enter__(self):
+    def __enter__(self) -> "MockGoogleSSO":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc_val: BaseException | None,
+        _exc_tb: TracebackType | None,
+    ) -> None:
         pass
 
 
@@ -209,20 +219,22 @@ class TestJacAPIServerSSO:
             return_value=MockUserInfo(email="test@example.com")
         )
 
-        with patch.object(self.server, "get_sso", return_value=mock_sso):
-            with patch.object(
+        with (
+            patch.object(self.server, "get_sso", return_value=mock_sso),
+            patch.object(
                 self.server, "create_jwt_token", return_value="mock_jwt_token"
-            ):
-                result = await self.server.sso_callback(
-                    mock_request, Platforms.GOOGLE.value, Operations.LOGIN.value
-                )
+            ),
+        ):
+            result = await self.server.sso_callback(
+                mock_request, Platforms.GOOGLE.value, Operations.LOGIN.value
+            )
 
-                assert isinstance(result, JSONResponse)
-                body = result.body.decode("utf-8")
+            assert isinstance(result, JSONResponse)
+            body = result.body.decode("utf-8")
 
-                assert "Login successful" in body
-                assert "test@example.com" in body
-                assert "mock_jwt_token" in body
+            assert "Login successful" in body
+            assert "test@example.com" in body
+            assert "mock_jwt_token" in body
 
     @pytest.mark.asyncio
     async def test_sso_callback_register_success(self) -> None:
@@ -243,23 +255,25 @@ class TestJacAPIServerSSO:
             return_value=MockUserInfo(email="newuser@example.com")
         )
 
-        with patch.object(self.server, "get_sso", return_value=mock_sso):
-            with patch.object(
+        with (
+            patch.object(self.server, "get_sso", return_value=mock_sso),
+            patch.object(
                 self.server, "create_jwt_token", return_value="mock_jwt_token"
-            ):
-                with patch(
-                    "jac_scale.serve.generate_random_password",
-                    return_value="random_pass",
-                ):
-                    result = await self.server.sso_callback(
-                        mock_request, Platforms.GOOGLE.value, Operations.REGISTER.value
-                    )
+            ),
+            patch(
+                "jac_scale.serve.generate_random_password",
+                return_value="random_pass",
+            ),
+        ):
+            result = await self.server.sso_callback(
+                mock_request, Platforms.GOOGLE.value, Operations.REGISTER.value
+            )
 
-                    assert isinstance(result, JSONResponse)
-                    # Verify create_user was called with random password
-                    self.mock_user_manager.create_user.assert_called_once_with(
-                        "newuser@example.com", "random_pass"
-                    )
+            assert isinstance(result, JSONResponse)
+            # Verify create_user was called with random password
+            self.mock_user_manager.create_user.assert_called_once_with(
+                "newuser@example.com", "random_pass"
+            )
 
     @pytest.mark.asyncio
     async def test_sso_callback_login_user_not_found(self) -> None:
@@ -473,13 +487,13 @@ class TestJacAPIServerSSO:
     def test_platforms_enum(self) -> None:
         """Test Platforms enum values."""
         assert Platforms.GOOGLE.value == "google"
-        assert len([p for p in Platforms]) == 1  # Only Google is currently supported
+        assert len(list(Platforms)) == 1  # Only Google is currently supported
 
     def test_operations_enum(self) -> None:
         """Test Operations enum values."""
         assert Operations.LOGIN.value == "login"
         assert Operations.REGISTER.value == "register"
-        assert len([o for o in Operations]) == 2
+        assert len(list(Operations)) == 2
 
     def test_supported_platforms_initialization_with_credentials(self) -> None:
         """Test SUPPORTED_PLATFORMS initialization when credentials are provided."""
@@ -551,22 +565,24 @@ class TestJacAPIServerSSO:
             return_value=MockUserInfo(email=user_email)
         )
 
-        with patch.object(self.server, "get_sso", return_value=mock_sso):
-            with patch.object(
+        with (
+            patch.object(self.server, "get_sso", return_value=mock_sso),
+            patch.object(
                 self.server, "create_jwt_token", return_value="generated_token"
-            ) as mock_create_token:
-                result = await self.server.sso_callback(
-                    mock_request, Platforms.GOOGLE.value, Operations.LOGIN.value
-                )
+            ) as mock_create_token,
+        ):
+            result = await self.server.sso_callback(
+                mock_request, Platforms.GOOGLE.value, Operations.LOGIN.value
+            )
 
-                # Verify create_jwt_token was called with correct email
-                mock_create_token.assert_called_once_with(user_email)
+            # Verify create_jwt_token was called with correct email
+            mock_create_token.assert_called_once_with(user_email)
 
-                # Verify response contains the token
-                assert isinstance(result, JSONResponse)
-                body = result.body.decode("utf-8")
+            # Verify response contains the token
+            assert isinstance(result, JSONResponse)
+            body = result.body.decode("utf-8")
 
-                assert "generated_token" in body
+            assert "generated_token" in body
 
     @pytest.mark.asyncio
     async def test_sso_callback_register_token_generation(self) -> None:
@@ -588,23 +604,25 @@ class TestJacAPIServerSSO:
             return_value=MockUserInfo(email=user_email)
         )
 
-        with patch.object(self.server, "get_sso", return_value=mock_sso):
-            with patch.object(
+        with (
+            patch.object(self.server, "get_sso", return_value=mock_sso),
+            patch.object(
                 self.server, "create_jwt_token", return_value="new_user_token"
-            ) as mock_create_token:
-                with patch(
-                    "jac_scale.serve.generate_random_password",
-                    return_value="random_pass",
-                ):
-                    result = await self.server.sso_callback(
-                        mock_request, Platforms.GOOGLE.value, Operations.REGISTER.value
-                    )
+            ) as mock_create_token,
+            patch(
+                "jac_scale.serve.generate_random_password",
+                return_value="random_pass",
+            ),
+        ):
+            result = await self.server.sso_callback(
+                mock_request, Platforms.GOOGLE.value, Operations.REGISTER.value
+            )
 
-                    # Verify create_jwt_token was called with correct email
-                    mock_create_token.assert_called_once_with(user_email)
+            # Verify create_jwt_token was called with correct email
+            mock_create_token.assert_called_once_with(user_email)
 
-                    # Verify response contains the token
-                    assert isinstance(result, JSONResponse)
-                    body = result.body.decode("utf-8")
+            # Verify response contains the token
+            assert isinstance(result, JSONResponse)
+            body = result.body.decode("utf-8")
 
-                    assert "new_user_token" in body
+            assert "new_user_token" in body
