@@ -429,18 +429,20 @@ class TestJacAPIServerSSO:
             return_value=MockUserInfo(email="error@example.com")
         )
 
-        with patch.object(self.server, "get_sso", return_value=mock_sso):
-            with patch(
+        with (
+            patch.object(self.server, "get_sso", return_value=mock_sso),
+            patch(
                 "jac_scale.serve.generate_random_password", return_value="random_pass"
-            ):
-                result = await self.server.sso_callback(
-                    mock_request, Platforms.GOOGLE.value, Operations.REGISTER.value
-                )
+            ),
+        ):
+            result = await self.server.sso_callback(
+                mock_request, Platforms.GOOGLE.value, Operations.REGISTER.value
+            )
 
-                assert isinstance(result, JSONResponse)
-                body = result.body.decode("utf-8")
+            assert isinstance(result, JSONResponse)
+            body = result.body.decode("utf-8")
 
-                assert "Failed to create user" in body
+            assert "Failed to create user" in body
 
     def test_register_sso_endpoints(self) -> None:
         """Test SSO endpoints registration."""
