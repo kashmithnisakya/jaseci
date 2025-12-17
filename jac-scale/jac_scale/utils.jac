@@ -1,7 +1,6 @@
 import random;
 import string;
 
-
 """Generate a random password with specified length.
 
 Args:
