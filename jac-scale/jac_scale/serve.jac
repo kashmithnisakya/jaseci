@@ -19,6 +19,8 @@ import from jaclang.runtimelib.server { JacAPIServer as JServer }
 import from jaclang.runtimelib.server { JsonValue }
 import from enum { StrEnum }
 import from fastapi_sso.sso.google { GoogleSSO }
+import from jac_scale.utils { generate_random_password }
+
 
 glob JWT_SECRET = getenv('JWT_SECRET', 'supersecretkey');
 glob JWT_ALGORITHM = getenv('JWT_ALGORITHM', 'HS256');
@@ -388,7 +390,8 @@ class JacAPIServer(JServer) {
                             }
                         );
                     }
-                    result = self.user_manager.create_user(email, '__oauth_user__');
+                    random_password = generate_random_password();
+                    result = self.user_manager.create_user(email, random_password);
                     if ('error' in result) {
                         return JSONResponse(status_code=400, content=result);
                     }
