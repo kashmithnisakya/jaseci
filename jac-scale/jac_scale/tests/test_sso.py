@@ -2,8 +2,7 @@
 
 import contextlib
 from dataclasses import dataclass
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
 
 import pytest
@@ -146,7 +145,9 @@ class TestJacAPIServerSSO:
     @pytest.mark.asyncio
     async def test_sso_initiate_with_invalid_platform(self) -> None:
         """Test SSO initiation with invalid platform."""
-        result = await self.server.sso_initiate("invalid_platform", Operations.LOGIN.value)
+        result = await self.server.sso_initiate(
+            "invalid_platform", Operations.LOGIN.value
+        )
 
         assert isinstance(result, JSONResponse)
         # Extract body from JSONResponse
@@ -170,7 +171,9 @@ class TestJacAPIServerSSO:
     @pytest.mark.asyncio
     async def test_sso_initiate_with_invalid_operation(self) -> None:
         """Test SSO initiation with invalid operation."""
-        result = await self.server.sso_initiate(Platforms.GOOGLE.value, "invalid_operation")
+        result = await self.server.sso_initiate(
+            Platforms.GOOGLE.value, "invalid_operation"
+        )
 
         assert isinstance(result, JSONResponse)
         body = result.body.decode("utf-8")
@@ -244,7 +247,10 @@ class TestJacAPIServerSSO:
             with patch.object(
                 self.server, "create_jwt_token", return_value="mock_jwt_token"
             ):
-                with patch("jac_scale.serve.generate_random_password", return_value="random_pass"):
+                with patch(
+                    "jac_scale.serve.generate_random_password",
+                    return_value="random_pass",
+                ):
                     result = await self.server.sso_callback(
                         mock_request, Platforms.GOOGLE.value, Operations.REGISTER.value
                     )
@@ -424,7 +430,9 @@ class TestJacAPIServerSSO:
         )
 
         with patch.object(self.server, "get_sso", return_value=mock_sso):
-            with patch("jac_scale.serve.generate_random_password", return_value="random_pass"):
+            with patch(
+                "jac_scale.serve.generate_random_password", return_value="random_pass"
+            ):
                 result = await self.server.sso_callback(
                     mock_request, Platforms.GOOGLE.value, Operations.REGISTER.value
                 )
@@ -488,7 +496,9 @@ class TestJacAPIServerSSO:
 
             assert "google" in server.SUPPORTED_PLATFORMS
             assert server.SUPPORTED_PLATFORMS["google"]["client_id"] == "test_id"
-            assert server.SUPPORTED_PLATFORMS["google"]["client_secret"] == "test_secret"
+            assert (
+                server.SUPPORTED_PLATFORMS["google"]["client_secret"] == "test_secret"
+            )
 
     def test_supported_platforms_initialization_without_credentials(self) -> None:
         """Test SUPPORTED_PLATFORMS initialization when credentials are missing."""
@@ -580,7 +590,10 @@ class TestJacAPIServerSSO:
             with patch.object(
                 self.server, "create_jwt_token", return_value="new_user_token"
             ) as mock_create_token:
-                with patch("jac_scale.serve.generate_random_password", return_value="random_pass"):
+                with patch(
+                    "jac_scale.serve.generate_random_password",
+                    return_value="random_pass",
+                ):
                     result = await self.server.sso_callback(
                         mock_request, Platforms.GOOGLE.value, Operations.REGISTER.value
                     )
