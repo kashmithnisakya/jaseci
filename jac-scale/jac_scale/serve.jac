@@ -26,6 +26,7 @@ glob JWT_ALGORITHM = getenv('JWT_ALGORITHM', 'HS256');
 glob JWT_EXP_DELTA_DAYS = getenv('JWT_EXP_DELTA_DAYS', 7);
 glob SSO_HOST = getenv("SSO_HOST", "http://localhost:8000/sso");
 
+
 class Platforms(StrEnum) {
     has GOOGLE: str = 'google';
 }
