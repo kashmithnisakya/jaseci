@@ -8,9 +8,7 @@ import from . { types }
 """Represents a member of a class."""
 class ClassMember {
     """Initialize obviously."""
-    def __init__(
-        self: ClassMember, symbol: Symbol, class_type: types.ClassType
-    ) -> None {
+    def init(self: ClassMember, symbol: Symbol, class_type: types.ClassType) -> None {
         self.symbol = symbol;
         self.class_type = class_type;
         self.is_instance_member = True;
@@ -48,7 +46,7 @@ def compute_mro_linearization(cls: types.ClassType) -> None {
 """Tracks parameter assignments for function calls.\n\n    This class helps in tracking which parameters have been matched\n    with arguments in a function call. It supports positional, named,\n    *args, and **kwargs arguments.\n    """
 class ParamAssignmentTracker {
     """Initialize obviously."""
-    def __init__(self: ParamAssignmentTracker, params: list[types.Parameter]) -> None {
+    def init(self: ParamAssignmentTracker, params: list[types.Parameter]) -> None {
         self.params = params;
         self.curr_param_idx = 0;
         self.matched_params: set[types.Parameter] = <>set();
@@ -309,4 +307,20 @@ def lookup_symtab(
         mod.parent_scope = builtins_to_inject;
     }
     return symtable.lookup(name, deep=True, incl_inner_scope=True);
+}
+
+"""Determine if a class implements a protocol.
+
+This is a placeholder function and should be implemented based on
+the specific requirements for protocol conformance checking.
+"""
+def class_implements_protocol(cls: types.ClassType, proto: types.ClassType) -> bool {
+    cls_ast: uni.Archetype = cls.shared.symbol_table;
+    proto_ast: uni.Archetype = proto.shared.symbol_table;
+
+    # FIXME: For now I'm only checking if method names are equal
+    # However we need to check the full signature compatibility.
+    cls_method_names = {method.sym_name for method in cls_ast.get_methods()};
+    proto_method_names = {method.sym_name for method in proto_ast.get_methods()};
+    return proto_method_names.issubset(cls_method_names);
 }

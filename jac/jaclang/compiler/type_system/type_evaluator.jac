@@ -43,72 +43,64 @@ glob DiagnosticCallback = Callable[
 
 """Types whose definitions are prefetched and cached by the type evaluator."""
 obj PrefetchedTypes {
-    has none_type_class: TypeBase | None = None;
-    has object_class: TypeBase | None = None;
-    has type_class: TypeBase | None = None;
-    has union_type_class: TypeBase | None = None;
-    has awaitable_class: TypeBase | None = None;
-    has function_class: TypeBase | None = None;
-    has method_class: TypeBase | None = None;
-    has tuple_class: TypeBase | None = None;
-    has bool_class: TypeBase | None = None;
-    has int_class: TypeBase | None = None;
-    has float_class: TypeBase | None = None;
-    has str_class: TypeBase | None = None;
-    has dict_class: TypeBase | None = None;
-    has module_type_class: TypeBase | None = None;
-    has typed_dict_class: TypeBase | None = None;
-    has typed_dict_private_class: TypeBase | None = None;
-    has supports_keys_and_get_item_class: TypeBase | None = None;
-    has mapping_class: TypeBase | None = None;
-    has template_class: TypeBase | None = None;
-    has type_var_class: TypeBase | None = None;
-    # Prefetched from jac_builtins.pyi file
-    has root_class: TypeBase | None = None;
+    has none_type_class: TypeBase | None = None,
+        object_class: TypeBase | None = None,
+        type_class: TypeBase | None = None,
+        union_type_class: TypeBase | None = None,
+        awaitable_class: TypeBase | None = None,
+        function_class: TypeBase | None = None,
+        method_class: TypeBase | None = None,
+        tuple_class: TypeBase | None = None,
+        bool_class: TypeBase | None = None,
+        int_class: TypeBase | None = None,
+        float_class: TypeBase | None = None,
+        str_class: TypeBase | None = None,
+        dict_class: TypeBase | None = None,
+        module_type_class: TypeBase | None = None,
+        typed_dict_class: TypeBase | None = None,
+        typed_dict_private_class: TypeBase | None = None,
+        supports_keys_and_get_item_class: TypeBase | None = None,
+        mapping_class: TypeBase | None = None,
+        template_class: TypeBase | None = None,
+        type_var_class: TypeBase | None = None,
+        # Prefetch from typing.pyi file
+        protocol_class: TypeBase | None = None,
+        # Prefetched from jac_builtins.pyi file
+        root_class: TypeBase | None = None;
 }
 
 """Represents a single entry in the symbol resolution stack."""
 obj SymbolResolutionStackEntry {
-    has symbol: uni.Symbol;
-    # Initially true, it's set to false if a recursion
-    # is detected.
-    has is_result_valid: bool = True;
-    # Some limited forms of recursion are allowed. In these
-    # cases, a partially-constructed type can be registered.
-    has partial_type: TypeBase | None = None;
+    has symbol: uni.Symbol,
+        # Initially true, it's set to false if a recursion
+        # is detected.
+        is_result_valid: bool = True,
+        # Some limited forms of recursion are allowed. In these
+        # cases, a partially-constructed type can be registered.
+        partial_type: TypeBase | None = None;
 }
 
 """Result of matching arguments to parameters."""
 obj MatchArgsToParamsResult {
-    # FIXME: This class implementation is modified from pyright to make it
-    # simple and work for now, however this needs to be revisited and
-    # implemented properly.
-    has arg_params: dict[uni.Expr | uni.KWPair, types.Parameter | None];
-    has overload: types.FunctionType | None = None;
-    has argument_errors: bool = False;
+    has arg_params: dict[(uni.Expr | uni.KWPair, types.Parameter | None)],
+        overload: types.FunctionType | None = None,
+        argument_errors: bool = False;
 }
 
 """Type evaluator for JacLang."""
 class TypeEvaluator {
-    # NOTE: This is done in the binder pass of pyright, however I'm doing this
-    # here, cause this will be the entry point of the type checker and we're not
-    # relying on the binder pass at the moment and we can go back to binder pass
-    # in the future if we needed it.
     has _BUILTINS_STUB_FILE_PATH: str = os.path.join(
-        os.path.dirname(__file__), "../../vendor/typeshed/stdlib/builtins.pyi",
-    );
-
-    has _TYPING_STUB_FILE_PATH: str = os.path.join(
-        os.path.dirname(__file__), "../../vendor/typeshed/stdlib/typing.pyi",
-    );
-
-    has _TYPES_STUB_FILE_PATH: str = os.path.join(
-        os.path.dirname(__file__), "../../vendor/typeshed/stdlib/types.pyi",
-    );
-
-    has _JAC_BUILTINS_STUB_FILE_PATH: str = os.path.join(
-        os.path.dirname(__file__), "jac_builtins.pyi",
-    );
+        os.path.dirname(__file__), "../../vendor/typeshed/stdlib/builtins.pyi"
+    ),
+        _TYPING_STUB_FILE_PATH: str = os.path.join(
+            os.path.dirname(__file__), "../../vendor/typeshed/stdlib/typing.pyi"
+        ),
+        _TYPES_STUB_FILE_PATH: str = os.path.join(
+            os.path.dirname(__file__), "../../vendor/typeshed/stdlib/types.pyi"
+        ),
+        _JAC_BUILTINS_STUB_FILE_PATH: str = os.path.join(
+            os.path.dirname(__file__), "jac_builtins.pyi"
+        );
 
     """Initialize the type evaluator with prefetched types.
 
@@ -120,7 +112,7 @@ class TypeEvaluator {
     in some place then it will not be available in the evaluator, So we
     are prefetching the builtins at the constructor level once.
     """
-    def __init__(self: TypeEvaluator, program: "JacProgram") -> None {
+    def init(self: TypeEvaluator, program: "JacProgram") -> None {
         self.program = program;
         self.symbol_resolution_stack: list[SymbolResolutionStackEntry] = [];
         self.prefetch: PrefetchedTypes = PrefetchedTypes();
@@ -184,6 +176,8 @@ class TypeEvaluator {
     def _prefetch_types(self: TypeEvaluator) {
         get_types_type = lambda  type_name: str  -> types.TypeBase:
             self._get_type_from_module(self.types_module, type_name);
+        get_typing_type = lambda  type_name: str  -> types.TypeBase:
+            self._get_type_from_module(self.typing_module, type_name);
         get_builtin_type = lambda  type_name: str  -> types.TypeBase:
             self._get_type_from_module(self.builtins_module, type_name);
         get_jac_builtin_type = lambda  type_name: str  -> types.TypeBase:
@@ -210,6 +204,8 @@ class TypeEvaluator {
         # self.prefetch.supports_keys_and_get_item_class =
         # self.prefetch.mapping_class =
         # self.prefetch.template_class =
+        self.prefetch.protocol_class = get_typing_type("Protocol");
+
         self.prefetch.root_class = get_jac_builtin_type("Root");
         self.prefetch.root_class.shared.is_root_class = True;
     }
@@ -290,11 +286,17 @@ class TypeEvaluator {
     # for the following functions.
     """Import a module from the given path."""
     def _import_module_from_path(self: TypeEvaluator, path: str) -> uni.Module {
+        # -----------------------------------------------------------------------
+        # TODO: Implement stub file resolution properly, this is a ad-hoc mess.
         # FIXME: This is ad-hoc way to override the typeing.py with typeing.pyi file
         # implemented to make it work for now, please revisit this and implement it properly.
         if path.endswith("typing.py") {
             path = TypeEvaluator._TYPING_STUB_FILE_PATH;
         }
+        if path.endswith("abc.py") {
+            path = TypeEvaluator._TYPING_STUB_FILE_PATH;
+        }
+        # -----------------------------------------------------------------------
 
         # Get the module, if it's not loaded yet, compile and get it.
         #
@@ -744,6 +746,17 @@ class TypeEvaluator {
         return None;
     }
 
+    def is_sub_class(
+        self: TypeEvaluator, super_cls: types.ClassType, sub_cls: types.ClassType
+    ) -> bool {
+        for cls in sub_cls.shared.mro {
+            if cls.shared == super_cls.shared {
+                return True;
+            }
+        }
+        return False;
+    }
+
     """Assign the source class type to the destination class type."""
     def _assign_class(
         self: TypeEvaluator, src_type: types.ClassType, dest_type: types.ClassType
@@ -753,10 +766,8 @@ class TypeEvaluator {
         }
 
         # Check if src class is a subclass of dest class.
-        for base_cls in src_type.shared.mro {
-            if base_cls.shared == dest_type.shared {
-                return True;
-            }
+        if self.is_sub_class(dest_type, src_type) {
+            return True;
         }
 
         # Everything is assignable to an object.
@@ -771,7 +782,18 @@ class TypeEvaluator {
             return True;
         }
 
-        # TODO: Search base classes and everything else pyright is doing.
+        # Check if dest_type is a protocol and src_type implements it.
+        for base_cls in dest_type.shared.base_classes {
+            if base_cls.shared == self.prefetch.protocol_class.shared {
+                if type_utils.class_implements_protocol(src_type, dest_type) {
+                    return True;
+                }
+                # TODO: The dest_class can have other base classes as well, do this
+                # Recursively.
+                break;
+            }
+        }
+
         return False;
     }
 
@@ -1460,3 +1482,11 @@ class TypeEvaluator {
         );
     }
 }
+# FIXME: This class implementation is modified from pyright to make it
+# simple and work for now, however this needs to be revisited and
+# implemented properly.
+
+# NOTE: This is done in the binder pass of pyright, however I'm doing this
+# here, cause this will be the entry point of the type checker and we're not
+# relying on the binder pass at the moment and we can go back to binder pass
+# in the future if we needed it.

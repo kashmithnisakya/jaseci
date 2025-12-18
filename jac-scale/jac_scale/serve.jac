@@ -21,6 +21,7 @@ import from enum { StrEnum }
 import from fastapi_sso.sso.google { GoogleSSO }
 import from jac_scale.utils { generate_random_password }
 
+
 glob JWT_SECRET = getenv('JWT_SECRET', 'supersecretkey');
 glob JWT_ALGORITHM = getenv('JWT_ALGORITHM', 'HS256');
 glob JWT_EXP_DELTA_DAYS = getenv('JWT_EXP_DELTA_DAYS', 7);
@@ -75,7 +76,7 @@ class JacAPIServer(JServer) {
         }
     }
 
-    def __init__(
+    def init(
         self: JacAPIServer,
         module_name: str,
         session_path: str,
@@ -705,7 +706,7 @@ class JacAPIServer(JServer) {
 
     """Create callback to serve the client.js file."""
     def serve_client_js_callback(self: JacAPIServer) -> Callable[..., Response] {
-        def callback()  -> Response {
+        def callback -> Response {
             try {
                 self.introspector.load();
                 self.introspector.ensure_bundle();
@@ -890,7 +891,7 @@ class JacAPIServer(JServer) {
     """Configure OpenAPI security scheme to only apply to walker endpoints that require auth."""
     def _configure_openapi_security(self: JacAPIServer) -> None {
         import from fastapi.openapi.utils { get_openapi }
-        def custom_openapi()  -> dict[str, Any] {
+        def custom_openapi -> dict[str, Any] {
             if self.server_impl.app.openapi_schema {
                 return self.server_impl.app.openapi_schema;
             }
