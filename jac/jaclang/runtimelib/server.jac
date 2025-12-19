@@ -247,4 +247,5 @@ class JacAPIServer {
     def start(self: JacAPIServer) -> None;
 }
 
+"""Print comprehensive documentation for all endpoints that would be generated."""
 def print_endpoint_docs(server: JacAPIServer) -> None;

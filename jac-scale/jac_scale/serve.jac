@@ -36,45 +36,9 @@ class Operations(StrEnum) {
 }
 
 class JacAPIServer(JServer) {
-    static def create_jwt_token(username: str) -> str {
-        now = datetime.now(UTC);
-        payload: dict[(str, Any)] = {
-            'username': username,
-            'exp': (now + timedelta(days=JWT_EXP_DELTA_DAYS)),
-            'iat': now.timestamp()
-        };
-        return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM);
-    }
-
-    static def validate_jwt_token(token: str) -> (str | None) {
-        try {
-            decoded = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM]);
-            return decoded['username'];
-        } except Exception {
-            return None;
-        }
-    }
-
-    static def refresh_jwt_token(token: str) -> (str | None) {
-        try {
-            decoded = jwt.decode(
-                token,
-                JWT_SECRET,
-                algorithms=[JWT_ALGORITHM],
-                options={"verify_exp": True}
-            );
-            username = decoded.get('username');
-
-            if not username {
-                return None;
-            }
-
-            return JacAPIServer.create_jwt_token(username);
-        } except Exception {
-            return None;
-        }
-    }
-
+    static def create_jwt_token(username: str) -> str;
+    static def validate_jwt_token(token: str) -> (str | None);
+    static def refresh_jwt_token(token: str) -> (str | None);
     def init(
         self: JacAPIServer,
         module_name: str,
@@ -471,141 +435,16 @@ class JacAPIServer(JServer) {
 
     def create_walker_callback(
         self: JacAPIServer, walker_name: str, has_node_param: bool = False
-    ) -> Callable[..., dict[(str, JsonValue)]] {
-        requires_auth = self.introspector.is_auth_required_for_walker(walker_name);
-        def callback(
-            node: (str | None) = None, **kwargs: JsonValue
-        ) -> dict[str, JsonValue] {
-            username: (str | None) = None;
-            if requires_auth {
-                authorization = kwargs.pop('Authorization', None);
-                token: (str | None) = None;
-                if (
-                    authorization
-                    and isinstance(authorization, str)
-                    and authorization.startswith('Bearer ')
-                ) {
-                    token = authorization[7:];
-                }
-                username = self.validate_jwt_token(token) if token else None;
-                if not username {
-                    return {'error': 'Unauthorized', 'status': 401};
-                }
-            }
-            if node {
-                kwargs['_jac_spawn_node'] = node;
-            }
-            return self.execution_manager.spawn_walker(
-                self.get_walkers()[walker_name], kwargs, (username or '__guest__')
-            );
-        }
-        return callback;
-    }
+    ) -> Callable[..., dict[(str, JsonValue)]];
 
     def create_walker_parameters(
         self: JacAPIServer, walker_name: str, invoke_on_root: bool
-    ) -> list[APIParameter] {
-        parameters: list[APIParameter] = [];
-        if self.introspector.is_auth_required_for_walker(walker_name) {
-            parameters.append(
-                APIParameter(
-                    name='Authorization',
-                    data_type='string',
-                    required=False,
-                    default=None,
-                    description='Bearer token for authentication',
-                    type=ParameterType.HEADER
-                )
-            );
-        }
-        walker_fields = self.introspector.introspect_walker(
-            self.get_walkers()[walker_name]
-        )['fields'];
-        for field_name in walker_fields {
-            if ((field_name == '_jac_spawn_node') and invoke_on_root) {
-                continue;
-            }
-            parameters.append(
-                APIParameter(
-                    name='node' if (field_name == '_jac_spawn_node') else field_name,
-                    data_type=walker_fields[field_name]['type'],
-                    required=walker_fields[field_name]['required'],
-                    default=walker_fields[field_name]['default'],
-                    description=f"Field {field_name} for walker {walker_name}",
-                    type=ParameterType.BODY
-                    if (field_name != '_jac_spawn_node')
-                    else ParameterType.PATH
-                )
-            );
-        }
-        return parameters;
-    }
+    ) -> list[APIParameter];
 
-    def register_walkers_endpoints(self: JacAPIServer) -> None {
-        for walker_name in self.get_walkers() {
-            self.server_impl.add_endpoint(
-                JEndPoint(
-                    method=HTTPMethod.POST,
-                    path=f"/walker/{walker_name}/{{node}}",
-                    callback=self.create_walker_callback(
-                        walker_name, has_node_param=True
-                    ),
-                    parameters=self.create_walker_parameters(
-                        walker_name, invoke_on_root=False
-                    ),
-                    response_model=None,
-                    tags=['Walkers'],
-                    summary='API Entry',
-                    description='API Entry'
-                )
-            );
-            self.server_impl.add_endpoint(
-                JEndPoint(
-                    method=HTTPMethod.POST,
-                    path=f"/walker/{walker_name}",
-                    callback=self.create_walker_callback(
-                        walker_name, has_node_param=False
-                    ),
-                    parameters=self.create_walker_parameters(
-                        walker_name, invoke_on_root=True
-                    ),
-                    response_model=None,
-                    tags=['Walkers'],
-                    summary='API Root',
-                    description='API Root'
-                )
-            );
-        }
-    }
-
+    def register_walkers_endpoints(self: JacAPIServer) -> None;
     def create_function_callback(
         self: JacAPIServer, func_name: str
-    ) -> Callable[..., dict[(str, JsonValue)]] {
-        requires_auth = self.introspector.is_auth_required_for_function(func_name);
-        def callback( **kwargs: JsonValue)  -> dict[str, JsonValue] {
-            username: (str | None) = None;
-            if requires_auth {
-                authorization = kwargs.pop('Authorization', None);
-                token: (str | None) = None;
-                if (
-                    authorization
-                    and isinstance(authorization, str)
-                    and authorization.startswith('Bearer ')
-                ) {
-                    token = authorization[7:];
-                }
-                username = self.validate_jwt_token(token) if token else None;
-                if not username {
-                    return {'error': 'Unauthorized', 'status': 401};
-                }
-            }
-            print(f"Executing function '{func_name}' with params: {kwargs}");
-            return self.execution_manager.execute_function(
-                self.get_functions()[func_name], kwargs, (username or '__guest__')
-            );
-        }
-        return callback;
-    }
+    ) -> Callable[..., dict[(str, JsonValue)]];
 
     def create_function_parameters(
         self: JacAPIServer, func_name: str

@@ -189,60 +189,9 @@ class JFastApiServer(JServer[FastAPI]) {
     """
     def _create_fastapi_route(
         self: JFastApiServer, method: HTTPMethod, endpoint: JEndPoint
-    ) -> None {
-        endpoint_func = self._create_endpoint_function(
-            endpoint.callback, (endpoint.parameters or []), []
-        );
-        route_kwargs: dict[(str, Any)] = {
-            'response_model': endpoint.response_model,
-            'status_code': self._get_default_status_code(method),
-            'summary': (endpoint.summary or f"{method.value} {endpoint.path}"),
-            'description': (
-                endpoint.description or endpoint.callback.__doc__
-                if endpoint.callback.__doc__
-                else ''
-            ),
-            'tags': (endpoint.tags or [])
-        };
-        try {
-            hints = get_type_hints(endpoint.callback);
-            return_type = hints.get('return');
-            if (
-                return_type
-                and isinstance(return_type, <>type)
-                and issubclass(return_type, Response)
-            ) {
-                route_kwargs['response_class'] = return_type;
-            }
-        } except Exception {
-            ;
-        }
-        if (method == HTTPMethod.GET) {
-            self.app.get(endpoint.path, **route_kwargs)(endpoint_func);
-        } elif (method == HTTPMethod.POST) {
-            self.app.post(endpoint.path, **route_kwargs)(endpoint_func);
-        } elif (method == HTTPMethod.PUT) {
-            self.app.put(endpoint.path, **route_kwargs)(endpoint_func);
-        } elif (method == HTTPMethod.PATCH) {
-            self.app.patch(endpoint.path, **route_kwargs)(endpoint_func);
-        } elif (method == HTTPMethod.DELETE) {
-            self.app.delete(endpoint.path, **route_kwargs)(endpoint_func);
-        }
-    }
+    ) -> None;
 
-    """Get the default status code for an HTTP method."""
-    def _get_default_status_code(self: JFastApiServer, method: HTTPMethod) -> int {
-        status_codes = {
-            HTTPMethod.GET: 200,
-            HTTPMethod.POST: 200,
-            HTTPMethod.PUT: 200,
-            HTTPMethod.PATCH: 200,
-            HTTPMethod.DELETE: 204
-        };
-        return status_codes.get(method, 200);
-    }
-
-    """Create the actual endpoint function with parameter injection."""
+    def _get_default_status_code(self: JFastApiServer, method: HTTPMethod) -> int;
     def _create_endpoint_function(
         self: JFastApiServer,
         callback: Callable[(..., Any)],
@@ -523,48 +472,10 @@ def endpoint_wrapper({params}):
     """Create a Pydantic response model from configuration."""
     def _create_response_model(
         self: JFastApiServer, response_config: (dict[(str, Any)] | None) = None
-    ) -> (type[BaseModel] | None) {
-        if not response_config {
-            return None;
-        }
-        model_name = response_config.get('name', 'ResponseModel');
-        fields = response_config.get('fields', {});
-        if not fields {
-            return None;
-        }
-        pydantic_fields: dict[(str, Any)] = {};
-        for (field_name, field_config) in fields.items() {
-            field_type = self._get_python_type(field_config.get('type', 'str'));
-            required = field_config.get('required', True);
-            description = field_config.get('description', '');
-            if required {
-                pydantic_fields[field_name] = (
-                    field_type,
-                    Field(..., description=description)
-                );
-            } else {
-                default_value = field_config.get('default');
-                pydantic_fields[field_name] = (
-                    (field_type | None),
-                    Field(default_value, description=description)
-                );
-            }
-        }
-        model = create_model(model_name, **pydantic_fields);
-        self._models[model_name] = model;
-        return model;
-    }
+    ) -> (type[BaseModel] | None);
 
-    """Get the underlying FastAPI application instance."""
-    def get_app(self: JFastApiServer) -> FastAPI {
-        return self.app;
-    }
-
-    """Run the FastAPI server using Uvicorn."""
+    def get_app(self: JFastApiServer) -> FastAPI;
     def run_server(
         self: JFastApiServer, host: str = '0.0.0.0', port: int = 8000
-    ) -> None {
-        app = self.create_server();
-        uvicorn.run(app, host=host, port=port);
-    }
+    ) -> None;
 }
