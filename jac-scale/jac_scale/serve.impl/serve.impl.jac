@@ -690,15 +690,13 @@ impl JacAPIServer.create_jwt_token(username: str) -> str {
 }
 
 impl JacAPIServer.get_sso(
-        self: JacAPIServer, platform: str, operation: str
-    ) -> (GoogleSSO | None) {
+    self: JacAPIServer, platform: str, operation: str
+) -> (GoogleSSO | None) {
     if (platform not in self.SUPPORTED_PLATFORMS) {
         return None;
     }
-
     credentials = self.SUPPORTED_PLATFORMS[platform];
     redirect_uri = f"{SSO_HOST}/{platform}/{operation}/callback";
-
     if (platform == Platforms.GOOGLE.value) {
         return GoogleSSO(
             client_id=credentials['client_id'],
@@ -710,10 +708,9 @@ impl JacAPIServer.get_sso(
     return None;
 }
 
-
 impl JacAPIServer.sso_initiate(
-        self: JacAPIServer, platform: str, operation: str
-    ) -> Response {
+    self: JacAPIServer, platform: str, operation: str
+) -> Response {
     if (platform not in [p.value for p in Platforms]) {
         return JSONResponse(
             status_code=400,
@@ -744,9 +741,7 @@ impl JacAPIServer.sso_initiate(
     if not sso {
         return JSONResponse(
             status_code=500,
-            content={
-                'error': f"Failed to initialize SSO for platform '{platform}'"
-            }
+            content={'error': f"Failed to initialize SSO for platform '{platform}'"}
         );
     }
     with sso {
@@ -754,10 +749,9 @@ impl JacAPIServer.sso_initiate(
     }
 }
 
-
 impl JacAPIServer.sso_callback(
-        self: JacAPIServer, request: Request, platform: str, operation: str
-    ) -> JSONResponse {
+    self: JacAPIServer, request: Request, platform: str, operation: str
+) -> JSONResponse {
     if (platform not in [p.value for p in Platforms]) {
         return JSONResponse(
             status_code=400,
@@ -784,17 +778,13 @@ impl JacAPIServer.sso_callback(
             }
         );
     }
-
     sso = self.get_sso(platform, operation);
     if not sso {
         return JSONResponse(
             status_code=500,
-            content={
-                'error': f"Failed to initialize SSO for platform '{platform}'"
-            }
+            content={'error': f"Failed to initialize SSO for platform '{platform}'"}
         );
     }
-
     try {
         with sso {
             user_info = await sso.verify_and_process(request);
@@ -829,9 +819,7 @@ impl JacAPIServer.sso_callback(
                 if existing_user {
                     return JSONResponse(
                         status_code=400,
-                        content={
-                            'error': 'User already exists. Please login instead.'
-                        }
+                        content={'error': 'User already exists. Please login instead.'}
                     );
                 }
                 random_password = generate_random_password();

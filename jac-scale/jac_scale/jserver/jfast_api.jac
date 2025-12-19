@@ -71,6 +71,7 @@ class JFastApiServer(JServer[FastAPI]) {
     def _route_priority(
         self: JFastApiServer, endpoint: JEndPoint
     ) -> tuple[int, int, int, str];
+
     def execute(self: JFastApiServer) -> None;
     def create_server(self: JFastApiServer) -> FastAPI;
     def _create_fastapi_route(

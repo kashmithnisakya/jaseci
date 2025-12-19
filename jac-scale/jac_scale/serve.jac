@@ -58,12 +58,15 @@ class JacAPIServer(JServer) {
     def get_sso(
         self: JacAPIServer, platform: str, operation: str
     ) -> (GoogleSSO | None);
+
     async def sso_initiate(
         self: JacAPIServer, platform: str, operation: str
     ) -> Response;
+
     async def sso_callback(
         self: JacAPIServer, request: Request, platform: str, operation: str
     ) -> JSONResponse;
+
     def register_sso_endpoints(self: JacAPIServer) -> None;
     def create_walker_callback(
         self: JacAPIServer, walker_name: str, has_node_param: bool = False

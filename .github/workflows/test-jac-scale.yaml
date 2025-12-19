@@ -38,7 +38,7 @@ jobs:
       - name: Run jac-client examples
         run: |
           pytest -v jac-scale/jac_scale/tests/test_examples.py
-          
+
       - name: Run SSO tests
         run: |
           pytest -v jac-scale/jac_scale/tests/test_sso.py
