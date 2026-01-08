@@ -1,3 +1,4 @@
+"""REST API Server for Jac Programs."""
 import hashlib;
 import html;
 import inspect;
