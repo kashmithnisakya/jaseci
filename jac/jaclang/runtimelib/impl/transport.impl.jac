@@ -35,7 +35,7 @@ impl TransportResponse.fail(
 }
 
 """HTTP is stateless - nothing to connect."""
-impl HTTPTransport.connect -> None {}
+impl HTTPTransport.connect -> None { }
 
 """Serialize and send HTTP response. Converts TransportResponse to HTTP format."""
 impl HTTPTransport.send(data: Any) -> None {
@@ -92,10 +92,10 @@ impl HTTPTransport.send(data: Any) -> None {
 }
 
 """HTTP is stateless - nothing to close."""
-impl HTTPTransport.close -> None {}
+impl HTTPTransport.close -> None { }
 
 """SSE is stateless - nothing to connect."""
-impl StreamTransport.connect -> None {}
+impl StreamTransport.connect -> None { }
 
 """Push data to the queue for SSE streaming."""
 impl StreamTransport.send(data: Any) -> None {
