@@ -297,7 +297,7 @@ def test_create_and_list_tweets(littlex_server) -> None:
         {"content": "Hello World! This is my first tweet!"},
         token=alice_token,
     )
-    assert "result" in tweet1 or "reports" in tweet1
+    assert "result" in tweet1 or "reports" in tweet1.get("data", {})
 
     tweet2 = littlex_server["request"](
         "POST",
@@ -305,7 +305,7 @@ def test_create_and_list_tweets(littlex_server) -> None:
         {"content": "Having a great day coding in Jac!"},
         token=alice_token,
     )
-    assert "result" in tweet2 or "reports" in tweet2
+    assert "result" in tweet2 or "reports" in tweet2.get("data", {})
 
     tweet3 = littlex_server["request"](
         "POST",
@@ -313,7 +313,7 @@ def test_create_and_list_tweets(littlex_server) -> None:
         {"content": "Check out this amazing project!"},
         token=alice_token,
     )
-    assert "result" in tweet3 or "reports" in tweet3
+    assert "result" in tweet3 or "reports" in tweet3.get("data", {})
 
     print("✓ Tweet creation test passed")
 
@@ -350,7 +350,7 @@ def test_like_and_unlike_tweets(littlex_server) -> None:
         {"content": "Like this tweet!"},
         token=alice_token,
     )
-    assert "result" in tweet_result or "reports" in tweet_result
+    assert "result" in tweet_result or "reports" in tweet_result.get("data", {})
 
     print("✓ Like/unlike tweet test structure created")
 
@@ -387,7 +387,7 @@ def test_comment_on_tweets(littlex_server) -> None:
         {"content": "What do you think about this?"},
         token=alice_token,
     )
-    assert "result" in tweet_result or "reports" in tweet_result
+    assert "result" in tweet_result or "reports" in tweet_result.get("data", {})
 
     print("✓ Comment on tweet test structure created")
 
