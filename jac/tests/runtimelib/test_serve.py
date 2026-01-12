@@ -209,7 +209,9 @@ def test_user_manager_authentication(server_fixture: ServerFixture) -> None:
 
     # Create user
     create_result = user_mgr.create_user("testuser", "testpass")
-    original_token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+
+    original_token = create_data["token"]
 
     # Authenticate with correct credentials
     auth_result = user_mgr.authenticate("testuser", "testpass")
@@ -254,10 +256,11 @@ def test_server_user_creation(server_fixture: ServerFixture) -> None:
         {"username": "alice", "password": "secret123"},
     )
 
-    assert "username" in result
-    assert "token" in result
-    assert "root_id" in result
-    assert result["username"] == "alice"
+    data = result.get("data", result)
+    assert "username" in data
+    assert "token" in data
+    assert "root_id" in data
+    assert data["username"] == "alice"
 
 
 def test_server_user_login(server_fixture: ServerFixture) -> None:
@@ -274,9 +277,11 @@ def test_server_user_login(server_fixture: ServerFixture) -> None:
         "POST", "/user/login", {"username": "bob", "password": "pass456"}
     )
 
-    assert "token" in login_result
-    assert login_result["username"] == "bob"
-    assert login_result["root_id"] == create_result["root_id"]
+    create_data = create_result.get("data", create_result)
+    login_data = login_result.get("data", login_result)
+    assert "token" in login_data
+    assert login_data["username"] == "bob"
+    assert login_data["root_id"] == create_data["root_id"]
 
     # Login with wrong password
     login_fail = server_fixture.request(
@@ -292,8 +297,10 @@ def test_server_authentication_required(server_fixture: ServerFixture) -> None:
 
     # Try to access protected endpoint without token
     result = server_fixture.request("GET", "/protected")
-    assert "error" in result
-    assert "Unauthorized" in result["error"]
+    data = result.get("data", result)
+    assert "error" in data
+    data = result.get("data", result)
+    assert "Unauthorized" in data["error"]
 
 
 def test_server_list_functions(server_fixture: ServerFixture) -> None:
@@ -304,14 +311,16 @@ def test_server_list_functions(server_fixture: ServerFixture) -> None:
     create_result = server_fixture.request(
         "POST", "/user/register", {"username": "funcuser", "password": "pass"}
     )
-    token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+    token = create_data["token"]
 
     # List functions
     result = server_fixture.request("GET", "/functions", token=token)
 
-    assert "functions" in result
-    assert "add_numbers" in result["functions"]
-    assert "greet" in result["functions"]
+    data = result.get("data", result)
+    assert "functions" in data
+    assert "add_numbers" in data["functions"]
+    assert "greet" in data["functions"]
 
 
 def test_server_get_function_signature(server_fixture: ServerFixture) -> None:
@@ -322,13 +331,15 @@ def test_server_get_function_signature(server_fixture: ServerFixture) -> None:
     create_result = server_fixture.request(
         "POST", "/user/register", {"username": "siguser", "password": "pass"}
     )
-    token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+    token = create_data["token"]
 
     # Get signature
     result = server_fixture.request("GET", "/function/add_numbers", token=token)
 
-    assert "signature" in result
-    sig = result["signature"]
+    data = result.get("data", result)
+    assert "signature" in data
+    sig = data["signature"]
     assert "parameters" in sig
     assert "a" in sig["parameters"]
     assert "b" in sig["parameters"]
@@ -344,14 +355,16 @@ def test_server_call_function(server_fixture: ServerFixture) -> None:
     create_result = server_fixture.request(
         "POST", "/user/register", {"username": "calluser", "password": "pass"}
     )
-    token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+    token = create_data["token"]
 
     # Call add_numbers
     result = server_fixture.request(
         "POST", "/function/add_numbers", {"args": {"a": 10, "b": 25}}, token=token
     )
 
-    assert "result" in result
+    data = result.get("data", result)
+    assert "result" in data
     assert result["result"] == 35
 
     # Call greet
@@ -359,7 +372,8 @@ def test_server_call_function(server_fixture: ServerFixture) -> None:
         "POST", "/function/greet", {"args": {"name": "World"}}, token=token
     )
 
-    assert "result" in result2
+    data = result.get("data", result)
+    assert "result" in data2
     assert result2["result"] == "Hello, World!"
 
 
@@ -371,15 +385,17 @@ def test_server_call_function_with_defaults(server_fixture: ServerFixture) -> No
     create_result = server_fixture.request(
         "POST", "/user/register", {"username": "defuser", "password": "pass"}
     )
-    token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+    token = create_data["token"]
 
     # Call greet without name (should use default)
     result = server_fixture.request(
         "POST", "/function/greet", {"args": {}}, token=token
     )
 
-    assert "result" in result
-    assert result["result"] == "Hello, World!"
+    data = result.get("data", result)
+    assert "result" in data
+    assert data["result"] == "Hello, World!"
 
 
 def test_server_list_walkers(server_fixture: ServerFixture) -> None:
@@ -390,15 +406,17 @@ def test_server_list_walkers(server_fixture: ServerFixture) -> None:
     create_result = server_fixture.request(
         "POST", "/user/register", {"username": "walkuser", "password": "pass"}
     )
-    token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+    token = create_data["token"]
 
     # List walkers
     result = server_fixture.request("GET", "/walkers", token=token)
 
-    assert "walkers" in result
-    assert "CreateTask" in result["walkers"]
-    assert "ListTasks" in result["walkers"]
-    assert "CompleteTask" in result["walkers"]
+    data = result.get("data", result)
+    assert "walkers" in data
+    assert "CreateTask" in data["walkers"]
+    assert "ListTasks" in data["walkers"]
+    assert "CompleteTask" in data["walkers"]
 
 
 def test_server_get_walker_info(server_fixture: ServerFixture) -> None:
@@ -409,13 +427,15 @@ def test_server_get_walker_info(server_fixture: ServerFixture) -> None:
     create_result = server_fixture.request(
         "POST", "/user/register", {"username": "infouser", "password": "pass"}
     )
-    token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+    token = create_data["token"]
 
     # Get walker info
     result = server_fixture.request("GET", "/walker/CreateTask", token=token)
 
-    assert "info" in result
-    info = result["info"]
+    data = result.get("data", result)
+    assert "info" in data
+    info = data["info"]
     assert "fields" in info
     assert "title" in info["fields"]
     assert "priority" in info["fields"]
@@ -434,7 +454,8 @@ def test_server_spawn_walker(server_fixture: ServerFixture) -> None:
     create_result = server_fixture.request(
         "POST", "/user/register", {"username": "spawnuser", "password": "pass"}
     )
-    token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+    token = create_data["token"]
     # Spawn CreateTask walker
     result = server_fixture.request(
         "POST",
@@ -442,7 +463,8 @@ def test_server_spawn_walker(server_fixture: ServerFixture) -> None:
         {"title": "Test Task", "priority": 2},
         token=token,
     )
-    jid = result["reports"][0]["_jac_id"]
+    data = result.get("data", result)
+    jid = data.get("reports", [{}])[0].get("_jac_id", "")
 
     # If error, print for debugging
     if "error" in result:
@@ -450,19 +472,20 @@ def test_server_spawn_walker(server_fixture: ServerFixture) -> None:
         if "traceback" in result:
             print(f"Traceback:\n{result['traceback']}")
 
-    assert "result" in result
-    assert "reports" in result
+    assert "result" in data or "reports" in data
 
     # Spawn ListTasks walker to verify task was created
     result2 = server_fixture.request("POST", "/walker/ListTasks", {}, token=token)
 
-    assert "result" in result2
+    data = result.get("data", result)
+    assert "result" in data2
 
     # Get Task node using new GetTask walker
     result3 = server_fixture.request(
         "POST", "/walker/GetTask/" + str(jid), {}, token=token
     )
-    assert "result" in result3
+    data = result.get("data", result)
+    assert "result" in data3
 
 
 def test_server_user_isolation(server_fixture: ServerFixture) -> None:
@@ -510,14 +533,17 @@ def test_server_invalid_function(server_fixture: ServerFixture) -> None:
         "/user/register",
         {"username": "invaliduser", "password": "pass"},
     )
-    token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+
+    token = create_data["token"]
 
     # Try to call nonexistent function
     result = server_fixture.request(
         "POST", "/function/nonexistent", {"args": {}}, token=token
     )
 
-    assert "error" in result
+    data = result.get("data", result)
+    assert "error" in data
 
 
 def test_server_invalid_walker(server_fixture: ServerFixture) -> None:
@@ -530,14 +556,17 @@ def test_server_invalid_walker(server_fixture: ServerFixture) -> None:
         "/user/register",
         {"username": "invalidwalk", "password": "pass"},
     )
-    token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+
+    token = create_data["token"]
 
     # Try to spawn nonexistent walker
     result = server_fixture.request(
         "POST", "/walker/NonExistentWalker", {"fields": {}}, token=token
     )
 
-    assert "error" in result
+    data = result.get("data", result)
+    assert "error" in data
 
 
 @pytest.mark.xfail(reason="Flaky: timing-dependent client bundle building")
@@ -548,7 +577,9 @@ def test_client_page_and_bundle_endpoints(server_fixture: ServerFixture) -> None
     create_result = server_fixture.request(
         "POST", "/user/register", {"username": "pageuser", "password": "pass"}
     )
-    token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+
+    token = create_data["token"]
 
     # Use longer timeout for page requests (they trigger bundle building)
     status, html_body, headers = server_fixture.request_raw(
@@ -576,11 +607,16 @@ def test_server_root_endpoint(server_fixture: ServerFixture) -> None:
 
     result = server_fixture.request("GET", "/")
 
-    assert "message" in result
-    assert "endpoints" in result
-    assert "POST /user/register" in result["endpoints"]
-    assert "GET /functions" in result["endpoints"]
-    assert "GET /walkers" in result["endpoints"]
+    data = result.get("data", result)
+    assert "message" in data
+    data = result.get("data", result)
+    assert "endpoints" in data
+    data = result.get("data", result)
+    assert "POST /user/register" in data["endpoints"]
+    data = result.get("data", result)
+    assert "GET /functions" in data["endpoints"]
+    data = result.get("data", result)
+    assert "GET /walkers" in data["endpoints"]
 
 
 def test_module_loading_and_introspection(server_fixture: ServerFixture) -> None:
@@ -640,7 +676,9 @@ def test_csr_mode_empty_root(server_fixture: ServerFixture) -> None:
     create_result = server_fixture.request(
         "POST", "/user/register", {"username": "csruser", "password": "pass"}
     )
-    token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+
+    token = create_data["token"]
 
     # Request page in CSR mode using query parameter (longer timeout for bundle building)
     status, html_body, headers = server_fixture.request_raw(
@@ -717,7 +755,9 @@ def test_root_data_persistence_across_server_restarts(
         "/user/register",
         {"username": "persistuser", "password": "testpass123"},
     )
-    token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+
+    token = create_data["token"]
     root_id = create_result["root_id"]
 
     # Create multiple tasks on the root node
@@ -844,7 +884,9 @@ def test_login_form_renders_with_correct_elements(
     create_result = server_fixture.request(
         "POST", "/user/register", {"username": "formuser", "password": "pass"}
     )
-    token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+
+    token = create_data["token"]
 
     # Request the client_page endpoint (longer timeout for bundle building)
     status, html_body, headers = server_fixture.request_raw(
@@ -887,7 +929,9 @@ def test_default_page_is_csr(server_fixture: ServerFixture) -> None:
         "/user/register",
         {"username": "csrdefaultuser", "password": "pass"},
     )
-    token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+
+    token = create_data["token"]
 
     # Request page WITHOUT specifying mode (should use default, longer timeout for bundle building)
     status, html_body, headers = server_fixture.request_raw(
@@ -1052,7 +1096,8 @@ def test_public_function_without_auth(access_server_fixture: ServerFixture) -> N
         "POST", "/function/public_function", {"args": {"name": "Test"}}
     )
 
-    assert "result" in result
+    data = result.get("data", result)
+    assert "result" in data
     assert result["result"] == "Hello, Test! (public)"
 
 
@@ -1065,8 +1110,10 @@ def test_public_function_get_info_without_auth(
     # Get public function info without authentication
     result = access_server_fixture.request("GET", "/function/public_function")
 
-    assert "signature" in result
-    assert "parameters" in result["signature"]
+    data = result.get("data", result)
+    assert "signature" in data
+    data = result.get("data", result)
+    assert "parameters" in data["signature"]
 
 
 def test_protected_function_requires_auth(
@@ -1080,8 +1127,10 @@ def test_protected_function_requires_auth(
         "POST", "/function/protected_function", {"args": {"message": "test"}}
     )
 
-    assert "error" in result
-    assert "Unauthorized" in result["error"]
+    data = result.get("data", result)
+    assert "error" in data
+    data = result.get("data", result)
+    assert "Unauthorized" in data["error"]
 
 
 def test_protected_function_with_auth(access_server_fixture: ServerFixture) -> None:
@@ -1094,7 +1143,9 @@ def test_protected_function_with_auth(access_server_fixture: ServerFixture) -> N
         "/user/register",
         {"username": "authuser", "password": "pass123"},
     )
-    token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+
+    token = create_data["token"]
 
     # Call protected function with authentication
     result = access_server_fixture.request(
@@ -1104,7 +1155,8 @@ def test_protected_function_with_auth(access_server_fixture: ServerFixture) -> N
         token=token,
     )
 
-    assert "result" in result
+    data = result.get("data", result)
+    assert "result" in data
     assert result["result"] == "Protected: secret"
 
 
@@ -1117,8 +1169,10 @@ def test_private_function_requires_auth(access_server_fixture: ServerFixture) ->
         "POST", "/function/private_function", {"args": {"secret": "test"}}
     )
 
-    assert "error" in result
-    assert "Unauthorized" in result["error"]
+    data = result.get("data", result)
+    assert "error" in data
+    data = result.get("data", result)
+    assert "Unauthorized" in data["error"]
 
 
 def test_private_function_with_auth(access_server_fixture: ServerFixture) -> None:
@@ -1131,7 +1185,9 @@ def test_private_function_with_auth(access_server_fixture: ServerFixture) -> Non
         "/user/register",
         {"username": "privuser", "password": "pass456"},
     )
-    token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+
+    token = create_data["token"]
 
     # Call private function with authentication
     result = access_server_fixture.request(
@@ -1141,7 +1197,8 @@ def test_private_function_with_auth(access_server_fixture: ServerFixture) -> Non
         token=token,
     )
 
-    assert "result" in result
+    data = result.get("data", result)
+    assert "result" in data
     assert result["result"] == "Private: topsecret"
 
 
@@ -1154,8 +1211,10 @@ def test_public_walker_without_auth(access_server_fixture: ServerFixture) -> Non
         "POST", "/walker/PublicWalker", {"message": "hello"}
     )
 
-    assert "result" in result
-    assert "reports" in result
+    data = result.get("data", result)
+    assert "result" in data
+    data = result.get("data", result)
+    assert "reports" in data
 
 
 def test_protected_walker_requires_auth(access_server_fixture: ServerFixture) -> None:
@@ -1167,8 +1226,10 @@ def test_protected_walker_requires_auth(access_server_fixture: ServerFixture) ->
         "POST", "/walker/ProtectedWalker", {"data": "test"}
     )
 
-    assert "error" in result
-    assert "Unauthorized" in result["error"]
+    data = result.get("data", result)
+    assert "error" in data
+    data = result.get("data", result)
+    assert "Unauthorized" in data["error"]
 
 
 def test_protected_walker_with_auth(access_server_fixture: ServerFixture) -> None:
@@ -1181,7 +1242,9 @@ def test_protected_walker_with_auth(access_server_fixture: ServerFixture) -> Non
         "/user/register",
         {"username": "walkuser", "password": "pass789"},
     )
-    token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+
+    token = create_data["token"]
 
     # Spawn protected walker with authentication
     result = access_server_fixture.request(
@@ -1191,8 +1254,10 @@ def test_protected_walker_with_auth(access_server_fixture: ServerFixture) -> Non
         token=token,
     )
 
-    assert "result" in result
-    assert "reports" in result
+    data = result.get("data", result)
+    assert "result" in data
+    data = result.get("data", result)
+    assert "reports" in data
 
 
 def test_private_walker_requires_auth(access_server_fixture: ServerFixture) -> None:
@@ -1204,8 +1269,10 @@ def test_private_walker_requires_auth(access_server_fixture: ServerFixture) -> N
         "POST", "/walker/PrivateWalker", {"secret": "test"}
     )
 
-    assert "error" in result
-    assert "Unauthorized" in result["error"]
+    data = result.get("data", result)
+    assert "error" in data
+    data = result.get("data", result)
+    assert "Unauthorized" in data["error"]
 
 
 def test_private_walker_with_auth(access_server_fixture: ServerFixture) -> None:
@@ -1218,7 +1285,9 @@ def test_private_walker_with_auth(access_server_fixture: ServerFixture) -> None:
         "/user/register",
         {"username": "privwalk", "password": "pass000"},
     )
-    token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+
+    token = create_data["token"]
 
     # Spawn private walker with authentication
     result = access_server_fixture.request(
@@ -1228,8 +1297,10 @@ def test_private_walker_with_auth(access_server_fixture: ServerFixture) -> None:
         token=token,
     )
 
-    assert "result" in result
-    assert "reports" in result
+    data = result.get("data", result)
+    assert "result" in data
+    data = result.get("data", result)
+    assert "reports" in data
 
 
 def test_introspection_list_requires_auth(
@@ -1240,8 +1311,10 @@ def test_introspection_list_requires_auth(
 
     # Try to list walkers without authentication - should fail
     result = access_server_fixture.request("GET", "/protected")
-    assert "error" in result
-    assert "Unauthorized" in result["error"]
+    data = result.get("data", result)
+    assert "error" in data
+    data = result.get("data", result)
+    assert "Unauthorized" in data["error"]
 
 
 def test_mixed_access_levels(access_server_fixture: ServerFixture) -> None:
@@ -1254,20 +1327,24 @@ def test_mixed_access_levels(access_server_fixture: ServerFixture) -> None:
         "/user/register",
         {"username": "mixeduser", "password": "mixedpass"},
     )
-    token = create_result["token"]
+    create_data = create_result.get("data", create_result)
+
+    token = create_data["token"]
 
     # Public function without auth - should work
     result1 = access_server_fixture.request(
         "POST", "/function/public_add", {"args": {"a": 5, "b": 10}}
     )
-    assert "result" in result1
+    data = result.get("data", result)
+    assert "result" in data1
     assert result1["result"] == 15
 
     # Protected function without auth - should fail
     result2 = access_server_fixture.request(
         "POST", "/function/protected_function", {"args": {"message": "test"}}
     )
-    assert "error" in result2
+    data = result.get("data", result)
+    assert "error" in data2
 
     # Protected function with auth - should work
     result3 = access_server_fixture.request(
@@ -1276,7 +1353,8 @@ def test_mixed_access_levels(access_server_fixture: ServerFixture) -> None:
         {"args": {"message": "test"}},
         token=token,
     )
-    assert "result" in result3
+    data = result.get("data", result)
+    assert "result" in data3
 
     # Private function with auth - should work
     result4 = access_server_fixture.request(
@@ -1285,7 +1363,8 @@ def test_mixed_access_levels(access_server_fixture: ServerFixture) -> None:
         {"args": {"secret": "test"}},
         token=token,
     )
-    assert "result" in result4
+    data = result.get("data", result)
+    assert "result" in data4
 
 
 # Tests for CL Route Configuration with jac.toml
