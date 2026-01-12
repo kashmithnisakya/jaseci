@@ -790,12 +790,8 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
             if isinstance(response, Response) {
                 Jac.send_json(self, response.status, response.body);
             } else {
-                # Use HTTPTransport to send TransportResponse (demonstrates Phase 2 completion)
-                # This shows business logic is decoupled from HTTP - responses go through transport layer
                 transport = HTTPTransport(handler=self);
-                transport.connect();
                 transport.send(response);
-                transport.close();
             }
         }
 
