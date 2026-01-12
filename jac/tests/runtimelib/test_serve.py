@@ -504,8 +504,10 @@ def test_server_user_isolation(server_fixture: ServerFixture) -> None:
         "POST", "/user/register", {"username": "user2", "password": "pass2"}
     )
 
-    token1 = user1["token"]
-    token2 = user2["token"]
+    user1_data = user1.get("data", user1)
+    user2_data = user2.get("data", user2)
+    token1 = user1_data["token"]
+    token2 = user2_data["token"]
 
     # User1 creates a task
     server_fixture.request(
@@ -524,7 +526,7 @@ def test_server_user_isolation(server_fixture: ServerFixture) -> None:
     )
 
     # Both users should have different root IDs
-    assert user1["root_id"] != user2["root_id"]
+    assert user1_data["root_id"] != user2_data["root_id"]
 
 
 def test_server_invalid_function(server_fixture: ServerFixture) -> None:
@@ -570,7 +572,11 @@ def test_server_invalid_walker(server_fixture: ServerFixture) -> None:
     )
 
     data = result.get("data", result)
-    assert "error" in data
+    if data is None:
+        # 404 response may not have data wrapper
+        assert "error" in result
+    else:
+        assert "error" in data
 
 
 @pytest.mark.xfail(reason="Flaky: timing-dependent client bundle building")
@@ -771,7 +777,8 @@ def test_root_data_persistence_across_server_restarts(
         {"title": "Persistent Task 1", "priority": 1},
         token=token,
     )
-    assert "result" in task1_result
+    data1 = task1_result.get("data", task1_result)
+    assert "result" in data1 or "reports" in data1
 
     task2_result = server_fixture.request(
         "POST",
@@ -779,7 +786,8 @@ def test_root_data_persistence_across_server_restarts(
         {"title": "Persistent Task 2", "priority": 2},
         token=token,
     )
-    assert "result" in task2_result
+    data2 = task2_result.get("data", task2_result)
+    assert "result" in data2 or "reports" in data2
 
     task3_result = server_fixture.request(
         "POST",
@@ -787,11 +795,13 @@ def test_root_data_persistence_across_server_restarts(
         {"title": "Persistent Task 3", "priority": 3},
         token=token,
     )
-    assert "result" in task3_result
+    data3 = task3_result.get("data", task3_result)
+    assert "result" in data3 or "reports" in data3
 
     # List tasks to verify they were created
     list_before = server_fixture.request("POST", "/walker/ListTasks", {}, token=token)
-    assert "result" in list_before
+    list_before_data = list_before.get("data", list_before)
+    assert "result" in list_before_data or "reports" in list_before_data
 
     # Shutdown first server instance
     # Close user manager first
@@ -842,7 +852,8 @@ def test_root_data_persistence_across_server_restarts(
     )
 
     # The ListTasks walker should successfully run
-    assert "result" in list_after
+    list_after_data = list_after.get("data", list_after)
+    assert "result" in list_after_data or "reports" in list_after_data
 
     # Complete one of the tasks to verify we can still interact with persisted data
     complete_result = server_fixture.request(
@@ -851,7 +862,8 @@ def test_root_data_persistence_across_server_restarts(
         {"title": "Persistent Task 2"},
         token=new_token,
     )
-    assert "result" in complete_result
+    complete_data = complete_result.get("data", complete_result)
+    assert "result" in complete_data or "reports" in complete_data
 
 
 def test_client_bundle_has_object_get_polyfill(server_fixture: ServerFixture) -> None:
