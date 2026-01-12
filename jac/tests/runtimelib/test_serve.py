@@ -549,7 +549,11 @@ def test_server_invalid_function(server_fixture: ServerFixture) -> None:
     )
 
     data = result.get("data", result)
-    assert "error" in data
+    if data is None:
+        # 404 response may not have data wrapper
+        assert "error" in result
+    else:
+        assert "error" in data
 
 
 def test_server_invalid_walker(server_fixture: ServerFixture) -> None:
@@ -834,11 +838,12 @@ def test_root_data_persistence_across_server_restarts(
     )
 
     # User should be able to log in successfully
-    assert "token" in login_result
+    login_data = login_result.get("data", login_result)
+    assert "token" in login_data
     assert "error" not in login_result
 
-    new_token = login_result.get("data", login_result)["token"]
-    new_root_id = login_result.get("data", login_result)["root_id"]
+    new_token = login_data["token"]
+    new_root_id = login_data["root_id"]
 
     # Root ID should be the same (same user, same root)
     assert new_root_id == root_id
