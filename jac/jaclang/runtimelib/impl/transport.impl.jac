@@ -35,9 +35,7 @@ impl TransportResponse.fail(
 }
 
 """HTTP is stateless - nothing to connect."""
-impl HTTPTransport.connect -> None {
-# Nothing to do for stateless HTTP
-}
+impl HTTPTransport.connect -> None {}
 
 """Serialize and send HTTP response. Converts TransportResponse to HTTP format."""
 impl HTTPTransport.send(data: Any) -> None {
@@ -58,14 +56,14 @@ impl HTTPTransport.send(data: Any) -> None {
         }
         if not data.ok and data.error {
             # Serialize ErrorInfo object
-            if data.error?.message {
-                response_body['error'] = data.error.message;
+            if getattr(data.error, "message", None) {
+                response_body["error"] = data.error.message;
             }
-            if data.error?.code and data.error.code {
-                response_body['code'] = data.error.code;
+            if getattr(data.error, "code", None) {
+                response_body["code"] = data.error.code;
             }
-            if data.error?.details and (data.error.details is not None) {
-                response_body['details'] = data.error.details;
+            if getattr(data.error, "details", None) is not None {
+                response_body["details"] = data.error.details;
             }
         }
         # Send HTTP response
@@ -94,14 +92,10 @@ impl HTTPTransport.send(data: Any) -> None {
 }
 
 """HTTP is stateless - nothing to close."""
-impl HTTPTransport.close -> None {
-# Nothing to do for stateless HTTP
-}
+impl HTTPTransport.close -> None {}
 
 """SSE is stateless - nothing to connect."""
-impl StreamTransport.connect -> None {
-# Nothing to do for SSE
-}
+impl StreamTransport.connect -> None {}
 
 """Push data to the queue for SSE streaming."""
 impl StreamTransport.send(data: Any) -> None {
