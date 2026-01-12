@@ -840,7 +840,7 @@ def test_root_data_persistence_across_server_restarts(
     # User should be able to log in successfully
     login_data = login_result.get("data", login_result)
     assert "token" in login_data
-    assert "error" not in login_result
+    assert login_result.get("error") is None
 
     new_token = login_data["token"]
     new_root_id = login_data["root_id"]
