@@ -234,7 +234,9 @@ def test_user_manager_token_validation(server_fixture: ServerFixture) -> None:
 
     # Create user
     result = user_mgr.create_user("validuser", "validpass")
-    token = result["token"]
+    data = result.get("data", result)
+
+    token = data["token"]
 
     # Valid token
     username = user_mgr.validate_token(token)
@@ -365,16 +367,18 @@ def test_server_call_function(server_fixture: ServerFixture) -> None:
 
     data = result.get("data", result)
     assert "result" in data
-    assert result["result"] == 35
+    data = result.get("data", result)
+
+    assert data["result"] == 35
 
     # Call greet
     result2 = server_fixture.request(
         "POST", "/function/greet", {"args": {"name": "World"}}, token=token
     )
 
-    data = result.get("data", result)
+    data2 = result2.get("data", result2)
     assert "result" in data2
-    assert result2["result"] == "Hello, World!"
+    assert data2["result"] == "Hello, World!"
 
 
 def test_server_call_function_with_defaults(server_fixture: ServerFixture) -> None:
@@ -477,15 +481,15 @@ def test_server_spawn_walker(server_fixture: ServerFixture) -> None:
     # Spawn ListTasks walker to verify task was created
     result2 = server_fixture.request("POST", "/walker/ListTasks", {}, token=token)
 
-    data = result.get("data", result)
-    assert "result" in data2
+    data2 = result2.get("data", result2)
+    assert "result" in data2 or "reports" in data2
 
     # Get Task node using new GetTask walker
     result3 = server_fixture.request(
         "POST", "/walker/GetTask/" + str(jid), {}, token=token
     )
-    data = result.get("data", result)
-    assert "result" in data3
+    data3 = result3.get("data", result3)
+    assert "result" in data3 or "reports" in data3
 
 
 def test_server_user_isolation(server_fixture: ServerFixture) -> None:
@@ -731,7 +735,7 @@ def test_csr_mode_with_server_default(server_fixture: ServerFixture) -> None:
 
     # Should have empty HTML body (CSR mode)
     assert "html" in result
-    html_content = result["html"]
+    html_content = result.get("data", result)["html"]
     assert '<div id="__jac_root"></div>' in html_content
 
     mach.close()
@@ -758,7 +762,7 @@ def test_root_data_persistence_across_server_restarts(
     create_data = create_result.get("data", create_result)
 
     token = create_data["token"]
-    root_id = create_result["root_id"]
+    root_id = create_result.get("data", create_result)["root_id"]
 
     # Create multiple tasks on the root node
     task1_result = server_fixture.request(
@@ -823,8 +827,8 @@ def test_root_data_persistence_across_server_restarts(
     assert "token" in login_result
     assert "error" not in login_result
 
-    new_token = login_result["token"]
-    new_root_id = login_result["root_id"]
+    new_token = login_result.get("data", login_result)["token"]
+    new_root_id = login_result.get("data", login_result)["root_id"]
 
     # Root ID should be the same (same user, same root)
     assert new_root_id == root_id
@@ -1098,7 +1102,9 @@ def test_public_function_without_auth(access_server_fixture: ServerFixture) -> N
 
     data = result.get("data", result)
     assert "result" in data
-    assert result["result"] == "Hello, Test! (public)"
+    data = result.get("data", result)
+
+    assert data["result"] == "Hello, Test! (public)"
 
 
 def test_public_function_get_info_without_auth(
@@ -1157,7 +1163,9 @@ def test_protected_function_with_auth(access_server_fixture: ServerFixture) -> N
 
     data = result.get("data", result)
     assert "result" in data
-    assert result["result"] == "Protected: secret"
+    data = result.get("data", result)
+
+    assert data["result"] == "Protected: secret"
 
 
 def test_private_function_requires_auth(access_server_fixture: ServerFixture) -> None:
@@ -1199,7 +1207,9 @@ def test_private_function_with_auth(access_server_fixture: ServerFixture) -> Non
 
     data = result.get("data", result)
     assert "result" in data
-    assert result["result"] == "Private: topsecret"
+    data = result.get("data", result)
+
+    assert data["result"] == "Private: topsecret"
 
 
 def test_public_walker_without_auth(access_server_fixture: ServerFixture) -> None:
@@ -1335,15 +1345,15 @@ def test_mixed_access_levels(access_server_fixture: ServerFixture) -> None:
     result1 = access_server_fixture.request(
         "POST", "/function/public_add", {"args": {"a": 5, "b": 10}}
     )
-    data = result.get("data", result)
+    data1 = result1.get("data", result1)
     assert "result" in data1
-    assert result1["result"] == 15
+    assert data1["result"] == 15
 
     # Protected function without auth - should fail
     result2 = access_server_fixture.request(
         "POST", "/function/protected_function", {"args": {"message": "test"}}
     )
-    data = result.get("data", result)
+    data2 = result2.get("data", result2)
     assert "error" in data2
 
     # Protected function with auth - should work
@@ -1353,7 +1363,7 @@ def test_mixed_access_levels(access_server_fixture: ServerFixture) -> None:
         {"args": {"message": "test"}},
         token=token,
     )
-    data = result.get("data", result)
+    data3 = result3.get("data", result3)
     assert "result" in data3
 
     # Private function with auth - should work
@@ -1363,7 +1373,7 @@ def test_mixed_access_levels(access_server_fixture: ServerFixture) -> None:
         {"args": {"secret": "test"}},
         token=token,
     )
-    data = result.get("data", result)
+    data4 = result4.get("data", result4)
     assert "result" in data4
 
 
@@ -1544,8 +1554,9 @@ cl_route_prefix = "pages"
 
             # The root endpoint should show the custom route prefix
             result = fixture._request("GET", "/")
-            assert "endpoints" in result
-            assert "GET /pages/<name>" in result["endpoints"]
+            data = result.get("data", result)
+            assert "endpoints" in data
+            assert "GET /pages/<name>" in data["endpoints"]
 
             # Verify the default /cl/ route no longer works (404)
             status, _, _ = fixture.request_raw("GET", "/cl/client_page", timeout=5)
