@@ -176,6 +176,7 @@ obj ExecutionHandler {
     def call_function(
         name: str, args: dict[(str, Any)], username: str
     ) -> TransportResponse;
+
     def spawn_walker(
         name: str, fields: dict[(str, Any)], username: str
     ) -> TransportResponse;

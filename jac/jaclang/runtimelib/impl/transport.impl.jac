@@ -1,7 +1,5 @@
 """Transport abstraction layer implementations."""
 
-
-
 """Create a success response with envelope pattern."""
 impl TransportResponse.success(
     data: Any = None,
