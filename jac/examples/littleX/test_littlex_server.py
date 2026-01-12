@@ -121,11 +121,13 @@ def littlex_server():
     def _create_user(username: str, password: str) -> dict:
         """Helper to create a user and store credentials."""
         result = _request("POST", "/user/register", {"username": username, "password": password})
-        if "token" in result:
+        # Handle new TransportResponse envelope format
+        data = result.get("data", result)
+        if "token" in data:
             server_data["users"][username] = {
                 "password": password,
-                "token": result["token"],
-                "root_id": result["root_id"],
+                "token": data["token"],
+                "root_id": data["root_id"],
             }
         return result
 
@@ -178,16 +180,22 @@ def test_user_creation_and_login(littlex_server) -> None:
     user2 = littlex_server["create_user"]("bob", "pass456")
     user3 = littlex_server["create_user"]("charlie", "pass789")
 
-    assert "token" in user1
-    assert "token" in user2
-    assert "token" in user3
-    assert user1["root_id"] != user2["root_id"]
-    assert user2["root_id"] != user3["root_id"]
+    # Handle new TransportResponse envelope format
+    user1_data = user1.get("data", user1)
+    user2_data = user2.get("data", user2)
+    user3_data = user3.get("data", user3)
+
+    assert "token" in user1_data
+    assert "token" in user2_data
+    assert "token" in user3_data
+    assert user1_data["root_id"] != user2_data["root_id"]
+    assert user2_data["root_id"] != user3_data["root_id"]
 
     # Test login
     login_result = littlex_server["request"]("POST", "/user/login", {"username": "alice", "password": "pass123"})
-    assert "token" in login_result
-    assert login_result["username"] == "alice"
+    login_data = login_result.get("data", login_result)
+    assert "token" in login_data
+    assert login_data["username"] == "alice"
 
     # Test wrong password
     login_fail = littlex_server["request"]("POST", "/user/login", {"username": "bob", "password": "wrongpass"})
@@ -586,9 +594,10 @@ def test_data_persistence(littlex_server) -> None:
 
     # Login again
     login_result = littlex_server["request"]("POST", "/user/login", {"username": "alice", "password": "pass123"})
+    login_data = login_result.get("data", login_result)
 
-    assert "token" in login_result
-    assert login_result["root_id"] == alice_root
+    assert "token" in login_data
+    assert login_data["root_id"] == alice_root
 
     print("✓ Data persistence test passed")
 
