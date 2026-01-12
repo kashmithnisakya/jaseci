@@ -1,5 +1,6 @@
 """Transport Abstraction Layer for Jac API Server."""
 
+import json;
 import from collections.abc { Callable }
 import from typing { Any }
 import from enum { Enum }
@@ -81,7 +82,7 @@ obj BaseTransport {
 
 """HTTP Transport for stateless request/response."""
 obj HTTPTransport(BaseTransport) {
-    has handler: Any,
+    has handler: Any = None,
         response_data: dict[(str, Any)] = {};
 
     """HTTP is stateless - nothing to connect."""
@@ -96,7 +97,7 @@ obj HTTPTransport(BaseTransport) {
 
 """Stream Transport for Server-Sent Events (SSE)."""
 obj StreamTransport(BaseTransport) {
-    has queue: Any;
+    has queue: Any = None;
 
     """SSE is stateless - nothing to connect."""
     async def connect -> None;
@@ -110,7 +111,7 @@ obj StreamTransport(BaseTransport) {
 
 """WebSocket Transport for bidirectional communication."""
 obj WebSocketTransport(BaseTransport) {
-    has websocket: Any;
+    has websocket: Any = None;
 
     """Accept the WebSocket connection."""
     async def connect -> None;
@@ -123,7 +124,7 @@ obj WebSocketTransport(BaseTransport) {
 }
 
 obj MessageProcessor {
-    has transport: BaseTransport;
+    has transport: BaseTransport = None;
 
     """Run the processor - works with ANY transport."""
     async def run -> None;
