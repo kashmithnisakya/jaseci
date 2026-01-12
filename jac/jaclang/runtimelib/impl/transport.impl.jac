@@ -51,7 +51,6 @@ impl HTTPTransport.send(data: Any) -> None {
             'data': data.data,
             'error': None
         };
-
         # Serialize error if present
         if not data.ok and data.error {
             error_obj = {};
@@ -66,7 +65,6 @@ impl HTTPTransport.send(data: Any) -> None {
             }
             response_body['error'] = error_obj;
         }
-
         # Include metadata if present
         if data.meta {
             meta_dict = {};
