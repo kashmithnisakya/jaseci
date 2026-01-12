@@ -44,26 +44,46 @@ impl HTTPTransport.send(data: Any) -> None {
         status = data.meta.extra.get('http_status', 200 if data.ok else 500)
         if data.meta.extra
         else (200 if data.ok else 500);
-        # Build response body
-        response_body = {'ok': data.ok, 'type': data.type};
-        if data.ok and (data.data is not None) {
-            # For success responses, include data directly at root level for backward compatibility
-            if isinstance(data.data, <>dict) {
-                response_body.update(data.data);
-            } else {
-                response_body['data'] = data.data;
-            }
-        }
+        # Build response body following TransportResponse envelope pattern
+        response_body = {
+            'ok': data.ok,
+            'type': data.type,
+            'data': data.data,
+            'error': None
+        };
+
+        # Serialize error if present
         if not data.ok and data.error {
-            # Serialize ErrorInfo object
-            if getattr(data.error, "message", None) {
-                response_body["error"] = data.error.message;
-            }
+            error_obj = {};
             if getattr(data.error, "code", None) {
-                response_body["code"] = data.error.code;
+                error_obj['code'] = data.error.code;
+            }
+            if getattr(data.error, "message", None) {
+                error_obj['message'] = data.error.message;
             }
             if getattr(data.error, "details", None) is not None {
-                response_body["details"] = data.error.details;
+                error_obj['details'] = data.error.details;
+            }
+            response_body['error'] = error_obj;
+        }
+
+        # Include metadata if present
+        if data.meta {
+            meta_dict = {};
+            if getattr(data.meta, "request_id", None) {
+                meta_dict['request_id'] = data.meta.request_id;
+            }
+            if getattr(data.meta, "trace_id", None) {
+                meta_dict['trace_id'] = data.meta.trace_id;
+            }
+            if getattr(data.meta, "timestamp", None) {
+                meta_dict['timestamp'] = data.meta.timestamp;
+            }
+            if getattr(data.meta, "extra", None) {
+                meta_dict['extra'] = data.meta.extra;
+            }
+            if meta_dict {
+                response_body['meta'] = meta_dict;
             }
         }
         # Send HTTP response
