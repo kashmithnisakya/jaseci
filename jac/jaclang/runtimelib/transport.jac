@@ -2,6 +2,16 @@
 
 import from collections.abc { Callable }
 import from typing { Any }
+import from enum { Enum }
+
+"""Message type enumeration for transport responses."""
+enum MessageType {
+    RESPONSE = "response",
+    EVENT = "event",
+    CHUNK = "chunk",
+    DONE = "done",
+    ERROR = "error"
+}
 
 """Transport-agnostic request container for protocol-independent communication."""
 obj TransportRequest {
@@ -13,56 +23,111 @@ obj TransportRequest {
         metadata: dict[(str, Any)] = {};
 }
 
-"""Transport-agnostic response container for protocol-independent communication."""
+"""Error information for transport responses."""
+obj ErrorInfo {
+    has code: str,
+        message: str,
+        details: Any = None;
+}
+
+"""Metadata container for transport responses."""
+obj Meta {
+    has request_id: (str | None) = None,
+        trace_id: (str | None) = None,
+        timestamp: (str | None) = None,
+        extra: dict[(str, Any)] = {};
+}
+
+"""Transport-agnostic response container following envelope pattern."""
 obj TransportResponse {
-    has data: Any,
-        metadata: dict[(str, Any)] = {},
-        status: str = "success";
+    has type: MessageType = MessageType.RESPONSE.value,
+        ok: bool = True,
+        data: Any = None,
+        error: (ErrorInfo | None) = None,
+        meta: Meta = Meta();
+
+    """Create a success response."""
+    static def success(
+        data: Any = None,
+        msg_type: MessageType = MessageType.RESPONSE.value,
+        meta: (Meta | None) = None
+    ) -> TransportResponse;
+
+    """Create an error response."""
+    static def fail(
+        code: str,
+        message: str,
+        details: Any = None,
+        msg_type: MessageType = MessageType.ERROR.value,
+        meta: (Meta | None) = None
+    ) -> TransportResponse;
 }
 
 """Abstract base transport interface for protocol-agnostic communication."""
 obj BaseTransport {
-    has is_persistent: bool = False,
-        _message_handlers: <>list[Callable[(..., Any)]] = [],
-        _error_handlers: <>list[Callable[(..., Any)]] = [],
-        _close_handlers: <>list[Callable[(..., Any)]] = [];
+    has on_message: (Callable[(..., Any)] | None) = None,
+        on_error: (Callable[(..., Any)] | None) = None,
+        on_close: (Callable[(..., Any)] | None) = None;
 
     """Initialize and establish the transport connection."""
-    def connect -> None;
+    async def connect -> None;
 
-    """Send a response through the transport. Blocks until sent."""
-    def send(response: TransportResponse) -> None;
-
-    """Receive a request from the transport. Returns None if no data available."""
-    def receive -> (TransportRequest | None);
+    """Send data through the transport. Protocol-agnostic."""
+    async def send(data: Any) -> None;
 
     """Close the transport connection and cleanup resources."""
-    def close -> None;
+    async def close -> None;
+}
 
-    """Send a response asynchronously. For streaming transports."""
-    async def send_async(response: TransportResponse) -> None;
+"""HTTP Transport for stateless request/response."""
+obj HTTPTransport(BaseTransport) {
+    has handler: Any,
+        response_data: dict[(str, Any)] = {};
 
-    """Receive a request asynchronously. For streaming transports."""
-    async def receive_async -> (TransportRequest | None);
+    """HTTP is stateless - nothing to connect."""
+    async def connect -> None;
 
-    """Check if the transport connection is active."""
-    def is_connected -> bool;
+    """Serialize and store response data. Triggers on_message callback."""
+    async def send(data: Any) -> None;
 
-    """Register a callback for incoming messages. Callback signature: (request: TransportRequest) -> None"""
-    def on_message(callback: Callable[(..., Any)]) -> None;
+    """HTTP is stateless - nothing to close."""
+    async def close -> None;
+}
 
-    """Register a callback for transport errors. Callback signature: (error: Exception) -> None"""
-    def on_error(callback: Callable[(..., Any)]) -> None;
+"""Stream Transport for Server-Sent Events (SSE)."""
+obj StreamTransport(BaseTransport) {
+    has queue: Any;
 
-    """Register a callback for connection close. Callback signature: () -> None"""
-    def on_close(callback: Callable[(..., Any)]) -> None;
+    """SSE is stateless - nothing to connect."""
+    async def connect -> None;
 
-    """Trigger all registered message handlers."""
-    def _trigger_message(request: TransportRequest) -> None;
+    """Push data to the queue for SSE streaming."""
+    async def send(data: Any) -> None;
 
-    """Trigger all registered error handlers."""
-    def _trigger_error(error: Exception) -> None;
+    """Signal stream end by pushing None to queue."""
+    async def close -> None;
+}
 
-    """Trigger all registered close handlers."""
-    def _trigger_close -> None;
+"""WebSocket Transport for bidirectional communication."""
+obj WebSocketTransport(BaseTransport) {
+    has websocket: Any;
+
+    """Accept the WebSocket connection."""
+    async def connect -> None;
+
+    """Send JSON data through WebSocket."""
+    async def send(data: Any) -> None;
+
+    """Close the WebSocket connection."""
+    async def close -> None;
+}
+
+obj MessageProcessor {
+    has transport: BaseTransport;
+
+    """Run the processor - works with ANY transport."""
+    async def run -> None;
+
+    """Process a message - transport-agnostic."""
+    async def process_message(data: dict[(str, Any)]) -> None;
 }
