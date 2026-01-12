@@ -51,10 +51,9 @@ impl TransportResponse.fail(
     return response;
 }
 
-
 """HTTP is stateless - nothing to connect."""
 impl HTTPTransport.connect -> None {
-    # Nothing to do for stateless HTTP
+# Nothing to do for stateless HTTP
 }
 
 """Serialize and store response data. Triggers on_message callback if set."""
@@ -62,7 +61,6 @@ impl HTTPTransport.send(data: Any) -> None {
     # Store the response data
     self.response_data.update(data) if isinstance(data, <>dict) else None;
     self.response_data = data if not isinstance(data, <>dict) else self.response_data;
-
     # Trigger on_message callback if registered
     if self.on_message {
         self.on_message(data);
@@ -71,12 +69,12 @@ impl HTTPTransport.send(data: Any) -> None {
 
 """HTTP is stateless - nothing to close."""
 impl HTTPTransport.close -> None {
-    # Nothing to do for stateless HTTP
+# Nothing to do for stateless HTTP
 }
 
 """SSE is stateless - nothing to connect."""
 impl StreamTransport.connect -> None {
-    # Nothing to do for SSE
+# Nothing to do for SSE
 }
 
 """Push data to the queue for SSE streaming."""
@@ -107,11 +105,10 @@ impl StreamTransport.close -> None {
     }
 }
 
-
 """Accept the WebSocket connection."""
 impl WebSocketTransport.connect -> None {
-    # In real async usage: await self.websocket.accept()
-    # For now, assume websocket is already accepted
+# In real async usage: await self.websocket.accept()
+# For now, assume websocket is already accepted
 }
 
 """Send JSON data through WebSocket."""
@@ -139,7 +136,6 @@ impl WebSocketTransport.close -> None {
     }
 }
 
-
 """Run the processor - demonstrates the architecture pattern."""
 impl MessageProcessor.run -> None {
     try {
@@ -154,7 +150,6 @@ impl MessageProcessor.run -> None {
         # Process some data
         # await self.process_message({"action": "hello"})
         self.process_message({"action": "hello"});
-
     } except Exception as e {
         if self.transport.on_error {
             self.transport.on_error(e);
@@ -165,12 +160,7 @@ impl MessageProcessor.run -> None {
 """Process a message - transport-agnostic business logic."""
 impl MessageProcessor.process_message(data: dict[(str, Any)]) -> None {
     # Business logic here - doesn't know about HTTP/WS/SSE
-    result = {
-        "processed": True,
-        "received": data,
-        "timestamp": "2026-01-09T00:00:00Z"
-    };
-
+    result = {"processed": True, "received": data, "timestamp": "2026-01-09T00:00:00Z"};
     # Send result through transport - protocol-agnostic!
     # await self.transport.send(result)
     self.transport.send(result);

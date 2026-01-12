@@ -608,8 +608,7 @@ impl AuthHandler.create_user(username: str, password: str) -> TransportResponse 
         );
     }
     return TransportResponse.success(
-        data=result,
-        meta=Meta(extra={'http_status': 201})
+        data=result, meta=Meta(extra={'http_status': 201})
     );
 }
 
@@ -631,8 +630,7 @@ impl AuthHandler.login(username: str, password: str) -> TransportResponse {
         );
     }
     return TransportResponse.success(
-        data=result,
-        meta=Meta(extra={'http_status': 200})
+        data=result, meta=Meta(extra={'http_status': 200})
     );
 }
 
@@ -685,8 +683,7 @@ impl IntrospectionHandler.get_walker_info(name: str) -> TransportResponse {
     }
     info = self.introspector.introspect_walker(walkers[name]);
     return TransportResponse.success(
-        data={'name': name, 'info': info},
-        meta=Meta(extra={'http_status': 200})
+        data={'name': name, 'info': info}, meta=Meta(extra={'http_status': 200})
     );
 }
 
@@ -705,8 +702,7 @@ impl ExecutionHandler.call_function(
     }
     result = self.execution_manager.execute_function(functions[name], args, username);
     return TransportResponse.success(
-        data=result,
-        meta=Meta(extra={'http_status': 200})
+        data=result, meta=Meta(extra={'http_status': 200})
     );
 }
 
@@ -725,8 +721,7 @@ impl ExecutionHandler.spawn_walker(
     }
     result = self.execution_manager.spawn_walker(walkers[name], fields, username);
     return TransportResponse.success(
-        data=result,
-        meta=Meta(extra={'http_status': 200})
+        data=result, meta=Meta(extra={'http_status': 200})
     );
 }
 
