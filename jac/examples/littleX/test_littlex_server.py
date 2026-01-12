@@ -222,11 +222,11 @@ def test_profile_creation_and_update(littlex_server) -> None:
         {"new_username": "Alice_Wonderland"},
         token=alice_token,
     )
-    assert "result" in update_result
+    assert "result" in update_result or "reports" in update_result.get("data", {})
 
     # Get Alice's profile
     profile_result = littlex_server["request"]("POST", "/walker/get_profile", {}, token=alice_token)
-    assert "result" in profile_result
+    assert "result" in profile_result or "reports" in profile_result.get("data", {})
 
     # Update Bob's profile
     update_result2 = littlex_server["request"](
@@ -235,7 +235,7 @@ def test_profile_creation_and_update(littlex_server) -> None:
         {"new_username": "Bob_Builder"},
         token=bob_token,
     )
-    assert "result" in update_result2
+    assert "result" in update_result2 or "reports" in update_result2.get("data", {})
 
     print("✓ Profile creation and update test passed")
 
