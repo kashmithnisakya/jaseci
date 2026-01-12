@@ -172,33 +172,3 @@ impl WebSocketTransport.close -> None {
         self.on_close();
     }
 }
-
-"""Run the processor - demonstrates the architecture pattern."""
-impl MessageProcessor.run -> None {
-    try {
-        # Connect through the transport (could be HTTP, WS, SSE, etc.)
-        # await self.transport.connect()
-        self.transport.connect();
-
-        # Send initial status - works with ANY transport
-        # await self.transport.send({"status": "connected"})
-        self.transport.send({"status": "connected"});
-
-        # Process some data
-        # await self.process_message({"action": "hello"})
-        self.process_message({"action": "hello"});
-    } except Exception as e {
-        if self.transport.on_error {
-            self.transport.on_error(e);
-        }
-    }
-}
-
-"""Process a message - transport-agnostic business logic."""
-impl MessageProcessor.process_message(data: dict[(str, Any)]) -> None {
-    # Business logic here - doesn't know about HTTP/WS/SSE
-    result = {"processed": True, "received": data, "timestamp": "2026-01-09T00:00:00Z"};
-    # Send result through transport - protocol-agnostic!
-    # await self.transport.send(result)
-    self.transport.send(result);
-}

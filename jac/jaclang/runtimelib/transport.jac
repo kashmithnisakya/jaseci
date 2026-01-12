@@ -122,13 +122,3 @@ obj WebSocketTransport(BaseTransport) {
     """Close the WebSocket connection."""
     async def close -> None;
 }
-
-obj MessageProcessor {
-    has transport: BaseTransport = None;
-
-    """Run the processor - works with ANY transport."""
-    async def run -> None;
-
-    """Process a message - transport-agnostic."""
-    async def process_message(data: dict[(str, Any)]) -> None;
-}

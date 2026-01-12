@@ -784,8 +784,6 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
         def _send_response(
             self: JacRequestHandler, response: (Response | TransportResponse)
         ) -> None {
-            import from jaclang.runtimelib.transport { HTTPTransport }
-
             # Handle legacy Response objects for backward compatibility
             if isinstance(response, Response) {
                 Jac.send_json(self, response.status, response.body);

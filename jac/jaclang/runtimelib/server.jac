@@ -16,6 +16,7 @@ import from jaclang.runtimelib.transport {
     BaseTransport,
     TransportRequest,
     TransportResponse,
+    HTTPTransport,
     Meta
 }
 import from jaclang { JacRuntime as Jac }
