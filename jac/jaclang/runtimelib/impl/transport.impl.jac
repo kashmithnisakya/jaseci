@@ -8,7 +8,7 @@ impl TransportResponse.success(
 ) -> TransportResponse {
     final_meta = meta or Meta();
     response = TransportResponse();
-    response.type = msg_type;
+    response.type = msg_type.value if isinstance(msg_type, MessageType) else msg_type;
     response.ok = True;
     response.data = data;
     response.error = None;
@@ -26,7 +26,7 @@ impl TransportResponse.fail(
 ) -> TransportResponse {
     final_meta = meta or Meta();
     response = TransportResponse();
-    response.type = msg_type;
+    response.type = msg_type.value if isinstance(msg_type, MessageType) else msg_type;
     response.ok = False;
     response.data = None;
     response.error = ErrorInfo(code=code, message=message, details=details);
@@ -39,11 +39,57 @@ impl HTTPTransport.connect -> None {
 # Nothing to do for stateless HTTP
 }
 
-"""Serialize and store response data. Triggers on_message callback if set."""
+"""Serialize and send HTTP response. Converts TransportResponse to HTTP format."""
 impl HTTPTransport.send(data: Any) -> None {
-    # Store the response data
-    self.response_data.update(data) if isinstance(data, <>dict) else None;
-    self.response_data = data if not isinstance(data, <>dict) else self.response_data;
+    if isinstance(data, TransportResponse) {
+        # Extract HTTP status from meta.extra or use defaults
+        status = data.meta.extra.get('http_status', 200 if data.ok else 500) if data.meta.extra else (200 if data.ok else 500);
+
+        # Build response body
+        response_body = {
+            'ok': data.ok,
+            'type': data.type
+        };
+
+        if data.ok and (data.data is not None) {
+            # For success responses, include data directly at root level for backward compatibility
+            if isinstance(data.data, <>dict) {
+                response_body.update(data.data);
+            } else {
+                response_body['data'] = data.data;
+            }
+        }
+
+        if not data.ok and data.error {
+            # Serialize ErrorInfo object
+            if hasattr(data.error, 'message') {
+                response_body['error'] = data.error.message;
+            }
+            if hasattr(data.error, 'code') and data.error.code {
+                response_body['code'] = data.error.code;
+            }
+            if hasattr(data.error, 'details') and (data.error.details is not None) {
+                response_body['details'] = data.error.details;
+            }
+        }
+
+        # Send HTTP response
+        self.handler.send_response(status);
+        self.handler.send_header('Content-Type', 'application/json');
+        self.handler.send_header('Access-Control-Allow-Origin', '*');
+        self.handler.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        self.handler.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        self.handler.end_headers();
+        self.handler.wfile.write(json.dumps(response_body).encode());
+
+        # Store for any callbacks
+        self.response_data = response_body;
+    } else {
+        # For non-TransportResponse data (backward compatibility)
+        self.response_data.update(data) if isinstance(data, <>dict) else None;
+        self.response_data = data if not isinstance(data, <>dict) else self.response_data;
+    }
+
     # Trigger on_message callback if registered
     if self.on_message {
         self.on_message(data);
@@ -98,7 +144,6 @@ impl WebSocketTransport.connect -> None {
 impl WebSocketTransport.send(data: Any) -> None {
     # In real async usage: await self.websocket.send_json(data)
     try {
-        import json;
         json_data = json.dumps(data);
         # Placeholder for actual websocket send
         if self.on_message {

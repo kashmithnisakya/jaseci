@@ -86,13 +86,13 @@ obj HTTPTransport(BaseTransport) {
         response_data: dict[(str, Any)] = {};
 
     """HTTP is stateless - nothing to connect."""
-    async def connect -> None;
+    def connect -> None;
 
     """Serialize and store response data. Triggers on_message callback."""
-    async def send(data: Any) -> None;
+    def send(data: Any) -> None;
 
     """HTTP is stateless - nothing to close."""
-    async def close -> None;
+    def close -> None;
 }
 
 """Stream Transport for Server-Sent Events (SSE)."""
