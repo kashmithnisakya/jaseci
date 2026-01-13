@@ -90,7 +90,7 @@ impl __jacCallFunction(function_name: str, args: dict = {}) -> any {
     );
     payload = await response.json();
     if not payload.get("ok") {
-        raise Exception(f"Function {function_name} failed: {payload.get('error')}");
+        raise Exception(f"Function {function_name} failed: {payload.get('error')}") ;
     }
     return payload.get("data", {}).get("result");
 }
