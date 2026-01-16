@@ -1,5 +1,4 @@
 """REST API Server for Jac Programs."""
-import cgi;
 import hashlib;
 import html;
 import inspect;
@@ -10,6 +9,7 @@ import secrets;
 import from collections.abc { Callable }
 import from contextlib { suppress }
 import from http.server { BaseHTTPRequestHandler, HTTPServer }
+import from multipart { parse_form }
 import from pathlib { Path }
 import from typing { TYPE_CHECKING, Any, Literal, TypeAlias, get_type_hints }
 import from urllib.parse { parse_qs, urlparse }
