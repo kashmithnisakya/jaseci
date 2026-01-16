@@ -1,7 +1,9 @@
 """REST API Server for Jac Programs."""
+import cgi;
 import hashlib;
 import html;
 import inspect;
+import io;
 import json;
 import os;
 import secrets;
@@ -45,6 +47,41 @@ obj UserData {
     has username: str,
         token: str,
         root_id: str;
+}
+
+"""File upload container for walker file parameters.
+
+This type represents an uploaded file that can be used in walker `has` variables.
+When a walker has a field of type UploadFile, the server will accept multipart/form-data
+requests and parse the file content automatically.
+
+Example usage in walker:
+    walker upload_document {
+        has file: UploadFile;
+        has description: str = "";
+
+        can process with `root entry {
+            print(f"Received file: {self.file.filename}");
+            print(f"Content type: {self.file.content_type}");
+            print(f"Size: {len(self.file.content)} bytes");
+            report {"filename": self.file.filename, "size": len(self.file.content)};
+        }
+    }
+"""
+obj UploadFile {
+    has filename: str,
+        content: bytes,
+        content_type: str = "application/octet-stream",
+        size: int = 0;
+
+    """Create an UploadFile from raw data."""
+    static def from_bytes(filename: str, data: bytes, content_type: str = "application/octet-stream") -> UploadFile;
+
+    """Read the file content as string (assumes UTF-8 encoding)."""
+    def read_text(encoding: str = "utf-8") -> str;
+
+    """Save the file to disk."""
+    def save(path: str) -> None;
 }
 
 """Type-safe serializer for Jac objects."""

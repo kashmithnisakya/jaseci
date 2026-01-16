@@ -1,3 +1,25 @@
+"""Create an UploadFile from raw bytes data."""
+impl UploadFile.from_bytes(filename: str, data: bytes, content_type: str = "application/octet-stream") -> UploadFile {
+    return UploadFile(
+        filename=filename,
+        content=data,
+        content_type=content_type,
+        size=len(data)
+    );
+}
+
+"""Read the file content as a string with the specified encoding."""
+impl UploadFile.read_text(encoding: str = "utf-8") -> str {
+    return self.content.decode(encoding);
+}
+
+"""Save the uploaded file to the specified path on disk."""
+impl UploadFile.save(path: str) -> None {
+    with open(path, 'wb') as f {
+        f.write(self.content);
+    }
+}
+
 """Serialize objects to JSON-compatible format."""
 impl JacSerializer.serialize(<>obj: object) -> JsonValue {
     import from jaclang.pycore.constructs { Archetype }
@@ -12,6 +34,15 @@ impl JacSerializer.serialize(<>obj: object) -> JsonValue {
     }
     if isinstance(<>obj, Archetype) {
         return JacSerializer._serialize_archetype(<>obj);
+    }
+    # Handle UploadFile serialization - don't include binary content
+    if isinstance(<>obj, UploadFile) {
+        return {
+            '_jac_type': 'UploadFile',
+            'filename': <>obj.filename,
+            'content_type': <>obj.content_type,
+            'size': <>obj.size
+        };
     }
     if <>obj?.__dict__ {
         with suppress(Exception) {
@@ -432,27 +463,36 @@ impl ModuleIntrospector.introspect_walker(
         sig = inspect.signature(walker_cls.init);
         type_hints = get_type_hints(walker_cls.init);
     } except Exception {
-        return {'fields': {}};
+        return {'fields': {}, 'accepts_files': False};
     }
-    fields = {
-        name: {
-            'type': getattr(
-                type_hints.get(name, Any), '__name__', str(type_hints.get(name, Any))
-            ),
+    accepts_files = False;
+    fields: dict[(str, dict[(str, Any)])] = {};
+    for (name, param) in sig.parameters.items() {
+        if (name in ('self', 'args', 'kwargs')) {
+            continue;
+        }
+        type_hint = type_hints.get(name, Any);
+        type_name = getattr(type_hint, '__name__', str(type_hint));
+        is_file_field = (type_name == 'UploadFile') or (type_hint is UploadFile);
+        if is_file_field {
+            accepts_files = True;
+        }
+        fields[name] = {
+            'type': type_name,
             'required': (param.default == inspect.Parameter.empty),
             'default': None
             if (param.default == inspect.Parameter.empty)
-            else param.default
-        }
-        for (name, param) in sig.parameters.items()
-        if (name not in ('self', 'args', 'kwargs'))
-    };
+            else param.default,
+            'is_file': is_file_field
+        };
+    }
     fields['_jac_spawn_node'] = {
         'type': 'str (node ID, optional)',
         'required': False,
-        'default': 'root'
+        'default': 'root',
+        'is_file': False
     };
-    return {'fields': fields};
+    return {'fields': fields, 'accepts_files': accepts_files};
 }
 
 """Ensure client bundle is available and return hash."""
@@ -776,9 +816,73 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
             return server.user_manager.validate_token(token) if token else None;
         }
 
-        """Read and parse JSON from request body."""
-        def _read_json(self: JacRequestHandler) -> dict[str, Any] {
+        """Parse multipart/form-data request body for file uploads."""
+        def _parse_multipart(self: JacRequestHandler) -> dict[str, Any] {
+            content_type = self.headers.get('Content-Type', '');
             content_length = int(self.headers.get('Content-Length', 0));
+
+            # Parse the multipart data using cgi module
+            environ = {
+                'REQUEST_METHOD': 'POST',
+                'CONTENT_TYPE': content_type,
+                'CONTENT_LENGTH': str(content_length)
+            };
+
+            # Create a BytesIO wrapper for the request body
+            body_data = self.rfile.read(content_length);
+            body_io = io.BytesIO(body_data);
+
+            # Parse the form data
+            form = cgi.FieldStorage(
+                fp=body_io,
+                environ=environ,
+                keep_blank_values=True
+            );
+
+            result: dict[(str, Any)] = {};
+            for key in form.keys() {
+                field = form[key];
+                if isinstance(field, <>list) {
+                    # Multiple values for the same key
+                    result[key] = [
+                        UploadFile.from_bytes(
+                            filename=item.filename or key,
+                            data=item.file.read(),
+                            content_type=item.type or 'application/octet-stream'
+                        ) if item.filename else item.value
+                        for item in field
+                    ];
+                } elif field.filename {
+                    # File upload
+                    result[key] = UploadFile.from_bytes(
+                        filename=field.filename,
+                        data=field.file.read(),
+                        content_type=field.type or 'application/octet-stream'
+                    );
+                } else {
+                    # Regular form field - try to parse as JSON for complex types
+                    value = field.value;
+                    try {
+                        result[key] = json.loads(value);
+                    } except (json.JSONDecodeError, TypeError) {
+                        result[key] = value;
+                    }
+                }
+            }
+            return result;
+        }
+
+        """Read and parse request body (JSON or multipart/form-data)."""
+        def _read_json(self: JacRequestHandler) -> dict[str, Any] {
+            content_type = self.headers.get('Content-Type', '');
+            content_length = int(self.headers.get('Content-Length', 0));
+
+            # Handle multipart/form-data for file uploads
+            if 'multipart/form-data' in content_type {
+                return self._parse_multipart();
+            }
+
+            # Default: JSON parsing
             body = self.rfile.read(content_length).decode()
             if (content_length > 0)
             else '{}';
