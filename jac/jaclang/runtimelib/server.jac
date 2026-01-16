@@ -75,7 +75,9 @@ obj UploadFile {
         size: int = 0;
 
     """Create an UploadFile from raw data."""
-    static def from_bytes(filename: str, data: bytes, content_type: str = "application/octet-stream") -> UploadFile;
+    static def from_bytes(
+        filename: str, data: bytes, content_type: str = "application/octet-stream"
+    ) -> UploadFile;
 
     """Read the file content as string (assumes UTF-8 encoding)."""
     def read_text(encoding: str = "utf-8") -> str;

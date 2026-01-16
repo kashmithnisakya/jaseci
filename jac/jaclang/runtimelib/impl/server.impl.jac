@@ -1,10 +1,9 @@
 """Create an UploadFile from raw bytes data."""
-impl UploadFile.from_bytes(filename: str, data: bytes, content_type: str = "application/octet-stream") -> UploadFile {
+impl UploadFile.from_bytes(
+    filename: str, data: bytes, content_type: str = "application/octet-stream"
+) -> UploadFile {
     return UploadFile(
-        filename=filename,
-        content=data,
-        content_type=content_type,
-        size=len(data)
+        filename=filename, content=data, content_type=content_type, size=len(data)
     );
 }
 
@@ -834,9 +833,7 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
 
             # Parse the form data
             form = cgi.FieldStorage(
-                fp=body_io,
-                environ=environ,
-                keep_blank_values=True
+                fp=body_io, environ=environ, keep_blank_values=True
             );
 
             result: dict[(str, Any)] = {};
@@ -849,8 +846,9 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                             filename=item.filename or key,
                             data=item.file.read(),
                             content_type=item.type or 'application/octet-stream'
-                        ) if item.filename else item.value
-                        for item in field
+                        )
+                        if item.filename
+                        else item.value for item in field
                     ];
                 } elif field.filename {
                     # File upload
