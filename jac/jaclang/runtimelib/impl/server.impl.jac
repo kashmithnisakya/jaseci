@@ -16,7 +16,6 @@ impl UploadFile.read_text(encoding: str = "utf-8") -> str {
 impl UploadFile.save(path: str) -> None {
     path_obj = Path(path);
     path_obj.parent.mkdir(parents=True, exist_ok=True);
-
     with path_obj.open("wb") as f {
         f.write(self.content);
     }
