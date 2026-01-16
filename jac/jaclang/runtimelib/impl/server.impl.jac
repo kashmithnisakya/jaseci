@@ -844,8 +844,12 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
 
                 # Callback for regular form fields
                 def on_field(field: Any) -> None {
-                    field_name = field.field_name.decode() if isinstance(field.field_name, bytes) else field.field_name;
-                    value = field.value.decode() if isinstance(field.value, bytes) else field.value;
+                    field_name = field.field_name.decode()
+                    if isinstance(field.field_name, bytes)
+                    else field.field_name;
+                    value = field.value.decode()
+                    if isinstance(field.value, bytes)
+                    else field.value;
 
                     # Try to parse as JSON for complex types
                     try {
@@ -869,8 +873,12 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
 
                 # Callback for file uploads
                 def on_file(file: Any) -> None {
-                    field_name = file.field_name.decode() if isinstance(file.field_name, bytes) else file.field_name;
-                    filename = file.file_name.decode() if isinstance(file.file_name, bytes) else file.file_name;
+                    field_name = file.field_name.decode()
+                    if isinstance(file.field_name, bytes)
+                    else file.field_name;
+                    filename = file.file_name.decode()
+                    if isinstance(file.file_name, bytes)
+                    else file.file_name;
 
                     # Read file content from file object
                     file.file_object.seek(0);
@@ -878,8 +886,10 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
 
                     # Get content type if available
                     file_content_type = 'application/octet-stream';
-                    if hasattr(file, 'content_type') and file.content_type {
-                        file_content_type = file.content_type.decode() if isinstance(file.content_type, bytes) else file.content_type;
+                    if file?.content_type and file.content_type {
+                        file_content_type = file.content_type.decode()
+                        if isinstance(file.content_type, bytes)
+                        else file.content_type;
                     }
 
                     upload_file = UploadFile.from_bytes(
@@ -903,7 +913,9 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
 
                 # Build headers dict for parse_form (expects bytes values)
                 headers = {
-                    'Content-Type': content_type.encode() if isinstance(content_type, str) else content_type
+                    'Content-Type': content_type.encode()
+                    if isinstance(content_type, str)
+                    else content_type
                 };
 
                 # Create BytesIO stream from body data
