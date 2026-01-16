@@ -14,7 +14,10 @@ impl UploadFile.read_text(encoding: str = "utf-8") -> str {
 
 """Save the uploaded file to the specified path on disk."""
 impl UploadFile.save(path: str) -> None {
-    with open(path, 'wb') as f {
+    path_obj = Path(path);
+    path_obj.parent.mkdir(parents=True, exist_ok=True);
+
+    with path_obj.open("wb") as f {
         f.write(self.content);
     }
 }
@@ -31,10 +34,6 @@ impl JacSerializer.serialize(<>obj: object) -> JsonValue {
     if isinstance(<>obj, <>dict) {
         return {key: JacSerializer.serialize(value) for (key, value) in <>obj.items()};
     }
-    if isinstance(<>obj, Archetype) {
-        return JacSerializer._serialize_archetype(<>obj);
-    }
-    # Handle UploadFile serialization - don't include binary content
     if isinstance(<>obj, UploadFile) {
         return {
             '_jac_type': 'UploadFile',
@@ -42,6 +41,9 @@ impl JacSerializer.serialize(<>obj: object) -> JsonValue {
             'content_type': <>obj.content_type,
             'size': <>obj.size
         };
+    }
+    if isinstance(<>obj, Archetype) {
+        return JacSerializer._serialize_archetype(<>obj);
     }
     if <>obj?.__dict__ {
         with suppress(Exception) {

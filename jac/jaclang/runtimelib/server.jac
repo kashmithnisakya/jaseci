@@ -9,7 +9,7 @@ import secrets;
 import from collections.abc { Callable }
 import from contextlib { suppress }
 import from http.server { BaseHTTPRequestHandler, HTTPServer }
-import from multipart { parse_form }
+import from python_multipart { parse_form }
 import from pathlib { Path }
 import from typing { TYPE_CHECKING, Any, Literal, TypeAlias, get_type_hints }
 import from urllib.parse { parse_qs, urlparse }
@@ -49,25 +49,7 @@ obj UserData {
         root_id: str;
 }
 
-"""File upload container for walker file parameters.
-
-This type represents an uploaded file that can be used in walker `has` variables.
-When a walker has a field of type UploadFile, the server will accept multipart/form-data
-requests and parse the file content automatically.
-
-Example usage in walker:
-    walker upload_document {
-        has file: UploadFile;
-        has description: str = "";
-
-        can process with `root entry {
-            print(f"Received file: {self.file.filename}");
-            print(f"Content type: {self.file.content_type}");
-            print(f"Size: {len(self.file.content)} bytes");
-            report {"filename": self.file.filename, "size": len(self.file.content)};
-        }
-    }
-"""
+"""File upload container for walker file parameters."""
 obj UploadFile {
     has filename: str,
         content: bytes,
