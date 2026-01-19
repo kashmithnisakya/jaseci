@@ -20,13 +20,19 @@ from tests.conftest import proc_file_sess
 from tests.runtimelib.conftest import fixture_abs_path
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def reset_machine(tmp_path: Path) -> Generator[None, None, None]:
-    """Reset Jac machine before and after each test for session isolation."""
+    """Reset Jac machine before and after each test for session isolation.
+
+    Note: This fixture is not auto-used. Only tests that need Jac machine
+    should request it explicitly via the file_upload_fixture.
+    """
     # Use tmp_path for session isolation in parallel tests
-    Jac.reset_machine(base_path=str(tmp_path))  # type: ignore[attr-defined]
+    if hasattr(Jac, "reset_machine"):
+        Jac.reset_machine(base_path=str(tmp_path))  # type: ignore[attr-defined]
     yield
-    Jac.reset_machine(base_path=str(tmp_path))  # type: ignore[attr-defined]
+    if hasattr(Jac, "reset_machine"):
+        Jac.reset_machine(base_path=str(tmp_path))  # type: ignore[attr-defined]
 
 
 def get_free_port() -> int:
@@ -208,7 +214,9 @@ class FileUploadServerFixture:
 
 @pytest.fixture
 def file_upload_fixture(
-    request: pytest.FixtureRequest, tmp_path: Path
+    request: pytest.FixtureRequest,
+    tmp_path: Path,
+    reset_machine: None,  # Ensure Jac machine is reset for API tests
 ) -> Generator[FileUploadServerFixture, None, None]:
     """Pytest fixture for file upload server setup and teardown."""
     fixture = FileUploadServerFixture(request, tmp_path)
