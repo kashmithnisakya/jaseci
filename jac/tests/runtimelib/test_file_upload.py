@@ -195,6 +195,16 @@ class FileUploadServerFixture:
         finally:
             conn.close()
 
+    def register_user(self, username: str = "testuser", password: str = "testpass") -> str:
+        """Register a user and return the auth token."""
+        result = self.request_json(
+            "POST",
+            "/user/register",
+            {"username": username, "password": password},
+        )
+        data = result.get("data", result)
+        return data.get("token", "")
+
     def cleanup(self) -> None:
         """Clean up server resources."""
         # Close user manager if it exists
@@ -301,12 +311,14 @@ class TestFileUploadAPI:
     ) -> None:
         """Test uploading a single file."""
         file_upload_fixture.start_server()
+        token = file_upload_fixture.register_user()
 
         content = b"This is a test file content"
         result = file_upload_fixture.request_multipart(
             "/walker/UploadDocument",
             files={"file": ("test.txt", content, "text/plain")},
             fields={"description": "Test upload"},
+            token=token,
         )
 
         # Check response structure
@@ -326,11 +338,13 @@ class TestFileUploadAPI:
     ) -> None:
         """Test file upload with default description field."""
         file_upload_fixture.start_server()
+        token = file_upload_fixture.register_user()
 
         content = b"File with default description"
         result = file_upload_fixture.request_multipart(
             "/walker/UploadDocument",
             files={"file": ("doc.txt", content, "text/plain")},
+            token=token,
         )
 
         assert result.get("ok") is True
@@ -347,6 +361,7 @@ class TestFileUploadAPI:
     ) -> None:
         """Test uploading multiple files in one request."""
         file_upload_fixture.start_server()
+        token = file_upload_fixture.register_user()
 
         content1 = b"Content of file 1"
         content2 = b"Content of file 2, slightly longer"
@@ -358,6 +373,7 @@ class TestFileUploadAPI:
                 "file2": ("second.txt", content2, "text/plain"),
             },
             fields={"label": "batch_upload"},
+            token=token,
         )
 
         assert result.get("ok") is True
@@ -377,6 +393,7 @@ class TestFileUploadAPI:
     ) -> None:
         """Test uploading a binary file."""
         file_upload_fixture.start_server()
+        token = file_upload_fixture.register_user()
 
         # Create binary content (simulating a small image)
         binary_content = bytes(range(256))
@@ -385,6 +402,7 @@ class TestFileUploadAPI:
             "/walker/UploadDocument",
             files={"file": ("binary.bin", binary_content, "application/octet-stream")},
             fields={"description": "Binary file test"},
+            token=token,
         )
 
         assert result.get("ok") is True
@@ -402,11 +420,13 @@ class TestFileUploadAPI:
     ) -> None:
         """Test that walkers without file parameters still work normally."""
         file_upload_fixture.start_server()
+        token = file_upload_fixture.register_user()
 
         result = file_upload_fixture.request_json(
             "POST",
             "/walker/SimpleGreet",
             data={"name": "FileTest"},
+            token=token,
         )
 
         assert result.get("ok") is True
@@ -420,6 +440,7 @@ class TestFileUploadAPI:
     ) -> None:
         """Test uploading a larger file."""
         file_upload_fixture.start_server()
+        token = file_upload_fixture.register_user()
 
         # Create a 100KB file
         large_content = b"X" * (100 * 1024)
@@ -428,6 +449,7 @@ class TestFileUploadAPI:
             "/walker/UploadDocument",
             files={"file": ("large.dat", large_content, "application/octet-stream")},
             fields={"description": "Large file test"},
+            token=token,
         )
 
         assert result.get("ok") is True
@@ -444,6 +466,7 @@ class TestFileUploadAPI:
     ) -> None:
         """Test various content types are preserved."""
         file_upload_fixture.start_server()
+        token = file_upload_fixture.register_user()
 
         test_cases = [
             ("document.pdf", b"%PDF-1.4", "application/pdf"),
@@ -455,6 +478,7 @@ class TestFileUploadAPI:
             result = file_upload_fixture.request_multipart(
                 "/walker/UploadDocument",
                 files={"file": (filename, content, content_type)},
+                token=token,
             )
 
             assert result.get("ok") is True, f"Failed for {filename}"
