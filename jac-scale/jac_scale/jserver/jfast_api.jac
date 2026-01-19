@@ -21,7 +21,18 @@ import inspect;
 import uvicorn;
 import from collections.abc { Callable }
 import from typing { Any, Optional, TypeAlias, get_type_hints }
-import from fastapi { Body, FastAPI, Header, HTTPException, Path, Query, Request, File, Form, UploadFile as FastAPIUploadFile }
+import from fastapi {
+    Body,
+    FastAPI,
+    Header,
+    HTTPException,
+    Path,
+    Query,
+    Request,
+    File,
+    Form,
+    UploadFile as FastAPIUploadFile
+}
 import from fastapi.responses { Response, JSONResponse }
 import from pydantic { BaseModel, Field, create_model }
 import from .jserver { APIParameter, HTTPMethod, JEndPoint, JServer, ParameterType }

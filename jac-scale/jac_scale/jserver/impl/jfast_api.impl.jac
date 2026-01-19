@@ -350,7 +350,9 @@ impl JFastApiServer._create_endpoint_function(
         } elif (default_value is None) {
             param_str = f"{param_name}: Optional[{type_name}] = Form(None, description='{description}')";
         } else {
-            param_str = f"{param_name}: Optional[{type_name}] = Form({repr(default_value)}, description='{description}')";
+            param_str = f"{param_name}: Optional[{type_name}] = Form({repr(
+                default_value
+            )}, description='{description}')";
         }
         param_strs.append(param_str);
         param_mapping[param_name] = param_name;
@@ -358,7 +360,11 @@ impl JFastApiServer._create_endpoint_function(
     params = ', '.join(param_strs);
     callback_args_lines: list[str] = [];
     # Build the list of file parameter names for conversion
-    file_param_names = [p.name for p in file_params if p.name];
+    file_param_names = [
+        p.name
+        for p in file_params
+        if p.name
+    ];
     if body_model {
         for param in body_params {
             param_name = param.name;
@@ -372,9 +378,13 @@ impl JFastApiServer._create_endpoint_function(
             if (name not in ('body_data', '__request__')) {
                 if (name in file_param_names) {
                     # File parameter - will be converted below
-                    callback_args_lines.append(f"        callback_args['{name}'] = {name}");
+                    callback_args_lines.append(
+                        f"        callback_args['{name}'] = {name}"
+                    );
                 } else {
-                    callback_args_lines.append(f"        callback_args['{name}'] = {name}");
+                    callback_args_lines.append(
+                        f"        callback_args['{name}'] = {name}"
+                    );
                 }
             }
         }
@@ -391,7 +401,8 @@ impl JFastApiServer._create_endpoint_function(
     if file_param_names {
         file_conversion_lines = [];
         for file_param in file_param_names {
-            file_conversion_lines.append(f"""
+            file_conversion_lines.append(
+                f"""
         # Convert FastAPI UploadFile to Jac UploadFile for '{file_param}'
         if callback_args.get('{file_param}') is not None:
             fastapi_file = callback_args['{file_param}']
@@ -400,7 +411,8 @@ impl JFastApiServer._create_endpoint_function(
                 filename=fastapi_file.filename or 'unnamed',
                 data=file_content,
                 content_type=fastapi_file.content_type or 'application/octet-stream'
-            )""");
+            )"""
+            );
         }
         file_conversion_code = '\n'.join(file_conversion_lines);
     }

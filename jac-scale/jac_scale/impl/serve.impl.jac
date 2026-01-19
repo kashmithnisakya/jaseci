@@ -619,9 +619,7 @@ impl JacAPIServer.create_walker_parameters(
             )
         );
     }
-    walker_info = self.introspector.introspect_walker(
-        self.get_walkers()[walker_name]
-    );
+    walker_info = self.introspector.introspect_walker(self.get_walkers()[walker_name]);
     walker_fields = walker_info['fields'];
     accepts_files = walker_info.get('accepts_files', False);
     for field_name in walker_fields {
