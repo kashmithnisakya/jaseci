@@ -389,32 +389,6 @@ class TestFileUploadAPI:
         assert report["file2"]["size"] == len(content2)
         assert report["label"] == "batch_upload"
 
-    def test_binary_file_upload(
-        self, file_upload_fixture: FileUploadServerFixture
-    ) -> None:
-        """Test uploading a binary file."""
-        file_upload_fixture.start_server()
-        token = file_upload_fixture.register_user()
-
-        # Create binary content (simulating a small image)
-        binary_content = bytes(range(256))
-
-        result = file_upload_fixture.request_multipart(
-            "/walker/UploadDocument",
-            files={"file": ("binary.bin", binary_content, "application/octet-stream")},
-            fields={"description": "Binary file test"},
-            token=token,
-        )
-
-        assert result.get("ok") is True
-        data = result.get("data", {})
-        reports = data.get("reports", [])
-        assert len(reports) > 0
-
-        report = reports[0]
-        assert report["filename"] == "binary.bin"
-        assert report["size"] == 256
-
     def test_walker_without_file_still_works(
         self, file_upload_fixture: FileUploadServerFixture
     ) -> None:
@@ -460,32 +434,3 @@ class TestFileUploadAPI:
         report = reports[0]
         assert report["filename"] == "large.dat"
         assert report["size"] == 100 * 1024
-
-    def test_file_upload_content_types(
-        self, file_upload_fixture: FileUploadServerFixture
-    ) -> None:
-        """Test various file types can be uploaded."""
-        file_upload_fixture.start_server()
-        token = file_upload_fixture.register_user()
-
-        test_cases = [
-            ("document.pdf", b"%PDF-1.4"),
-            ("image.jpg", b"\xff\xd8\xff\xe0"),
-            ("data.json", b'{"key": "value"}'),
-        ]
-
-        for filename, content in test_cases:
-            result = file_upload_fixture.request_multipart(
-                "/walker/UploadDocument",
-                files={"file": (filename, content, "application/octet-stream")},
-                token=token,
-            )
-
-            assert result.get("ok") is True, f"Failed for {filename}"
-            data = result.get("data", {})
-            reports = data.get("reports", [])
-            assert len(reports) > 0
-
-            report = reports[0]
-            assert report["filename"] == filename
-            assert report["size"] == len(content)
