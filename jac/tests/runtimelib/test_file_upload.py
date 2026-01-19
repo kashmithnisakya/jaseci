@@ -1,6 +1,5 @@
 """Tests for file upload functionality in jac serve."""
 
-import io
 import json
 import socket
 import threading

@@ -7,11 +7,9 @@ import io
 import socket
 import subprocess
 import time
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-import pytest
 import requests
 
 
@@ -384,11 +382,13 @@ class TestJacScaleFileUpload:
 
     def test_file_upload_unicode_content(self) -> None:
         """Test file upload with unicode content."""
-        unicode_content = "Hello, World! 你好世界 🌍".encode("utf-8")
+        unicode_content = "Hello, World! 你好世界 🌍".encode()
 
         result = self._request_multipart(
             "/walker/UploadDocument",
-            files={"file": ("unicode.txt", unicode_content, "text/plain; charset=utf-8")},
+            files={
+                "file": ("unicode.txt", unicode_content, "text/plain; charset=utf-8")
+            },
             fields={"description": "Unicode test"},
         )
 
