@@ -1,5 +1,6 @@
 """Tests for file upload functionality in jac serve."""
 
+import contextlib
 import json
 import socket
 import threading
@@ -22,9 +23,10 @@ from tests.runtimelib.conftest import fixture_abs_path
 @pytest.fixture(autouse=True)
 def reset_machine(tmp_path: Path) -> Generator[None, None, None]:
     """Reset Jac machine before and after each test for session isolation."""
-    Jac.reset_machine(base_path=str(tmp_path))
+    # Use tmp_path for session isolation in parallel tests
+    Jac.reset_machine(base_path=str(tmp_path))  # type: ignore[attr-defined]
     yield
-    Jac.reset_machine(base_path=str(tmp_path))
+    Jac.reset_machine(base_path=str(tmp_path))  # type: ignore[attr-defined]
 
 
 def get_free_port() -> int:
@@ -79,12 +81,16 @@ class FileUploadServerFixture:
             base_path=str(self.session_dir),
         )
 
+        # Use the HTTPServer created by JacAPIServer
         self.httpd = self.server.server
 
+        # Start server in thread
         def run_server() -> None:
             try:
-                self.server.load_module()
-                self.httpd.serve_forever()
+                if self.server:
+                    self.server.load_module()
+                if self.httpd:
+                    self.httpd.serve_forever()
             except Exception:
                 pass
 
@@ -185,18 +191,16 @@ class FileUploadServerFixture:
 
     def cleanup(self) -> None:
         """Clean up server resources."""
+        # Close user manager if it exists
         if self.server and hasattr(self.server, "user_manager"):
-            try:
+            with contextlib.suppress(Exception):
                 self.server.user_manager.close()
-            except Exception:
-                pass
 
+        # Stop server if running
         if self.httpd:
-            try:
+            with contextlib.suppress(Exception):
                 self.httpd.shutdown()
                 self.httpd.server_close()
-            except Exception:
-                pass
 
         if self.server_thread and self.server_thread.is_alive():
             self.server_thread.join(timeout=2)
