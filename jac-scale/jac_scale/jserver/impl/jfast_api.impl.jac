@@ -253,7 +253,9 @@ impl JFastApiServer._create_endpoint_function(
                 } elif (default_value is None) {
                     param_str = f"{param_name}: Optional[{type_name}] = Form(default=None, description='{description}')";
                 } else {
-                    param_str = f"{param_name}: Optional[{type_name}] = Form(default={repr(default_value)}, description='{description}')";
+                    param_str = f"{param_name}: Optional[{type_name}] = Form(default={repr(
+                        default_value
+                    )}, description='{description}')";
                 }
                 param_strs.append(param_str);
                 param_mapping[param_name] = param_name;

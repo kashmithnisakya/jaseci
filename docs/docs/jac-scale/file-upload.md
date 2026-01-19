@@ -19,7 +19,7 @@ walker ProcessDocument {
         print(f"Received: {self.document.filename}");
         print(f"Type: {self.document.content_type}");
         print(f"Size: {self.document.size} bytes");
-        
+
         report {
             "filename": self.document.filename,
             "content_type": self.document.content_type,

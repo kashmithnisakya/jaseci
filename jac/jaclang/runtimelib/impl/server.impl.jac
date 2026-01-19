@@ -569,7 +569,9 @@ impl ModuleIntrospector.introspect_walker(
         fields[name] = {
             'type': type_name,
             'required': (param.default == inspect.Parameter.empty),
-            'default': None if (param.default == inspect.Parameter.empty) else param.default
+            'default': None
+            if (param.default == inspect.Parameter.empty)
+            else param.default
         };
     }
     fields['_jac_spawn_node'] = {
