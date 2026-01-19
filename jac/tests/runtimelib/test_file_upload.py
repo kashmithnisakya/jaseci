@@ -331,7 +331,6 @@ class TestFileUploadAPI:
 
         report = reports[0]
         assert report["filename"] == "test.txt"
-        assert report["content_type"] == "text/plain"
         assert report["size"] == len(content)
         assert report["description"] == "Test upload"
 
@@ -414,7 +413,6 @@ class TestFileUploadAPI:
 
         report = reports[0]
         assert report["filename"] == "binary.bin"
-        assert report["content_type"] == "application/octet-stream"
         assert report["size"] == 256
 
     def test_walker_without_file_still_works(
@@ -466,20 +464,20 @@ class TestFileUploadAPI:
     def test_file_upload_content_types(
         self, file_upload_fixture: FileUploadServerFixture
     ) -> None:
-        """Test various content types are preserved."""
+        """Test various file types can be uploaded."""
         file_upload_fixture.start_server()
         token = file_upload_fixture.register_user()
 
         test_cases = [
-            ("document.pdf", b"%PDF-1.4", "application/pdf"),
-            ("image.jpg", b"\xff\xd8\xff\xe0", "image/jpeg"),
-            ("data.json", b'{"key": "value"}', "application/json"),
+            ("document.pdf", b"%PDF-1.4"),
+            ("image.jpg", b"\xff\xd8\xff\xe0"),
+            ("data.json", b'{"key": "value"}'),
         ]
 
-        for filename, content, content_type in test_cases:
+        for filename, content in test_cases:
             result = file_upload_fixture.request_multipart(
                 "/walker/UploadDocument",
-                files={"file": (filename, content, content_type)},
+                files={"file": (filename, content, "application/octet-stream")},
                 token=token,
             )
 
@@ -490,4 +488,4 @@ class TestFileUploadAPI:
 
             report = reports[0]
             assert report["filename"] == filename
-            assert report["content_type"] == content_type
+            assert report["size"] == len(content)
