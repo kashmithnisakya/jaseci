@@ -195,7 +195,9 @@ class FileUploadServerFixture:
         finally:
             conn.close()
 
-    def register_user(self, username: str = "testuser", password: str = "testpass") -> str:
+    def register_user(
+        self, username: str = "testuser", password: str = "testpass"
+    ) -> str:
         """Register a user and return the auth token."""
         result = self.request_json(
             "POST",
