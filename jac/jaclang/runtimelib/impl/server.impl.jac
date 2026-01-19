@@ -885,14 +885,13 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
 
                         if filename {
                             # This is a file upload
-                            file_content_type = part_content_type if part_content_type else 'application/octet-stream';
-
+                            file_content_type = part_content_type
+                            or 'application/octet-stream';
                             upload_file = UploadFile.from_bytes(
                                 filename=filename,
                                 data=payload,
                                 content_type=file_content_type
                             );
-
                             # Handle multiple files with same name
                             if field_name in result {
                                 existing = result[field_name];
@@ -911,14 +910,12 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                             } except UnicodeDecodeError {
                                 value = payload.decode('latin-1');
                             }
-
                             # Try to parse as JSON for complex types
                             try {
                                 parsed_value = json.loads(value);
                             } except (json.JSONDecodeError, TypeError, ValueError) {
                                 parsed_value = value;
                             }
-
                             # Handle multiple values with same name
                             if field_name in result {
                                 existing = result[field_name];
