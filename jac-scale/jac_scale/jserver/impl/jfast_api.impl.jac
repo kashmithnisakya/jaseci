@@ -206,6 +206,7 @@ impl JFastApiServer._create_endpoint_function(
     path_params: list[APIParameter] = [];
     query_params: list[APIParameter] = [];
     header_params: list[APIParameter] = [];
+    file_params: list[APIParameter] = [];
     for param in parameters {
         param_location = param.type;
         if (param_location == ParameterType.BODY) {
@@ -216,6 +217,8 @@ impl JFastApiServer._create_endpoint_function(
             query_params.append(param);
         } elif (param_location == ParameterType.HEADER) {
             header_params.append(param);
+        } elif (param_location == ParameterType.FILE) {
+            file_params.append(param);
         }
     }
     param_strs: list[str] = [];
@@ -228,41 +231,69 @@ impl JFastApiServer._create_endpoint_function(
         param_strs.append('request: Request');
         param_mapping['request'] = 'request';
     }
+    # Check if we have file params - if so, body params must use Form() instead of JSON body
+    has_file_params = len(file_params) > 0;
     body_model: (type[BaseModel] | None) = None;
     if (len(body_params) >= 1) {
-        model_fields: dict[(str, Any)] = {};
-        for param in body_params {
-            param_name = param.name;
-            if not param_name {
-                continue;
-            }
-            param_type = self._get_python_type(param.data_type);
-            required = param.required;
-            description = param.description;
-            if required {
-                model_fields[param_name] = (
-                    param_type,
-                    Field(..., description=description)
-                );
-            } else {
+        if has_file_params {
+            # When files are present, use Form() for each body parameter (multipart/form-data)
+            for param in body_params {
+                param_name = param.name;
+                if not param_name {
+                    continue;
+                }
+                param_type_str = param.data_type;
+                required = param.required;
                 default_value = param.default;
-                if (default_value is None) {
+                description = param.description;
+                actual_type = self._get_python_type(param_type_str);
+                type_name = actual_type.__name__;
+                if required {
+                    param_str = f"{param_name}: {type_name} = Form(..., description='{description}')";
+                } elif (default_value is None) {
+                    param_str = f"{param_name}: Optional[{type_name}] = Form(default=None, description='{description}')";
+                } else {
+                    param_str = f"{param_name}: Optional[{type_name}] = Form(default={repr(default_value)}, description='{description}')";
+                }
+                param_strs.append(param_str);
+                param_mapping[param_name] = param_name;
+            }
+        } else {
+            # No files - use JSON body with Pydantic model
+            model_fields: dict[(str, Any)] = {};
+            for param in body_params {
+                param_name = param.name;
+                if not param_name {
+                    continue;
+                }
+                param_type = self._get_python_type(param.data_type);
+                required = param.required;
+                description = param.description;
+                if required {
                     model_fields[param_name] = (
-                        (param_type | None),
-                        Field(description=description)
+                        param_type,
+                        Field(..., description=description)
                     );
                 } else {
-                    model_fields[param_name] = (
-                        (param_type | None),
-                        Field(default_value, description=description)
-                    );
+                    default_value = param.default;
+                    if (default_value is None) {
+                        model_fields[param_name] = (
+                            (param_type | None),
+                            Field(description=description)
+                        );
+                    } else {
+                        model_fields[param_name] = (
+                            (param_type | None),
+                            Field(default_value, description=description)
+                        );
+                    }
                 }
             }
-        }
-        if model_fields {
-            body_model = create_model('RequestBody', **model_fields);
-            param_strs.append('body_data: RequestBody');
-            param_mapping['body_data'] = 'body_data';
+            if model_fields {
+                body_model = create_model('RequestBody', **model_fields);
+                param_strs.append('body_data: RequestBody');
+                param_mapping['body_data'] = 'body_data';
+            }
         }
     }
     param_type_mapping = [
@@ -310,6 +341,32 @@ impl JFastApiServer._create_endpoint_function(
             param_strs.append(param_str);
             param_mapping[param_name] = param_name;
         }
+    }
+    # Handle file parameters (FastAPI UploadFile)
+    for param in file_params {
+        param_name = param.name;
+        if not param_name {
+            continue;
+        }
+        description = param.description;
+        required = param.required;
+        # Check if multiple files are expected based on data_type
+        is_multiple = 'list' in param.data_type.lower();
+        if is_multiple {
+            if required {
+                param_str = f"{param_name}: List[UploadFile] = File(..., description='{description}')";
+            } else {
+                param_str = f"{param_name}: Optional[List[UploadFile]] = File(default=None, description='{description}')";
+            }
+        } else {
+            if required {
+                param_str = f"{param_name}: UploadFile = File(..., description='{description}')";
+            } else {
+                param_str = f"{param_name}: Optional[UploadFile] = File(default=None, description='{description}')";
+            }
+        }
+        param_strs.append(param_str);
+        param_mapping[param_name] = param_name;
     }
     params = ', '.join(param_strs);
     callback_args_lines: list[str] = [];
@@ -387,11 +444,15 @@ def endpoint_wrapper({params}):
         'Path': Path,
         'Body': Body,
         'Header': Header,
+        'File': File,
+        'Form': Form,
+        'UploadFile': UploadFile,
         'Request': Request,
         'Optional': Optional,
         'Field': Field,
         'create_model': create_model,
         'Dict': <>dict,
+        'List': <>list,
         'Any': Any,
         'int': int,
         'str': str,
