@@ -816,7 +816,7 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
             return server.user_manager.validate_token(token) if token else None;
         }
 
-        """Parse multipart/form-data request body for file uploads using python-multipart library."""
+        """Handle parsing of multipart/form-data request bodies for file uploads."""
         def _parse_multipart(self: JacRequestHandler) -> dict[str, Any] {
             content_type = self.headers.get('Content-Type', '');
             content_length = int(self.headers.get('Content-Length', 0));
@@ -840,90 +840,99 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
             }
 
             try {
-                # Use python-multipart's parse_form function
                 result: dict[(str, Any)] = {};
 
-                # Callback for regular form fields
-                def on_field(field: Any) -> None {
-                    field_name = field.field_name.decode()
-                    if isinstance(field.field_name, bytes)
-                    else field.field_name;
-                    value = field.value.decode()
-                    if isinstance(field.value, bytes)
-                    else field.value;
+                # Build a complete MIME message with headers
+                mime_message = f"Content-Type: {content_type}\r\n\r\n".encode() + body_data;
 
-                    # Try to parse as JSON for complex types
-                    try {
-                        parsed_value = json.loads(value);
-                    } except (json.JSONDecodeError, TypeError, ValueError) {
-                        parsed_value = value;
-                    }
+                # Parse using email.parser.BytesParser with HTTP policy
+                parser = BytesParser(policy=HTTP);
+                message = parser.parsebytes(mime_message);
 
-                    # Handle multiple values with same name
-                    if field_name in result {
-                        existing = result[field_name];
-                        if isinstance(existing, <>list) {
-                            existing.append(parsed_value);
-                        } else {
-                            result[field_name] = [existing, parsed_value];
+                # Process each part of the multipart message
+                if message.is_multipart() {
+                    for part in message.iter_parts() {
+                        # Get content disposition to extract field name and filename
+                        content_disposition = part.get("Content-Disposition", "");
+                        part_content_type = part.get_content_type();
+
+                        # Parse content disposition parameters
+                        field_name = None;
+                        filename = None;
+
+                        # Extract name and filename from Content-Disposition
+                        if "name=" in content_disposition {
+                            # Parse name parameter
+                            for param in content_disposition.split(";") {
+                                param = param.strip();
+                                if param.startswith("name=") {
+                                    field_name = param[5:].strip('"\'');
+                                } elif param.startswith("filename=") {
+                                    filename = param[9:].strip('"\'');
+                                }
+                            }
                         }
-                    } else {
-                        result[field_name] = parsed_value;
+
+                        if not field_name {
+                            continue;
+                        }
+
+                        # Get the part content
+                        payload = part.get_payload(decode=True);
+                        if payload is None {
+                            payload = b'';
+                        }
+
+                        if filename {
+                            # This is a file upload
+                            file_content_type = part_content_type if part_content_type else 'application/octet-stream';
+
+                            upload_file = UploadFile.from_bytes(
+                                filename=filename,
+                                data=payload,
+                                content_type=file_content_type
+                            );
+
+                            # Handle multiple files with same name
+                            if field_name in result {
+                                existing = result[field_name];
+                                if isinstance(existing, <>list) {
+                                    existing.append(upload_file);
+                                } else {
+                                    result[field_name] = [existing, upload_file];
+                                }
+                            } else {
+                                result[field_name] = upload_file;
+                            }
+                        } else {
+                            # This is a regular form field
+                            try {
+                                value = payload.decode('utf-8');
+                            } except UnicodeDecodeError {
+                                value = payload.decode('latin-1');
+                            }
+
+                            # Try to parse as JSON for complex types
+                            try {
+                                parsed_value = json.loads(value);
+                            } except (json.JSONDecodeError, TypeError, ValueError) {
+                                parsed_value = value;
+                            }
+
+                            # Handle multiple values with same name
+                            if field_name in result {
+                                existing = result[field_name];
+                                if isinstance(existing, <>list) {
+                                    existing.append(parsed_value);
+                                } else {
+                                    result[field_name] = [existing, parsed_value];
+                                }
+                            } else {
+                                result[field_name] = parsed_value;
+                            }
+                        }
                     }
                 }
-
-                # Callback for file uploads
-                def on_file(file: Any) -> None {
-                    field_name = file.field_name.decode()
-                    if isinstance(file.field_name, bytes)
-                    else file.field_name;
-                    filename = file.file_name.decode()
-                    if isinstance(file.file_name, bytes)
-                    else file.file_name;
-
-                    # Read file content from file object
-                    file.file_object.seek(0);
-                    file_data = file.file_object.read();
-
-                    # Get content type if available
-                    file_content_type = 'application/octet-stream';
-                    if file?.content_type and file.content_type {
-                        file_content_type = file.content_type.decode()
-                        if isinstance(file.content_type, bytes)
-                        else file.content_type;
-                    }
-
-                    upload_file = UploadFile.from_bytes(
-                        filename=filename,
-                        data=file_data,
-                        content_type=file_content_type
-                    );
-
-                    # Handle multiple files with same name
-                    if field_name in result {
-                        existing = result[field_name];
-                        if isinstance(existing, <>list) {
-                            existing.append(upload_file);
-                        } else {
-                            result[field_name] = [existing, upload_file];
-                        }
-                    } else {
-                        result[field_name] = upload_file;
-                    }
-                }
-
-                # Build headers dict for parse_form (expects bytes values)
-                headers = {
-                    'Content-Type': content_type.encode()
-                    if isinstance(content_type, str)
-                    else content_type
-                };
-
-                # Create BytesIO stream from body data
-                body_stream = io.BytesIO(body_data);
-
-                # Parse the form using python-multipart
-                parse_form(headers, body_stream, on_field, on_file);
 
                 return result;
             } except Exception as e {

@@ -2,14 +2,14 @@
 import hashlib;
 import html;
 import inspect;
-import io;
 import json;
 import os;
 import secrets;
 import from collections.abc { Callable }
 import from contextlib { suppress }
+import from email.parser { BytesParser }
+import from email.policy { HTTP }
 import from http.server { BaseHTTPRequestHandler, HTTPServer }
-import from python_multipart { parse_form }
 import from pathlib { Path }
 import from typing { TYPE_CHECKING, Any, Literal, TypeAlias, get_type_hints }
 import from urllib.parse { parse_qs, urlparse }
