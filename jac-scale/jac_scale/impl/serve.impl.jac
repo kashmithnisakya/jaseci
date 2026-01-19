@@ -619,23 +619,36 @@ impl JacAPIServer.create_walker_parameters(
             )
         );
     }
-    walker_fields = self.introspector.introspect_walker(
+    walker_info = self.introspector.introspect_walker(
         self.get_walkers()[walker_name]
-    )['fields'];
+    );
+    walker_fields = walker_info['fields'];
+    accepts_files = walker_info.get('accepts_files', False);
     for field_name in walker_fields {
         if ((field_name == '_jac_spawn_node') and invoke_on_root) {
             continue;
         }
+        field_info = walker_fields[field_name];
+        is_file_field = field_info.get('is_file', False);
+        # Determine parameter type based on field type and whether walker accepts files
+        if (field_name == '_jac_spawn_node') {
+            param_type = ParameterType.PATH;
+        } elif is_file_field {
+            param_type = ParameterType.FILE;
+        } elif accepts_files {
+            # If walker has file params, all non-file params should be form fields
+            param_type = ParameterType.FORM;
+        } else {
+            param_type = ParameterType.BODY;
+        }
         parameters.append(
             APIParameter(
                 name='node' if (field_name == '_jac_spawn_node') else field_name,
-                data_type=walker_fields[field_name]['type'],
-                required=walker_fields[field_name]['required'],
-                default=walker_fields[field_name]['default'],
+                data_type=field_info['type'],
+                required=field_info['required'],
+                default=field_info['default'],
                 description=f"Field {field_name} for walker {walker_name}",
-                type=ParameterType.BODY
-                if (field_name != '_jac_spawn_node')
-                else ParameterType.PATH
+                type=param_type
             )
         );
     }

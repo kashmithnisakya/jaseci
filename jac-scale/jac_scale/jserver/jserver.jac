@@ -19,7 +19,9 @@ class ParameterType(StrEnum) {
     has QUERY: str = 'query',
         PATH: str = 'path',
         BODY: str = 'body',
-        HEADER: str = 'header';
+        HEADER: str = 'header',
+        FILE: str = 'file',
+        FORM: str = 'form';
 }
 
 obj APIParameter {

@@ -206,6 +206,8 @@ impl JFastApiServer._create_endpoint_function(
     path_params: list[APIParameter] = [];
     query_params: list[APIParameter] = [];
     header_params: list[APIParameter] = [];
+    file_params: list[APIParameter] = [];
+    form_params: list[APIParameter] = [];
     for param in parameters {
         param_location = param.type;
         if (param_location == ParameterType.BODY) {
@@ -216,6 +218,10 @@ impl JFastApiServer._create_endpoint_function(
             query_params.append(param);
         } elif (param_location == ParameterType.HEADER) {
             header_params.append(param);
+        } elif (param_location == ParameterType.FILE) {
+            file_params.append(param);
+        } elif (param_location == ParameterType.FORM) {
+            form_params.append(param);
         }
     }
     param_strs: list[str] = [];
@@ -311,8 +317,48 @@ impl JFastApiServer._create_endpoint_function(
             param_mapping[param_name] = param_name;
         }
     }
+    # Handle file upload parameters (FastAPI UploadFile)
+    for param in file_params {
+        param_name = param.name;
+        if not param_name {
+            continue;
+        }
+        description = param.description;
+        required = param.required;
+        if required {
+            param_str = f"{param_name}: FastAPIUploadFile = File(..., description='{description}')";
+        } else {
+            param_str = f"{param_name}: Optional[FastAPIUploadFile] = File(None, description='{description}')";
+        }
+        param_strs.append(param_str);
+        param_mapping[param_name] = param_name;
+    }
+    # Handle form data parameters (non-file fields in multipart requests)
+    for param in form_params {
+        param_name = param.name;
+        if not param_name {
+            continue;
+        }
+        param_type_str = param.data_type;
+        required = param.required;
+        default_value = param.default;
+        description = param.description;
+        actual_type = self._get_python_type(param_type_str);
+        type_name = actual_type.__name__;
+        if required {
+            param_str = f"{param_name}: {type_name} = Form(..., description='{description}')";
+        } elif (default_value is None) {
+            param_str = f"{param_name}: Optional[{type_name}] = Form(None, description='{description}')";
+        } else {
+            param_str = f"{param_name}: Optional[{type_name}] = Form({repr(default_value)}, description='{description}')";
+        }
+        param_strs.append(param_str);
+        param_mapping[param_name] = param_name;
+    }
     params = ', '.join(param_strs);
     callback_args_lines: list[str] = [];
+    # Build the list of file parameter names for conversion
+    file_param_names = [p.name for p in file_params if p.name];
     if body_model {
         for param in body_params {
             param_name = param.name;
@@ -324,7 +370,12 @@ impl JFastApiServer._create_endpoint_function(
         }
         for name in param_mapping {
             if (name not in ('body_data', '__request__')) {
-                callback_args_lines.append(f"        callback_args['{name}'] = {name}");
+                if (name in file_param_names) {
+                    # File parameter - will be converted below
+                    callback_args_lines.append(f"        callback_args['{name}'] = {name}");
+                } else {
+                    callback_args_lines.append(f"        callback_args['{name}'] = {name}");
+                }
             }
         }
     } else {
@@ -335,6 +386,24 @@ impl JFastApiServer._create_endpoint_function(
         ];
     }
     callback_args_str = '\n'.join(callback_args_lines);
+    # Generate file conversion code if there are file parameters
+    file_conversion_code = '';
+    if file_param_names {
+        file_conversion_lines = [];
+        for file_param in file_param_names {
+            file_conversion_lines.append(f"""
+        # Convert FastAPI UploadFile to Jac UploadFile for '{file_param}'
+        if callback_args.get('{file_param}') is not None:
+            fastapi_file = callback_args['{file_param}']
+            file_content = await fastapi_file.read()
+            callback_args['{file_param}'] = JacUploadFile.from_bytes(
+                filename=fastapi_file.filename or 'unnamed',
+                data=file_content,
+                content_type=fastapi_file.content_type or 'application/octet-stream'
+            )""");
+        }
+        file_conversion_code = '\n'.join(file_conversion_lines);
+    }
     extra_query_params_code = '';
     if accepts_kwargs {
         declared_params = [
@@ -351,13 +420,21 @@ impl JFastApiServer._create_endpoint_function(
                 callback_args[key] = value
 """;
     }
-    if inspect.iscoroutinefunction(callback) {
+    # If there are file parameters, we must use an async endpoint to read file content
+    has_file_params = len(file_param_names) > 0;
+    if (has_file_params or inspect.iscoroutinefunction(callback)) {
+        # Use async endpoint for file uploads (need to await file.read())
+        if inspect.iscoroutinefunction(callback) {
+            callback_call = "await callback(**callback_args)";
+        } else {
+            callback_call = "callback(**callback_args)";
+        }
         func_code = f"""
 async def endpoint_wrapper({params}):
     try:
-        callback_args: Dict[str, Any] = {{}}
-{callback_args_str}{extra_query_params_code}
-        result = await callback(**callback_args)
+        callback_args: Dict[str, Any] = {{}}{extra_query_params_code}
+{callback_args_str}{file_conversion_code}
+        result = {callback_call}
         # Automatically convert TransportResponse to JSONResponse (like HTTPTransport.send)
         if isinstance(result, TransportResponse):
             return _convert_transport_response_to_json_response(result)
@@ -401,7 +478,11 @@ def endpoint_wrapper({params}):
         'dict': <>dict,
         'TransportResponse': TransportResponse,
         '_convert_transport_response_to_json_response': _convert_transport_response_to_json_response,
-        'isinstance': isinstance
+        'isinstance': isinstance,
+        'File': File,
+        'Form': Form,
+        'FastAPIUploadFile': FastAPIUploadFile,
+        'JacUploadFile': JacUploadFile
     };
     if body_model {
         exec_globals['RequestBody'] = body_model;
