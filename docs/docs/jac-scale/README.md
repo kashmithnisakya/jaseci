@@ -27,6 +27,15 @@
 
 ### 5. Support for public private endpoints with JWT authentication
 
+### 6. File Upload Support
+
+- **UploadFile type**: Handle file uploads in walker parameters using the `UploadFile` type
+- **Multipart form-data**: Automatic handling of multipart/form-data requests
+- **Mixed parameters**: Combine file uploads with regular form fields seamlessly
+- **File utilities**: Built-in methods for reading content and saving files to disk
+
+For detailed usage and examples, see the [File Upload Guide](file_upload.md).
+
 ## Supported jac commands
 
 - `jac start`: Start Jac application with FastAPI backend
