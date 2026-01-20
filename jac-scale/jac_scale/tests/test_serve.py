@@ -45,9 +45,6 @@ class TestJacScaleServe:
         if not cls.test_file.exists():
             raise FileNotFoundError(f"Test fixture not found: {cls.test_file}")
 
-        # Compile the fixture file to bytecode
-        cls._compile_fixture()
-
         # Use dynamically allocated free port
         cls.port = get_free_port()
         cls.base_url = f"http://localhost:{cls.port}"
@@ -78,34 +75,6 @@ class TestJacScaleServe:
 
         # Clean up database files
         cls._cleanup_db_files()
-
-    @classmethod
-    def _compile_fixture(cls) -> None:
-        """Compile the fixture .jac file to bytecode."""
-        import sys
-
-        # Get the jac executable from the same directory as the current Python interpreter
-        jac_executable = Path(sys.executable).parent / "jac"
-
-        # Build the command to compile the fixture
-        cmd = [
-            str(jac_executable),
-            "build",
-            str(cls.test_file),
-        ]
-
-        # Run the compile command
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-        )
-
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"Failed to compile fixture file {cls.test_file}.\n"
-                f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}"
-            )
 
     @classmethod
     def _start_server(cls) -> None:
