@@ -134,7 +134,7 @@ walker : pub PublicFileUpload {
             "content_type": self.attachment.content_type,
             "size": self.attachment.size
         };
-        
+
 # Async Walker Test
 import asyncio;
 
