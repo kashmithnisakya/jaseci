@@ -255,10 +255,7 @@ class TestFileUpload:
         result = self._extract_transport_response_data(response.json())
         assert isinstance(result, dict)
 
-        if "reports" in result:
-            file_info = result["reports"][0]
-        else:
-            file_info = result
+        file_info = result["reports"][0] if "reports" in result else result
 
         assert file_info["filename"] == "report.pdf"
         assert file_info["content_type"] == "application/pdf"
@@ -280,10 +277,7 @@ class TestFileUpload:
         result = self._extract_transport_response_data(response.json())
         assert isinstance(result, dict)
 
-        if "reports" in result:
-            file_info = result["reports"][0]
-        else:
-            file_info = result
+        file_info = result["reports"][0] if "reports" in result else result
 
         assert file_info["filename"] == "image.png"
         # Default description should be empty string
@@ -330,10 +324,7 @@ class TestFileUpload:
         result = self._extract_transport_response_data(response.json())
         assert isinstance(result, dict)
 
-        if "reports" in result:
-            file_info = result["reports"][0]
-        else:
-            file_info = result
+        file_info = result["reports"][0] if "reports" in result else result
 
         assert file_info["filename"] == "confidential.doc"
         assert file_info["notes"] == "Important document"
@@ -353,10 +344,7 @@ class TestFileUpload:
         result = self._extract_transport_response_data(response.json())
         assert isinstance(result, dict)
 
-        if "reports" in result:
-            file_info = result["reports"][0]
-        else:
-            file_info = result
+        file_info = result["reports"][0] if "reports" in result else result
 
         assert file_info["filename"] == "public.txt"
         assert file_info["content_type"] == "text/plain"
@@ -391,10 +379,7 @@ class TestFileUpload:
             result = self._extract_transport_response_data(response.json())
             assert isinstance(result, dict)
 
-            if "reports" in result:
-                file_info = result["reports"][0]
-            else:
-                file_info = result
+            file_info = result["reports"][0] if "reports" in result else result
 
             assert file_info["filename"] == filename
             assert file_info["content_type"] == content_type
@@ -448,10 +433,7 @@ class TestFileUpload:
         result = self._extract_transport_response_data(response.json())
         assert isinstance(result, dict)
 
-        if "reports" in result:
-            file_info = result["reports"][0]
-        else:
-            file_info = result
+        file_info = result["reports"][0] if "reports" in result else result
 
         assert file_info["filename"] == "large_file.bin"
         assert file_info["size"] == 1024 * 1024
