@@ -141,9 +141,7 @@ impl QueryParameterHandler.generate_param_string(param: APIParameter) -> str {
     } elif (param.default is None) {
         return f"{param.name}: Optional[{type_name}] = Query(description='{description}')";
     } else {
-        return f"{param.name}: Optional[{type_name}] = Query({repr(
-            param.default
-        )}, description='{description}')";
+        return f"{param.name}: Optional[{type_name}] = Query({repr(param.default)}, description='{description}')";
     }
 }
 
@@ -156,9 +154,7 @@ impl HeaderParameterHandler.generate_param_string(param: APIParameter) -> str {
     } elif (param.default is None) {
         return f"{param.name}: Optional[{type_name}] = Header(default=None, description='{description}')";
     } else {
-        return f"{param.name}: Optional[{type_name}] = Header({repr(
-            param.default
-        )}, description='{description}')";
+        return f"{param.name}: Optional[{type_name}] = Header({repr(param.default)}, description='{description}')";
     }
 }
 
@@ -328,7 +324,6 @@ impl JFastApiServer._create_endpoint_function(
             file_params.append(param);
         }
     }
-
     # Initialize parameter strings and mapping
     param_strs: list[str] = [];
     param_mapping: dict[(str, str)] = {};
@@ -340,7 +335,6 @@ impl JFastApiServer._create_endpoint_function(
         param_strs.append('request: Request');
         param_mapping['request'] = 'request';
     }
-
     # Create handler map
     has_file_params = len(file_params) > 0;
     handler_map: dict[(ParameterType, ParameterHandler)] = {
@@ -349,7 +343,6 @@ impl JFastApiServer._create_endpoint_function(
         ParameterType.HEADER: HeaderParameterHandler(type_converter=self),
         ParameterType.FILE: FileParameterHandler(type_converter=self)
     };
-
     # Handle body parameters using appropriate handler
     body_model: (type[BaseModel] | None) = None;
     if (len(body_params) >= 1) {
@@ -375,7 +368,6 @@ impl JFastApiServer._create_endpoint_function(
             }
         }
     }
-
     # Process other parameter types using their handlers
     param_groups = [
         (path_params, ParameterType.PATH),
