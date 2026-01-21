@@ -39,22 +39,6 @@ curl -X POST "http://localhost:8000/walker/ProcessDocument" \
   -F "description=My document"
 ```
 
-**API Request (using Python requests):**
-
-```python
-import requests
-
-files = {"document": ("file.pdf", open("file.pdf", "rb"), "application/pdf")}
-data = {"description": "My document"}
-
-response = requests.post(
-    "http://localhost:8000/walker/ProcessDocument",
-    headers={"Authorization": "Bearer YOUR_TOKEN"},
-    files=files,
-    data=data
-)
-```
-
 ## UploadFile Properties and Methods
 
 The `UploadFile` object provides the following properties and methods:
@@ -98,23 +82,4 @@ curl -X POST "http://localhost:8000/walker/CreatePost" \
   -F "content=This is the post content" \
   -F "image=@photo.jpg" \
   -F "tags=tech,news"
-```
-
-## Saving Uploaded Files
-
-To save uploaded files to disk:
-
-```jac
-import from fastapi { UploadFile }
-import shutil;
-
-walker SaveFile {
-    has myfile: UploadFile;
-
-    can process with `root entry {
-        with open(f"{self.myfile.filename}", "wb") as buffer {
-            shutil.copyfileobj(self.myfile.file, buffer);
-        }
-    }
-}
 ```
