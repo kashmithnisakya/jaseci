@@ -42,6 +42,57 @@ glob EndpointResponse: TypeAlias = Response | BaseModel | <>dict[(str, object)] 
          object
      ] | str | <>bytes | None;
 
+"""Base protocol for parameter handlers."""
+obj ParameterHandler {
+    has type_converter: JFastApiServer;
+
+    """Generate parameter string for FastAPI function signature."""
+    def generate_param_string(param: APIParameter) -> str;
+
+    """Get the actual Python type from parameter type string."""
+    def get_type(param: APIParameter) -> type[Any] {
+        return self.type_converter._get_python_type(param.data_type);
+    }
+
+    """Get the type name for code generation."""
+    def get_type_name(param: APIParameter) -> str {
+        return self.get_type(param).__name__;
+    }
+}
+
+"""Handler for PATH parameters."""
+obj PathParameterHandler(ParameterHandler) {
+    def generate_param_string(param: APIParameter) -> str;
+}
+
+"""Handler for QUERY parameters."""
+obj QueryParameterHandler(ParameterHandler) {
+    def generate_param_string(param: APIParameter) -> str;
+}
+
+"""Handler for HEADER parameters."""
+obj HeaderParameterHandler(ParameterHandler) {
+    def generate_param_string(param: APIParameter) -> str;
+}
+
+"""Handler for FILE parameters."""
+obj FileParameterHandler(ParameterHandler) {
+    def generate_param_string(param: APIParameter) -> str;
+}
+
+"""Handler for BODY parameters with files (multipart/form-data)."""
+obj FormBodyParameterHandler(ParameterHandler) {
+    def generate_param_string(param: APIParameter) -> str;
+}
+
+"""Handler for BODY parameters without files (JSON)."""
+obj JSONBodyParameterHandler(ParameterHandler) {
+    has body_params: list[APIParameter];
+
+    """Generate Pydantic model for JSON body."""
+    def generate_body_model -> (type[BaseModel] | None);
+}
+
 """
 JFastApiServer: FastAPI implementation of JServer for programmatic endpoint creation.
 
