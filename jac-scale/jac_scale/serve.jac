@@ -234,6 +234,7 @@ class WebhookManager {
     async def retry_dead_letter(
         self: WebhookManager, entry_id: str
     ) -> TransportResponse;
+
     def remove_dead_letter(self: WebhookManager, entry_id: str) -> TransportResponse;
     # Inbound webhook handling
     async def handle_inbound_webhook(

@@ -1189,7 +1189,7 @@ impl JacAPIServer.register_sso_endpoints -> None {
 }
 
 """Enable HMR mode - file changes trigger reload on next request."""
-impl JacAPIServer.enable_hmr(self: JacAPIServer, hot_reloader: Any) -> None
+impl JacAPIServer.enable_hmr(hot_reloader: Any) -> None
 # ============================================================================
 # HMR (Hot Module Replacement) Dynamic Routing Support
 # ============================================================================
@@ -1211,7 +1211,7 @@ Instead of pre-registering /walker/WalkerA, /walker/WalkerB, etc.,
 we register catch-all routes that look up walkers at request time.
 This enables HMR since introspector.load() is called per-request.
 """
-impl JacAPIServer.register_dynamic_walker_endpoint(self: JacAPIServer) -> None {
+impl JacAPIServer.register_dynamic_walker_endpoint -> None {
     import from jaclang.runtimelib.transport { TransportResponse, Meta }
     import from fastapi { Request }
     # Dynamic handler that looks up walker at request time
@@ -1376,7 +1376,7 @@ impl JacAPIServer.register_dynamic_walker_endpoint(self: JacAPIServer) -> None {
 
 Similar to dynamic walker routing, this enables HMR for functions.
 """
-impl JacAPIServer.register_dynamic_function_endpoint(self: JacAPIServer) -> None {
+impl JacAPIServer.register_dynamic_function_endpoint -> None {
     import from fastapi.responses { JSONResponse }
     import from fastapi { Request }
     import from jaclang.runtimelib.transport { TransportResponse, Meta }
@@ -1482,7 +1482,7 @@ impl JacAPIServer.register_dynamic_function_endpoint(self: JacAPIServer) -> None
 These endpoints allow clients to discover what walkers and functions are available,
 which is especially useful in HMR mode where the list can change dynamically.
 """
-impl JacAPIServer.register_dynamic_introspection_endpoints(self: JacAPIServer) -> None {
+impl JacAPIServer.register_dynamic_introspection_endpoints -> None {
     import from fastapi.responses { JSONResponse }
     def list_walkers -> dict[str, Any] {
         # Reload introspector if files changed (HMR)
@@ -1601,11 +1601,12 @@ impl JacAPIServer.register_dynamic_introspection_endpoints(self: JacAPIServer) -
     );
 }
 
+"""Register all webhook management endpoints."""
+impl JacAPIServer.register_webhook_endpoints -> None
 # =============================================================================
 # Webhook Management Endpoints
 # =============================================================================
-"""Register all webhook management endpoints."""
-impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
+{
     import from jac_scale.serve {
         WebhookManager,
         CreateWebhookRequest,
@@ -2388,7 +2389,7 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
 }
 
 """Register inbound webhook endpoint for receiving webhooks."""
-impl JacAPIServer.register_webhook_inbound_endpoint(self: JacAPIServer) -> None {
+impl JacAPIServer.register_webhook_inbound_endpoint -> None {
     import from jac_scale.serve { WebhookManager }
     import from jaclang.runtimelib.transport { TransportResponse, Meta }
     import from fastapi { Request }
