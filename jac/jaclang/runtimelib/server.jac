@@ -102,7 +102,8 @@ obj ModuleIntrospector {
         _bundle_error: (str | None) = None,
         _bundle_builder: Any = None,
         _function_access: dict[(str, bool)] = {},
-        _walker_access: dict[(str, bool)] = {};
+        _walker_access: dict[(str, bool)] = {},
+        _walker_transport_type: dict[(str, str)] = {};
 
     def postinit -> None;
     def load(force_reload: bool = False) -> None;
@@ -123,6 +124,7 @@ obj ModuleIntrospector {
 
     def is_auth_required_for_function(func_name: str) -> bool;
     def is_auth_required_for_walker(walker_name: str) -> bool;
+    def get_walker_transport_type(walker_name: str) -> str;
     def _collect_client_globals -> dict[str, Any];
 }
 

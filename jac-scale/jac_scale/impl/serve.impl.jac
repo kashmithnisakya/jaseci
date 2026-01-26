@@ -96,6 +96,9 @@ impl JacAPIServer.start(self: JacAPIServer, dev: bool = False) -> None {
     self.register_static_file_endpoint();
     self.register_update_username_endpoint();
     self.register_update_password_endpoint();
+    # Register webhook management endpoints
+    self.register_webhook_endpoints();
+    self.register_webhook_inbound_endpoint();
     # Use dynamic routing for HMR support, static routing for production
     if dev {
         self.register_dynamic_walker_endpoint();
@@ -714,6 +717,19 @@ impl JacAPIServer.create_walker_callback(
                 meta=Meta(extra={'http_status': 500})
             );
         }
+
+        # Dispatch outbound webhooks if any are registered for this walker
+        if self.webhook_manager {
+            try {
+                await self.webhook_manager.dispatch_webhook(
+                    walker_name, result, username
+                );
+            } except Exception as e {
+                # Log but don't fail the request if webhook dispatch fails
+                logger.warning(f"Webhook dispatch failed for {walker_name}: {e}");
+            }
+        }
+
         return TransportResponse.success(
             data=result, meta=Meta(extra={'http_status': 200})
         );
@@ -1501,6 +1517,19 @@ impl JacAPIServer.register_dynamic_walker_endpoint(self: JacAPIServer) -> None {
                 meta=Meta(extra={'http_status': 500})
             );
         }
+
+        # Dispatch outbound webhooks if any are registered for this walker
+        if self.webhook_manager {
+            try {
+                await self.webhook_manager.dispatch_webhook(
+                    walker_name, result, username
+                );
+            } except Exception as e {
+                # Log but don't fail the request if webhook dispatch fails
+                logger.warning(f"Webhook dispatch failed for {walker_name}: {e}");
+            }
+        }
+
         return TransportResponse.success(
             data=result, meta=Meta(extra={'http_status': 200})
         );
@@ -1800,6 +1829,910 @@ impl JacAPIServer.register_dynamic_introspection_endpoints(self: JacAPIServer) -
             tags=['Introspection'],
             summary='Get walker information',
             description='Returns detailed information about a specific walker. Supports HMR.'
+        )
+    );
+}
+
+# =============================================================================
+# Webhook Management Endpoints
+# =============================================================================
+
+"""Register all webhook management endpoints."""
+impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
+    import from jac_scale.serve {
+        WebhookManager,
+        CreateWebhookRequest,
+        UpdateWebhookRequest,
+        CreateApiKeyRequest,
+        RetryDeadLetterRequest
+    }
+    import from jaclang.runtimelib.transport { TransportResponse, Meta }
+
+    # Initialize webhook manager if not already
+    if not self.webhook_manager {
+        self.webhook_manager = WebhookManager();
+        self.webhook_manager.init();
+    }
+
+    # Helper to extract and validate auth
+    def require_auth(Authorization: (str | None)) -> (str | None) {
+        if not Authorization or not Authorization.startswith('Bearer ') {
+            return None;
+        }
+        token = Authorization[7:];
+        return self.validate_jwt_token(token);
+    }
+
+    # -------------------------------------------------------------------------
+    # Create Webhook
+    # -------------------------------------------------------------------------
+    def create_webhook_handler(
+        walker_name: str,
+        direction: str = 'outbound',
+        url: str = '',
+        api_key: (str | None) = None,
+        api_key_header: str = 'X-API-Key',
+        secret: (str | None) = None,
+        custom_headers: dict[str, str] = {},
+        retry_max_retries: int = 3,
+        retry_initial_backoff: int = 60,
+        metadata: dict[str, Any] = {},
+        Authorization: (str | None) = None
+    ) -> TransportResponse {
+        username = require_auth(Authorization);
+        if not username {
+            return TransportResponse.fail(
+                code='UNAUTHORIZED',
+                message='Authentication required',
+                meta=Meta(extra={'http_status': 401})
+            );
+        }
+
+        request = CreateWebhookRequest(
+            walker_name=walker_name,
+            direction=direction,
+            url=url,
+            api_key=api_key,
+            api_key_header=api_key_header,
+            secret=secret,
+            custom_headers=custom_headers,
+            retry_max_retries=retry_max_retries,
+            retry_initial_backoff=retry_initial_backoff,
+            metadata=metadata
+        );
+
+        return self.webhook_manager.create_webhook(request, username);
+    }
+
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.POST,
+            path='/webhooks',
+            callback=create_webhook_handler,
+            parameters=[
+                APIParameter(
+                    name='walker_name',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Walker name to associate with webhook',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='direction',
+                    data_type='string',
+                    required=False,
+                    default='outbound',
+                    description='Webhook direction: inbound or outbound',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='url',
+                    data_type='string',
+                    required=False,
+                    default='',
+                    description='Target URL for outbound webhooks',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='Authorization',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Bearer token for authentication',
+                    type=ParameterType.HEADER
+                )
+            ],
+            response_model=None,
+            tags=['Webhooks'],
+            summary='Create webhook',
+            description='Create a new webhook registration for a walker'
+        )
+    );
+
+    # -------------------------------------------------------------------------
+    # List Webhooks
+    # -------------------------------------------------------------------------
+    def list_webhooks_handler(
+        direction: (str | None) = None,
+        is_active: (bool | None) = None,
+        limit: int = 100,
+        offset: int = 0,
+        Authorization: (str | None) = None
+    ) -> TransportResponse {
+        username = require_auth(Authorization);
+        if not username {
+            return TransportResponse.fail(
+                code='UNAUTHORIZED',
+                message='Authentication required',
+                meta=Meta(extra={'http_status': 401})
+            );
+        }
+
+        return self.webhook_manager.list_webhooks(direction, is_active, limit, offset);
+    }
+
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.GET,
+            path='/webhooks',
+            callback=list_webhooks_handler,
+            parameters=[
+                APIParameter(
+                    name='direction',
+                    data_type='string',
+                    required=False,
+                    default=None,
+                    description='Filter by direction (inbound/outbound)',
+                    type=ParameterType.QUERY
+                ),
+                APIParameter(
+                    name='is_active',
+                    data_type='boolean',
+                    required=False,
+                    default=None,
+                    description='Filter by active status',
+                    type=ParameterType.QUERY
+                ),
+                APIParameter(
+                    name='limit',
+                    data_type='integer',
+                    required=False,
+                    default=100,
+                    description='Maximum number of results',
+                    type=ParameterType.QUERY
+                ),
+                APIParameter(
+                    name='offset',
+                    data_type='integer',
+                    required=False,
+                    default=0,
+                    description='Offset for pagination',
+                    type=ParameterType.QUERY
+                ),
+                APIParameter(
+                    name='Authorization',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Bearer token for authentication',
+                    type=ParameterType.HEADER
+                )
+            ],
+            response_model=None,
+            tags=['Webhooks'],
+            summary='List webhooks',
+            description='List all registered webhooks with optional filtering'
+        )
+    );
+
+    # -------------------------------------------------------------------------
+    # Get Webhook
+    # -------------------------------------------------------------------------
+    def get_webhook_handler(
+        webhook_id: str,
+        Authorization: (str | None) = None
+    ) -> TransportResponse {
+        username = require_auth(Authorization);
+        if not username {
+            return TransportResponse.fail(
+                code='UNAUTHORIZED',
+                message='Authentication required',
+                meta=Meta(extra={'http_status': 401})
+            );
+        }
+
+        return self.webhook_manager.get_webhook(webhook_id);
+    }
+
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.GET,
+            path='/webhooks/{webhook_id}',
+            callback=get_webhook_handler,
+            parameters=[
+                APIParameter(
+                    name='webhook_id',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Webhook ID',
+                    type=ParameterType.PATH
+                ),
+                APIParameter(
+                    name='Authorization',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Bearer token for authentication',
+                    type=ParameterType.HEADER
+                )
+            ],
+            response_model=None,
+            tags=['Webhooks'],
+            summary='Get webhook',
+            description='Get details of a specific webhook'
+        )
+    );
+
+    # -------------------------------------------------------------------------
+    # Update Webhook
+    # -------------------------------------------------------------------------
+    def update_webhook_handler(
+        webhook_id: str,
+        url: (str | None) = None,
+        api_key: (str | None) = None,
+        secret: (str | None) = None,
+        custom_headers: (dict[str, str] | None) = None,
+        is_active: (bool | None) = None,
+        metadata: (dict[str, Any] | None) = None,
+        Authorization: (str | None) = None
+    ) -> TransportResponse {
+        username = require_auth(Authorization);
+        if not username {
+            return TransportResponse.fail(
+                code='UNAUTHORIZED',
+                message='Authentication required',
+                meta=Meta(extra={'http_status': 401})
+            );
+        }
+
+        request = UpdateWebhookRequest(
+            url=url,
+            api_key=api_key,
+            secret=secret,
+            custom_headers=custom_headers,
+            is_active=is_active,
+            metadata=metadata
+        );
+
+        return self.webhook_manager.update_webhook(webhook_id, request);
+    }
+
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.PUT,
+            path='/webhooks/{webhook_id}',
+            callback=update_webhook_handler,
+            parameters=[
+                APIParameter(
+                    name='webhook_id',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Webhook ID',
+                    type=ParameterType.PATH
+                ),
+                APIParameter(
+                    name='is_active',
+                    data_type='boolean',
+                    required=False,
+                    default=None,
+                    description='Whether webhook is active',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='Authorization',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Bearer token for authentication',
+                    type=ParameterType.HEADER
+                )
+            ],
+            response_model=None,
+            tags=['Webhooks'],
+            summary='Update webhook',
+            description='Update an existing webhook'
+        )
+    );
+
+    # -------------------------------------------------------------------------
+    # Delete Webhook
+    # -------------------------------------------------------------------------
+    def delete_webhook_handler(
+        webhook_id: str,
+        Authorization: (str | None) = None
+    ) -> TransportResponse {
+        username = require_auth(Authorization);
+        if not username {
+            return TransportResponse.fail(
+                code='UNAUTHORIZED',
+                message='Authentication required',
+                meta=Meta(extra={'http_status': 401})
+            );
+        }
+
+        return self.webhook_manager.delete_webhook(webhook_id);
+    }
+
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.DELETE,
+            path='/webhooks/{webhook_id}',
+            callback=delete_webhook_handler,
+            parameters=[
+                APIParameter(
+                    name='webhook_id',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Webhook ID',
+                    type=ParameterType.PATH
+                ),
+                APIParameter(
+                    name='Authorization',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Bearer token for authentication',
+                    type=ParameterType.HEADER
+                )
+            ],
+            response_model=None,
+            tags=['Webhooks'],
+            summary='Delete webhook',
+            description='Delete a webhook registration'
+        )
+    );
+
+    # -------------------------------------------------------------------------
+    # Create API Key
+    # -------------------------------------------------------------------------
+    def create_api_key_handler(
+        webhook_id: str,
+        name: str = '',
+        expires_in_days: (int | None) = None,
+        Authorization: (str | None) = None
+    ) -> TransportResponse {
+        username = require_auth(Authorization);
+        if not username {
+            return TransportResponse.fail(
+                code='UNAUTHORIZED',
+                message='Authentication required',
+                meta=Meta(extra={'http_status': 401})
+            );
+        }
+
+        request = CreateApiKeyRequest(
+            webhook_id=webhook_id,
+            name=name,
+            expires_in_days=expires_in_days
+        );
+
+        return self.webhook_manager.create_api_key(request, username);
+    }
+
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.POST,
+            path='/webhooks/{webhook_id}/api-keys',
+            callback=create_api_key_handler,
+            parameters=[
+                APIParameter(
+                    name='webhook_id',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Webhook ID',
+                    type=ParameterType.PATH
+                ),
+                APIParameter(
+                    name='name',
+                    data_type='string',
+                    required=False,
+                    default='',
+                    description='Human-readable key name',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='expires_in_days',
+                    data_type='integer',
+                    required=False,
+                    default=None,
+                    description='Key expiration in days',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='Authorization',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Bearer token for authentication',
+                    type=ParameterType.HEADER
+                )
+            ],
+            response_model=None,
+            tags=['Webhooks'],
+            summary='Create API key',
+            description='Create a new API key for webhook authentication'
+        )
+    );
+
+    # -------------------------------------------------------------------------
+    # List API Keys
+    # -------------------------------------------------------------------------
+    def list_api_keys_handler(
+        webhook_id: str,
+        Authorization: (str | None) = None
+    ) -> TransportResponse {
+        username = require_auth(Authorization);
+        if not username {
+            return TransportResponse.fail(
+                code='UNAUTHORIZED',
+                message='Authentication required',
+                meta=Meta(extra={'http_status': 401})
+            );
+        }
+
+        return self.webhook_manager.list_api_keys(webhook_id);
+    }
+
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.GET,
+            path='/webhooks/{webhook_id}/api-keys',
+            callback=list_api_keys_handler,
+            parameters=[
+                APIParameter(
+                    name='webhook_id',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Webhook ID',
+                    type=ParameterType.PATH
+                ),
+                APIParameter(
+                    name='Authorization',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Bearer token for authentication',
+                    type=ParameterType.HEADER
+                )
+            ],
+            response_model=None,
+            tags=['Webhooks'],
+            summary='List API keys',
+            description='List all API keys for a webhook'
+        )
+    );
+
+    # -------------------------------------------------------------------------
+    # Revoke API Key
+    # -------------------------------------------------------------------------
+    def revoke_api_key_handler(
+        webhook_id: str,
+        key_id: str,
+        Authorization: (str | None) = None
+    ) -> TransportResponse {
+        username = require_auth(Authorization);
+        if not username {
+            return TransportResponse.fail(
+                code='UNAUTHORIZED',
+                message='Authentication required',
+                meta=Meta(extra={'http_status': 401})
+            );
+        }
+
+        return self.webhook_manager.revoke_api_key(key_id);
+    }
+
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.DELETE,
+            path='/webhooks/{webhook_id}/api-keys/{key_id}',
+            callback=revoke_api_key_handler,
+            parameters=[
+                APIParameter(
+                    name='webhook_id',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Webhook ID',
+                    type=ParameterType.PATH
+                ),
+                APIParameter(
+                    name='key_id',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='API Key ID to revoke',
+                    type=ParameterType.PATH
+                ),
+                APIParameter(
+                    name='Authorization',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Bearer token for authentication',
+                    type=ParameterType.HEADER
+                )
+            ],
+            response_model=None,
+            tags=['Webhooks'],
+            summary='Revoke API key',
+            description='Revoke (deactivate) an API key'
+        )
+    );
+
+    # -------------------------------------------------------------------------
+    # Get Webhook Stats
+    # -------------------------------------------------------------------------
+    def get_webhook_stats_handler(
+        webhook_id: str,
+        Authorization: (str | None) = None
+    ) -> TransportResponse {
+        username = require_auth(Authorization);
+        if not username {
+            return TransportResponse.fail(
+                code='UNAUTHORIZED',
+                message='Authentication required',
+                meta=Meta(extra={'http_status': 401})
+            );
+        }
+
+        return self.webhook_manager.get_webhook_stats(webhook_id);
+    }
+
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.GET,
+            path='/webhooks/{webhook_id}/stats',
+            callback=get_webhook_stats_handler,
+            parameters=[
+                APIParameter(
+                    name='webhook_id',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Webhook ID',
+                    type=ParameterType.PATH
+                ),
+                APIParameter(
+                    name='Authorization',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Bearer token for authentication',
+                    type=ParameterType.HEADER
+                )
+            ],
+            response_model=None,
+            tags=['Webhooks'],
+            summary='Get webhook stats',
+            description='Get delivery statistics for a webhook'
+        )
+    );
+
+    # -------------------------------------------------------------------------
+    # Get Delivery Logs
+    # -------------------------------------------------------------------------
+    def get_delivery_logs_handler(
+        webhook_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        Authorization: (str | None) = None
+    ) -> TransportResponse {
+        username = require_auth(Authorization);
+        if not username {
+            return TransportResponse.fail(
+                code='UNAUTHORIZED',
+                message='Authentication required',
+                meta=Meta(extra={'http_status': 401})
+            );
+        }
+
+        return self.webhook_manager.get_delivery_logs(webhook_id, limit, offset);
+    }
+
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.GET,
+            path='/webhooks/{webhook_id}/logs',
+            callback=get_delivery_logs_handler,
+            parameters=[
+                APIParameter(
+                    name='webhook_id',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Webhook ID',
+                    type=ParameterType.PATH
+                ),
+                APIParameter(
+                    name='limit',
+                    data_type='integer',
+                    required=False,
+                    default=50,
+                    description='Maximum number of results',
+                    type=ParameterType.QUERY
+                ),
+                APIParameter(
+                    name='offset',
+                    data_type='integer',
+                    required=False,
+                    default=0,
+                    description='Offset for pagination',
+                    type=ParameterType.QUERY
+                ),
+                APIParameter(
+                    name='Authorization',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Bearer token for authentication',
+                    type=ParameterType.HEADER
+                )
+            ],
+            response_model=None,
+            tags=['Webhooks'],
+            summary='Get delivery logs',
+            description='Get delivery logs for a webhook (audit trail)'
+        )
+    );
+
+    # -------------------------------------------------------------------------
+    # List Dead Letters
+    # -------------------------------------------------------------------------
+    def list_dead_letters_handler(
+        webhook_id: (str | None) = None,
+        limit: int = 50,
+        offset: int = 0,
+        Authorization: (str | None) = None
+    ) -> TransportResponse {
+        username = require_auth(Authorization);
+        if not username {
+            return TransportResponse.fail(
+                code='UNAUTHORIZED',
+                message='Authentication required',
+                meta=Meta(extra={'http_status': 401})
+            );
+        }
+
+        return self.webhook_manager.list_dead_letters(webhook_id, limit, offset);
+    }
+
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.GET,
+            path='/webhooks/dead-letters',
+            callback=list_dead_letters_handler,
+            parameters=[
+                APIParameter(
+                    name='webhook_id',
+                    data_type='string',
+                    required=False,
+                    default=None,
+                    description='Filter by webhook ID',
+                    type=ParameterType.QUERY
+                ),
+                APIParameter(
+                    name='limit',
+                    data_type='integer',
+                    required=False,
+                    default=50,
+                    description='Maximum number of results',
+                    type=ParameterType.QUERY
+                ),
+                APIParameter(
+                    name='offset',
+                    data_type='integer',
+                    required=False,
+                    default=0,
+                    description='Offset for pagination',
+                    type=ParameterType.QUERY
+                ),
+                APIParameter(
+                    name='Authorization',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Bearer token for authentication',
+                    type=ParameterType.HEADER
+                )
+            ],
+            response_model=None,
+            tags=['Webhooks'],
+            summary='List dead letters',
+            description='List entries in the dead letter queue'
+        )
+    );
+
+    # -------------------------------------------------------------------------
+    # Retry Dead Letter
+    # -------------------------------------------------------------------------
+    async def retry_dead_letter_handler(
+        entry_id: str,
+        Authorization: (str | None) = None
+    ) -> TransportResponse {
+        username = require_auth(Authorization);
+        if not username {
+            return TransportResponse.fail(
+                code='UNAUTHORIZED',
+                message='Authentication required',
+                meta=Meta(extra={'http_status': 401})
+            );
+        }
+
+        return await self.webhook_manager.retry_dead_letter(entry_id);
+    }
+
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.POST,
+            path='/webhooks/dead-letters/{entry_id}/retry',
+            callback=retry_dead_letter_handler,
+            parameters=[
+                APIParameter(
+                    name='entry_id',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Dead letter entry ID',
+                    type=ParameterType.PATH
+                ),
+                APIParameter(
+                    name='Authorization',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Bearer token for authentication',
+                    type=ParameterType.HEADER
+                )
+            ],
+            response_model=None,
+            tags=['Webhooks'],
+            summary='Retry dead letter',
+            description='Retry a failed delivery from the dead letter queue'
+        )
+    );
+
+    # -------------------------------------------------------------------------
+    # Remove Dead Letter
+    # -------------------------------------------------------------------------
+    def remove_dead_letter_handler(
+        entry_id: str,
+        Authorization: (str | None) = None
+    ) -> TransportResponse {
+        username = require_auth(Authorization);
+        if not username {
+            return TransportResponse.fail(
+                code='UNAUTHORIZED',
+                message='Authentication required',
+                meta=Meta(extra={'http_status': 401})
+            );
+        }
+
+        return self.webhook_manager.remove_dead_letter(entry_id);
+    }
+
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.DELETE,
+            path='/webhooks/dead-letters/{entry_id}',
+            callback=remove_dead_letter_handler,
+            parameters=[
+                APIParameter(
+                    name='entry_id',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Dead letter entry ID',
+                    type=ParameterType.PATH
+                ),
+                APIParameter(
+                    name='Authorization',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Bearer token for authentication',
+                    type=ParameterType.HEADER
+                )
+            ],
+            response_model=None,
+            tags=['Webhooks'],
+            summary='Remove dead letter',
+            description='Remove an entry from the dead letter queue'
+        )
+    );
+}
+
+"""Register inbound webhook endpoint for receiving webhooks."""
+impl JacAPIServer.register_webhook_inbound_endpoint(self: JacAPIServer) -> None {
+    import from jac_scale.serve { WebhookManager }
+    import from jaclang.runtimelib.transport { TransportResponse, Meta }
+    import from fastapi { Request }
+
+    # Initialize webhook manager if not already
+    if not self.webhook_manager {
+        self.webhook_manager = WebhookManager();
+        self.webhook_manager.init();
+    }
+
+    async def inbound_webhook_handler(
+        request: Request,
+        walker_name: str,
+        X_API_Key: (str | None) = None
+    ) -> TransportResponse {
+        # Get API key from header
+        api_key = X_API_Key or request.headers.get('X-API-Key', '');
+
+        if not api_key {
+            return TransportResponse.fail(
+                code='UNAUTHORIZED',
+                message='API key required in X-API-Key header',
+                meta=Meta(extra={'http_status': 401})
+            );
+        }
+
+        # Parse request body
+        try {
+            payload = await request.json();
+        } except Exception {
+            payload = {};
+        }
+
+        # Get walkers
+        walkers = self.get_walkers();
+
+        # Handle the inbound webhook
+        return await self.webhook_manager.handle_inbound_webhook(
+            walker_name=walker_name,
+            api_key=api_key,
+            payload=payload,
+            execution_manager=self.execution_manager,
+            walkers=walkers
+        );
+    }
+
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.POST,
+            path='/webhook/{walker_name}',
+            callback=inbound_webhook_handler,
+            parameters=[
+                APIParameter(
+                    name='walker_name',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Walker name to trigger',
+                    type=ParameterType.PATH
+                ),
+                APIParameter(
+                    name='X_API_Key',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='API key for webhook authentication',
+                    type=ParameterType.HEADER
+                )
+            ],
+            response_model=None,
+            tags=['Webhooks'],
+            summary='Inbound webhook',
+            description='Receive inbound webhook and trigger associated walker'
         )
     );
 }
