@@ -20,14 +20,15 @@ class WebhookRepository {
     # =========================================================================
     # Webhook Registration CRUD
     # =========================================================================
-
     """Create a new webhook registration."""
     def create_webhook(
         self: WebhookRepository, webhook: WebhookRegistration
     ) -> WebhookRegistration;
 
     """Get a webhook by ID."""
-    def get_webhook(self: WebhookRepository, webhook_id: str) -> (WebhookRegistration | None);
+    def get_webhook(
+        self: WebhookRepository, webhook_id: str
+    ) -> (WebhookRegistration | None);
 
     """Get all webhooks for a specific walker."""
     def get_webhooks_by_walker(
@@ -64,7 +65,6 @@ class WebhookRepository {
     # =========================================================================
     # Delivery Log Operations
     # =========================================================================
-
     """Create a delivery log entry."""
     def create_delivery_log(
         self: WebhookRepository, log: WebhookDeliveryLog
@@ -82,10 +82,7 @@ class WebhookRepository {
 
     """Get delivery logs for a webhook."""
     def get_delivery_logs_by_webhook(
-        self: WebhookRepository,
-        webhook_id: str,
-        limit: int = 50,
-        offset: int = 0
+        self: WebhookRepository, webhook_id: str, limit: int = 50, offset: int = 0
     ) -> list[WebhookDeliveryLog];
 
     """Get pending deliveries that need retry."""
@@ -96,7 +93,6 @@ class WebhookRepository {
     # =========================================================================
     # Dead Letter Queue Operations
     # =========================================================================
-
     """Add entry to dead letter queue."""
     def add_to_dead_letter(
         self: WebhookRepository, entry: DeadLetterEntry
@@ -126,7 +122,6 @@ class WebhookRepository {
     # =========================================================================
     # API Key Operations
     # =========================================================================
-
     """Create a new API key for a webhook."""
     def create_api_key(
         self: WebhookRepository, api_key: WebhookApiKey
@@ -157,11 +152,8 @@ class WebhookRepository {
     # =========================================================================
     # Utility Operations
     # =========================================================================
-
     """Get statistics for a webhook."""
-    def get_webhook_stats(
-        self: WebhookRepository, webhook_id: str
-    ) -> dict[str, Any];
+    def get_webhook_stats(self: WebhookRepository, webhook_id: str) -> dict[str, Any];
 
     """Cleanup old delivery logs (retention policy)."""
     def cleanup_old_logs(self: WebhookRepository, older_than_days: int = 30) -> int;

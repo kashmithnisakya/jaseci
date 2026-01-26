@@ -5,6 +5,7 @@ This document describes the webhook support added to jac-scale, enabling walkers
 ## Overview
 
 The webhook system supports two directions:
+
 - **Inbound webhooks**: External services call your jac application to trigger walkers
 - **Outbound webhooks**: Your jac application notifies external services when walkers complete
 
@@ -31,6 +32,7 @@ walker : pub PaymentReceived {
 ```
 
 The `transport_type = TransportType.WEBHOOK` attribute tells the system this walker:
+
 - Does **not** expose a regular REST endpoint (`POST /PaymentReceived`)
 - Is triggered via the webhook endpoint (`POST /webhook/PaymentReceived`)
 - Requires API key authentication
@@ -59,6 +61,7 @@ curl -X POST http://localhost:8000/webhooks \
 All management endpoints require JWT authentication.
 
 #### Create Webhook
+
 ```http
 POST /webhooks
 Content-Type: application/json
@@ -73,17 +76,20 @@ Content-Type: application/json
 ```
 
 #### List Webhooks
+
 ```http
 GET /webhooks
 GET /webhooks?walker_name=CreateOrder
 ```
 
 #### Get Webhook Details
+
 ```http
 GET /webhooks/{webhook_id}
 ```
 
 #### Update Webhook
+
 ```http
 PUT /webhooks/{webhook_id}
 Content-Type: application/json
@@ -95,6 +101,7 @@ Content-Type: application/json
 ```
 
 #### Delete Webhook
+
 ```http
 DELETE /webhooks/{webhook_id}
 ```
@@ -102,6 +109,7 @@ DELETE /webhooks/{webhook_id}
 ### API Key Management (for Inbound Webhooks)
 
 #### Create API Key
+
 ```http
 POST /webhooks/{webhook_id}/api-keys
 Content-Type: application/json
@@ -124,11 +132,13 @@ Response:
 ```
 
 #### List API Keys
+
 ```http
 GET /webhooks/{webhook_id}/api-keys
 ```
 
 #### Revoke API Key
+
 ```http
 DELETE /webhooks/{webhook_id}/api-keys/{key_id}
 ```
@@ -136,26 +146,31 @@ DELETE /webhooks/{webhook_id}/api-keys/{key_id}
 ### Delivery Logs & Dead Letters
 
 #### Get Delivery Logs
+
 ```http
 GET /webhooks/{webhook_id}/logs
 ```
 
 #### Get Dead Letter Queue
+
 ```http
 GET /webhooks/dead-letters
 ```
 
 #### Retry Dead Letter
+
 ```http
 POST /webhooks/dead-letters/{entry_id}/retry
 ```
 
 #### Delete Dead Letter
+
 ```http
 DELETE /webhooks/dead-letters/{entry_id}
 ```
 
 ### Webhook Statistics
+
 ```http
 GET /webhooks/{webhook_id}/stats
 ```
@@ -190,6 +205,7 @@ X-Jac-Delivery-Id: uuid
 ```
 
 To verify the signature:
+
 ```python
 import hmac
 import hashlib
@@ -217,10 +233,12 @@ After all retries are exhausted, the delivery is moved to the dead letter queue.
 ## Storage
 
 Webhook data is stored using the ScaleTieredMemory pattern:
+
 - **Primary**: MongoDB (when configured)
 - **Fallback**: SQLite/Shelf (for local development)
 
 Collections/tables:
+
 - `webhooks` - Webhook registrations
 - `webhook_delivery_logs` - Delivery attempts
 - `webhook_dead_letters` - Failed deliveries
@@ -315,6 +333,7 @@ walker : pub ShippingWebhook {
 ```
 
 Then register outbound webhooks to notify your other services:
+
 ```bash
 # Notify inventory service when orders are created
 curl -X POST /webhooks -d '{

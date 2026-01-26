@@ -1188,11 +1188,12 @@ impl JacAPIServer.register_sso_endpoints -> None {
     );
 }
 
+"""Enable HMR mode - file changes trigger reload on next request."""
+impl JacAPIServer.enable_hmr(self: JacAPIServer, hot_reloader: Any) -> None
 # ============================================================================
 # HMR (Hot Module Replacement) Dynamic Routing Support
 # ============================================================================
-"""Enable HMR mode - file changes trigger reload on next request."""
-impl JacAPIServer.enable_hmr(hot_reloader: Any) -> None {
+{
     self._hot_reloader = hot_reloader;
     # Callback when file changes - sets pending flag
     def on_change(event: Any) -> None {
@@ -1210,7 +1211,7 @@ Instead of pre-registering /walker/WalkerA, /walker/WalkerB, etc.,
 we register catch-all routes that look up walkers at request time.
 This enables HMR since introspector.load() is called per-request.
 """
-impl JacAPIServer.register_dynamic_walker_endpoint -> None {
+impl JacAPIServer.register_dynamic_walker_endpoint(self: JacAPIServer) -> None {
     import from jaclang.runtimelib.transport { TransportResponse, Meta }
     import from fastapi { Request }
     # Dynamic handler that looks up walker at request time
@@ -1375,7 +1376,7 @@ impl JacAPIServer.register_dynamic_walker_endpoint -> None {
 
 Similar to dynamic walker routing, this enables HMR for functions.
 """
-impl JacAPIServer.register_dynamic_function_endpoint -> None {
+impl JacAPIServer.register_dynamic_function_endpoint(self: JacAPIServer) -> None {
     import from fastapi.responses { JSONResponse }
     import from fastapi { Request }
     import from jaclang.runtimelib.transport { TransportResponse, Meta }
@@ -1481,7 +1482,7 @@ impl JacAPIServer.register_dynamic_function_endpoint -> None {
 These endpoints allow clients to discover what walkers and functions are available,
 which is especially useful in HMR mode where the list can change dynamically.
 """
-impl JacAPIServer.register_dynamic_introspection_endpoints -> None {
+impl JacAPIServer.register_dynamic_introspection_endpoints(self: JacAPIServer) -> None {
     import from fastapi.responses { JSONResponse }
     def list_walkers -> dict[str, Any] {
         # Reload introspector if files changed (HMR)
@@ -1603,7 +1604,6 @@ impl JacAPIServer.register_dynamic_introspection_endpoints -> None {
 # =============================================================================
 # Webhook Management Endpoints
 # =============================================================================
-
 """Register all webhook management endpoints."""
 impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
     import from jac_scale.serve {
@@ -1614,13 +1614,11 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
         RetryDeadLetterRequest
     }
     import from jaclang.runtimelib.transport { TransportResponse, Meta }
-
     # Initialize webhook manager if not already
     if not self.webhook_manager {
         self.webhook_manager = WebhookManager();
         self.webhook_manager.init();
     }
-
     # Helper to extract and validate auth
     def require_auth(Authorization: (str | None)) -> (str | None) {
         if not Authorization or not Authorization.startswith('Bearer ') {
@@ -1629,7 +1627,6 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
         token = Authorization[7:];
         return self.validate_jwt_token(token);
     }
-
     # -------------------------------------------------------------------------
     # Create Webhook
     # -------------------------------------------------------------------------
@@ -1670,7 +1667,6 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
 
         return self.webhook_manager.create_webhook(request, username);
     }
-
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.POST,
@@ -1716,7 +1712,6 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
             description='Create a new webhook registration for a walker'
         )
     );
-
     # -------------------------------------------------------------------------
     # List Webhooks
     # -------------------------------------------------------------------------
@@ -1738,7 +1733,6 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
 
         return self.webhook_manager.list_webhooks(direction, is_active, limit, offset);
     }
-
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.GET,
@@ -1792,13 +1786,11 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
             description='List all registered webhooks with optional filtering'
         )
     );
-
     # -------------------------------------------------------------------------
     # Get Webhook
     # -------------------------------------------------------------------------
     def get_webhook_handler(
-        webhook_id: str,
-        Authorization: (str | None) = None
+        webhook_id: str, Authorization: (str | None) = None
     ) -> TransportResponse {
         username = require_auth(Authorization);
         if not username {
@@ -1811,7 +1803,6 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
 
         return self.webhook_manager.get_webhook(webhook_id);
     }
-
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.GET,
@@ -1841,7 +1832,6 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
             description='Get details of a specific webhook'
         )
     );
-
     # -------------------------------------------------------------------------
     # Update Webhook
     # -------------------------------------------------------------------------
@@ -1875,7 +1865,6 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
 
         return self.webhook_manager.update_webhook(webhook_id, request);
     }
-
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.PUT,
@@ -1913,13 +1902,11 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
             description='Update an existing webhook'
         )
     );
-
     # -------------------------------------------------------------------------
     # Delete Webhook
     # -------------------------------------------------------------------------
     def delete_webhook_handler(
-        webhook_id: str,
-        Authorization: (str | None) = None
+        webhook_id: str, Authorization: (str | None) = None
     ) -> TransportResponse {
         username = require_auth(Authorization);
         if not username {
@@ -1932,7 +1919,6 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
 
         return self.webhook_manager.delete_webhook(webhook_id);
     }
-
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.DELETE,
@@ -1962,7 +1948,6 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
             description='Delete a webhook registration'
         )
     );
-
     # -------------------------------------------------------------------------
     # Create API Key
     # -------------------------------------------------------------------------
@@ -1982,14 +1967,11 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
         }
 
         request = CreateApiKeyRequest(
-            webhook_id=webhook_id,
-            name=name,
-            expires_in_days=expires_in_days
+            webhook_id=webhook_id, name=name, expires_in_days=expires_in_days
         );
 
         return self.webhook_manager.create_api_key(request, username);
     }
-
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.POST,
@@ -2035,13 +2017,11 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
             description='Create a new API key for webhook authentication'
         )
     );
-
     # -------------------------------------------------------------------------
     # List API Keys
     # -------------------------------------------------------------------------
     def list_api_keys_handler(
-        webhook_id: str,
-        Authorization: (str | None) = None
+        webhook_id: str, Authorization: (str | None) = None
     ) -> TransportResponse {
         username = require_auth(Authorization);
         if not username {
@@ -2054,7 +2034,6 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
 
         return self.webhook_manager.list_api_keys(webhook_id);
     }
-
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.GET,
@@ -2084,14 +2063,11 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
             description='List all API keys for a webhook'
         )
     );
-
     # -------------------------------------------------------------------------
     # Revoke API Key
     # -------------------------------------------------------------------------
     def revoke_api_key_handler(
-        webhook_id: str,
-        key_id: str,
-        Authorization: (str | None) = None
+        webhook_id: str, key_id: str, Authorization: (str | None) = None
     ) -> TransportResponse {
         username = require_auth(Authorization);
         if not username {
@@ -2104,7 +2080,6 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
 
         return self.webhook_manager.revoke_api_key(key_id);
     }
-
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.DELETE,
@@ -2142,13 +2117,11 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
             description='Revoke (deactivate) an API key'
         )
     );
-
     # -------------------------------------------------------------------------
     # Get Webhook Stats
     # -------------------------------------------------------------------------
     def get_webhook_stats_handler(
-        webhook_id: str,
-        Authorization: (str | None) = None
+        webhook_id: str, Authorization: (str | None) = None
     ) -> TransportResponse {
         username = require_auth(Authorization);
         if not username {
@@ -2161,7 +2134,6 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
 
         return self.webhook_manager.get_webhook_stats(webhook_id);
     }
-
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.GET,
@@ -2191,7 +2163,6 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
             description='Get delivery statistics for a webhook'
         )
     );
-
     # -------------------------------------------------------------------------
     # Get Delivery Logs
     # -------------------------------------------------------------------------
@@ -2212,7 +2183,6 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
 
         return self.webhook_manager.get_delivery_logs(webhook_id, limit, offset);
     }
-
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.GET,
@@ -2258,7 +2228,6 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
             description='Get delivery logs for a webhook (audit trail)'
         )
     );
-
     # -------------------------------------------------------------------------
     # List Dead Letters
     # -------------------------------------------------------------------------
@@ -2279,7 +2248,6 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
 
         return self.webhook_manager.list_dead_letters(webhook_id, limit, offset);
     }
-
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.GET,
@@ -2325,13 +2293,11 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
             description='List entries in the dead letter queue'
         )
     );
-
     # -------------------------------------------------------------------------
     # Retry Dead Letter
     # -------------------------------------------------------------------------
     async def retry_dead_letter_handler(
-        entry_id: str,
-        Authorization: (str | None) = None
+        entry_id: str, Authorization: (str | None) = None
     ) -> TransportResponse {
         username = require_auth(Authorization);
         if not username {
@@ -2344,7 +2310,6 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
 
         return await self.webhook_manager.retry_dead_letter(entry_id);
     }
-
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.POST,
@@ -2374,13 +2339,11 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
             description='Retry a failed delivery from the dead letter queue'
         )
     );
-
     # -------------------------------------------------------------------------
     # Remove Dead Letter
     # -------------------------------------------------------------------------
     def remove_dead_letter_handler(
-        entry_id: str,
-        Authorization: (str | None) = None
+        entry_id: str, Authorization: (str | None) = None
     ) -> TransportResponse {
         username = require_auth(Authorization);
         if not username {
@@ -2393,7 +2356,6 @@ impl JacAPIServer.register_webhook_endpoints(self: JacAPIServer) -> None {
 
         return self.webhook_manager.remove_dead_letter(entry_id);
     }
-
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.DELETE,
@@ -2430,17 +2392,13 @@ impl JacAPIServer.register_webhook_inbound_endpoint(self: JacAPIServer) -> None 
     import from jac_scale.serve { WebhookManager }
     import from jaclang.runtimelib.transport { TransportResponse, Meta }
     import from fastapi { Request }
-
     # Initialize webhook manager if not already
     if not self.webhook_manager {
         self.webhook_manager = WebhookManager();
         self.webhook_manager.init();
     }
-
     async def inbound_webhook_handler(
-        request: Request,
-        walker_name: str,
-        X_API_Key: (str | None) = None
+        request: Request, walker_name: str, X_API_Key: (str | None) = None
     ) -> TransportResponse {
         # Get API key from header
         api_key = X_API_Key or request.headers.get('X-API-Key', '');
@@ -2472,7 +2430,6 @@ impl JacAPIServer.register_webhook_inbound_endpoint(self: JacAPIServer) -> None 
             walkers=walkers
         );
     }
-
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.POST,

@@ -39,19 +39,14 @@ class WebhookDispatcher {
         max_response_size: int = 10240;  # 10KB max response stored
 
     def postinit -> None;
-
     """Dispatch webhook to all registered URLs for a walker."""
     async def dispatch(
-        walker_name: str,
-        data: Any,
-        username: (str | None) = None
+        walker_name: str, data: Any, username: (str | None) = None
     ) -> list[WebhookDeliveryResult];
 
     """Dispatch to a single webhook."""
     async def dispatch_single(
-        webhook: WebhookRegistration,
-        data: Any,
-        username: (str | None) = None
+        webhook: WebhookRegistration, data: Any, username: (str | None) = None
     ) -> WebhookDeliveryResult;
 
     """Retry a failed delivery from the dead letter queue."""

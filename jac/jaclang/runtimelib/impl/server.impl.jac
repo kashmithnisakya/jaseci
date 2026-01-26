@@ -368,7 +368,6 @@ impl ModuleIntrospector._extract_access_levels -> None {
     self._function_access = {};
     self._walker_access = {};
     self._walker_transport_type = {};
-
     # Helper to check if an archetype AST node is explicitly public
     def is_archetype_public(arch_ast: uni.Archetype) -> bool {
         return arch_ast.access is not None and arch_ast.access.tag.name == Tok.KW_PUB;
@@ -385,7 +384,6 @@ impl ModuleIntrospector._extract_access_levels -> None {
         }
         return None;
     }
-
     # Helper to extract transport_type from walker class
     def extract_transport_type(cls: type) -> str {
         transport_type_value = getattr(cls, 'transport_type', None);
@@ -395,7 +393,7 @@ impl ModuleIntrospector._extract_access_levels -> None {
                 if transport_type_value.lower() == 'webhook' {
                     return 'webhook';
                 }
-            } elif hasattr(transport_type_value, 'value') {
+            } elif transport_type_value?.value {
                 if str(transport_type_value.value).lower() == 'webhook' {
                     return 'webhook';
                 }
@@ -403,7 +401,6 @@ impl ModuleIntrospector._extract_access_levels -> None {
         }
         return 'http';
     }
-
     # Helper to get AST for a module path
     def get_module_ast(mod_path: str) -> (uni.Module | None) {
         ast = Jac.program.mod.hub.get(mod_path);
@@ -433,7 +430,9 @@ impl ModuleIntrospector._extract_access_levels -> None {
                 cls = getattr(self._module, arch_name);
                 if isinstance(cls, <>type) and issubclass(cls, WalkerArchetype) {
                     self._walker_access[arch_name] = not is_archetype_public(item);
-                    self._walker_transport_type[arch_name] = extract_transport_type(cls);
+                    self._walker_transport_type[arch_name] = extract_transport_type(
+                        cls
+                    );
                 }
             }
         }
@@ -448,7 +447,6 @@ impl ModuleIntrospector._extract_access_levels -> None {
         ) {
             # Extract transport type from class attribute
             self._walker_transport_type[name] = extract_transport_type(cls);
-
             # Get the source file where this walker class is defined
             try {
                 source_file = inspect.getfile(cls);
