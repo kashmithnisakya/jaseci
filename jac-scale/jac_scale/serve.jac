@@ -95,13 +95,13 @@ obj JacAPIServer(JServer) {
     def _configure_openapi_security -> None;
     def start(dev: bool = False) -> None;
     # HMR (Hot Module Replacement) dynamic routing methods
-    def enable_hmr(self: JacAPIServer, hot_reloader: Any) -> None;
-    def register_dynamic_walker_endpoint(self: JacAPIServer) -> None;
-    def register_dynamic_function_endpoint(self: JacAPIServer) -> None;
-    def register_dynamic_introspection_endpoints(self: JacAPIServer) -> None;
+    def enable_hmr(hot_reloader: Any) -> None;
+    def register_dynamic_walker_endpoint -> None;
+    def register_dynamic_function_endpoint -> None;
+    def register_dynamic_introspection_endpoints -> None;
     # Webhook endpoint registration methods
-    def register_webhook_endpoints(self: JacAPIServer) -> None;
-    def register_webhook_inbound_endpoint(self: JacAPIServer) -> None;
+    def register_webhook_endpoints -> None;
+    def register_webhook_inbound_endpoint -> None;
 }
 
 class UpdateUsernameRequest(BaseModel) {
