@@ -591,6 +591,12 @@ impl JacAPIServer.create_function_callback(
 
 impl JacAPIServer.register_walkers_endpoints -> None {
     for walker_name in self.get_walkers() {
+        # Skip walkers configured for webhook transport - they use /webhook/{walker_name} instead
+        transport_type = self.get_transport_type_for_walker(walker_name);
+        if transport_type == TransportType.WEBHOOK {
+            continue;
+        }
+
         self.server.add_endpoint(
             JEndPoint(
                 method=HTTPMethod.POST,
@@ -1236,6 +1242,16 @@ impl JacAPIServer.register_dynamic_walker_endpoint -> None {
             );
         }
 
+        # Reject walkers configured for webhook transport - they use /webhook/{walker_name} instead
+        transport_type = self.get_transport_type_for_walker(walker_name);
+        if transport_type == TransportType.WEBHOOK {
+            return TransportResponse.fail(
+                code='BAD_REQUEST',
+                message=f"Walker '{walker_name}' is configured as a webhook. Use /webhook/{walker_name} instead.",
+                meta=Meta(extra={'http_status': 400})
+            );
+        }
+
         # Handle authentication
         username: str | None = None;
         authorization = kwargs.pop('Authorization', None);
@@ -1756,25 +1772,39 @@ impl JacAPIServer.register_api_key_endpoints -> None {
 
 """Get the transport type for a walker by checking its fields."""
 impl JacAPIServer.get_transport_type_for_walker(walker_name: str) -> str {
-    import from jac_scale.serve { TransportType }
+    import from dataclasses { fields as dc_fields, MISSING }
     walkers = self.get_walkers();
     if walker_name not in walkers {
         return TransportType.HTTP;
     }
-    
+
     walker_cls = walkers[walker_name];
-    walker_info = self.introspector.introspect_walker(walker_cls);
-    fields = walker_info.get('fields', {});
-    
-    # Check if walker has transport_type field
-    if 'transport_type' in fields {
-        # Get the default value of transport_type field
-        default_value = fields['transport_type'].get('default');
-        if default_value == TransportType.WEBHOOK or default_value == 'webhook' {
-            return TransportType.WEBHOOK;
-        }
+
+    # Get default value from dataclass field
+    def get_transport_default() -> str | None {
+        try {
+            for field in dc_fields(walker_cls) {
+                if field.name != 'transport_type' {
+                    continue;
+                }
+                # Direct default value
+                if field.default is not MISSING {
+                    return field.default;
+                }
+                # Default factory (used for enum defaults)
+                if field.default_factory is not MISSING {
+                    return field.default_factory();
+                }
+            }
+        } except Exception { }
+        return None;
     }
-    
+
+    default_val = get_transport_default();
+    if default_val in (TransportType.WEBHOOK, 'webhook') {
+        return TransportType.WEBHOOK;
+    }
+
     return TransportType.HTTP;
 }
 
@@ -1871,31 +1901,29 @@ impl JacAPIServer.create_webhook_callback(walker_name: str) -> Callable[..., Tra
 """Create parameters for webhook endpoint."""
 impl JacAPIServer.create_webhook_parameters(walker_name: str) -> list[APIParameter] {
     parameters: list[APIParameter] = [];
-    
+
     # API key header (required for webhooks)
+    # Use underscore naming for valid Python identifiers - FastAPI auto-converts to hyphenated headers
     parameters.append(
         APIParameter(
-            name='X-API-Key',
+            name='x_api_key',
             data_type='string',
             required=True,
             default=None,
-            description='API key for webhook authentication',
+            description='API key for webhook authentication (X-API-Key header)',
             type=ParameterType.HEADER
         )
     );
-    
+
     # Signature header (for HMAC verification)
-    import from jac_scale.config_loader { get_scale_config }
-    webhook_config = get_scale_config().get_webhook_config();
-    signature_header = webhook_config.get('signature_header', 'X-Webhook-Signature');
-    
+    # Use underscore naming for valid Python identifiers
     parameters.append(
         APIParameter(
-            name=signature_header,
+            name='x_webhook_signature',
             data_type='string',
             required=False,
             default=None,
-            description='HMAC-SHA256 signature of the request body',
+            description='HMAC-SHA256 signature of the request body (X-Webhook-Signature header)',
             type=ParameterType.HEADER
         )
     );
@@ -1927,8 +1955,6 @@ impl JacAPIServer.create_webhook_parameters(walker_name: str) -> list[APIParamet
 
 """Register webhook endpoints for walkers with transport_type=WEBHOOK."""
 impl JacAPIServer.register_webhook_endpoints -> None {
-    import from jac_scale.serve { TransportType }
-    
     for walker_name in self.get_walkers() {
         transport_type = self.get_transport_type_for_walker(walker_name);
         
@@ -1952,7 +1978,6 @@ impl JacAPIServer.register_webhook_endpoints -> None {
 """Register dynamic webhook endpoint for HMR support."""
 impl JacAPIServer.register_dynamic_webhook_endpoint -> None {
     import from jaclang.runtimelib.transport { TransportResponse, Meta }
-    import from jac_scale.serve { TransportType }
     import from jac_scale.webhook { WebhookUtils }
     import from jac_scale.config_loader { get_scale_config }
     import from fastapi { Request }
