@@ -31,7 +31,6 @@ import from typing { AsyncGenerator }
 import from inspect { isgenerator }
 import from fastapi.responses { StreamingResponse }
 
-
 # Load configuration from jac.toml with env var overrides
 glob _jwt_config = get_scale_config().get_jwt_config(),
      _sso_config = get_scale_config().get_sso_config(),
