@@ -6,6 +6,7 @@ import from pathlib { Path }
 import from pydantic { BaseModel, Field }
 import from typing { Any }
 import jwt;
+import json;
 import from os { getenv }
 import from fastapi { Request }
 import from fastapi.middleware.cors { CORSMiddleware }

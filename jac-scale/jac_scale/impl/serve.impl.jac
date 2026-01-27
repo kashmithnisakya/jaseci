@@ -1083,8 +1083,6 @@ impl JacAPIServer.login(username: str, password: str) -> TransportResponse {
 
 impl JacAPIServer.postinit -> None {
     super.postinit();
-    # Initialize API key manager for webhook support
-    import from jac_scale.webhook { ApiKeyManager }
     self._api_key_manager = ApiKeyManager();
     self.server.app.add_middleware(
         CORSMiddleware,
@@ -1845,7 +1843,6 @@ impl JacAPIServer.create_webhook_callback(
 
         # Parse body for walker fields
         try {
-            import json;
             body_bytes = await request.body();
             body_data = json.loads(body_bytes) if body_bytes else {};
         } except Exception {
@@ -2027,7 +2024,6 @@ impl JacAPIServer.register_dynamic_webhook_endpoint -> None {
 
         # Parse body for walker fields
         try {
-            import json;
             body_bytes = await request.body();
             body_data = json.loads(body_bytes) if body_bytes else {};
         } except Exception {
