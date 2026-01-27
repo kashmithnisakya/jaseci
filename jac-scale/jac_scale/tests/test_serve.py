@@ -1615,7 +1615,8 @@ class TestJacScaleServe:
         )
         assert register_response.status_code == 201
         register_data = cast(
-            dict[str, Any], self._extract_transport_response_data(register_response.json())
+            dict[str, Any],
+            self._extract_transport_response_data(register_response.json()),
         )
         token = register_data["token"]
 
@@ -1692,7 +1693,8 @@ class TestJacScaleServe:
         )
         assert register_response.status_code == 201
         register_data = cast(
-            dict[str, Any], self._extract_transport_response_data(register_response.json())
+            dict[str, Any],
+            self._extract_transport_response_data(register_response.json()),
         )
         token = register_data["token"]
 
@@ -1707,7 +1709,8 @@ class TestJacScaleServe:
             f"Failed to create API key: {api_key_response.text}"
         )
         api_key_data = cast(
-            dict[str, Any], self._extract_transport_response_data(api_key_response.json())
+            dict[str, Any],
+            self._extract_transport_response_data(api_key_response.json()),
         )
         api_key = api_key_data["api_key"]
 
@@ -1747,7 +1750,8 @@ class TestJacScaleServe:
         )
         assert register_response.status_code == 201
         register_data = cast(
-            dict[str, Any], self._extract_transport_response_data(register_response.json())
+            dict[str, Any],
+            self._extract_transport_response_data(register_response.json()),
         )
         token = register_data["token"]
 
@@ -1759,7 +1763,8 @@ class TestJacScaleServe:
         )
         assert api_key_response.status_code == 201
         api_key_data = cast(
-            dict[str, Any], self._extract_transport_response_data(api_key_response.json())
+            dict[str, Any],
+            self._extract_transport_response_data(api_key_response.json()),
         )
         api_key = api_key_data["api_key"]
 
@@ -1811,7 +1816,8 @@ class TestJacScaleServe:
         )
         assert register_response.status_code == 201
         register_data = cast(
-            dict[str, Any], self._extract_transport_response_data(register_response.json())
+            dict[str, Any],
+            self._extract_transport_response_data(register_response.json()),
         )
         token = register_data["token"]
 
@@ -1845,7 +1851,8 @@ class TestJacScaleServe:
         )
         assert register_response.status_code == 201
         register_data = cast(
-            dict[str, Any], self._extract_transport_response_data(register_response.json())
+            dict[str, Any],
+            self._extract_transport_response_data(register_response.json()),
         )
         token = register_data["token"]
 
@@ -1858,7 +1865,8 @@ class TestJacScaleServe:
         )
         assert api_key_response.status_code == 201
         api_key_data = cast(
-            dict[str, Any], self._extract_transport_response_data(api_key_response.json())
+            dict[str, Any],
+            self._extract_transport_response_data(api_key_response.json()),
         )
         api_key = api_key_data["api_key"]
         api_key_id = api_key_data["api_key_id"]
