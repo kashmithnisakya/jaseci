@@ -7,6 +7,7 @@ import from pydantic { BaseModel, Field }
 import from typing { Any }
 import jwt;
 import from os { getenv }
+import from fastapi { Request }
 import from fastapi.middleware.cors { CORSMiddleware }
 import from fastapi.responses { HTMLResponse, JSONResponse, Response, RedirectResponse }
 import from jac_scale.jserver.jfast_api { JFastApiServer }
@@ -24,7 +25,6 @@ import from enum { StrEnum }
 import from fastapi_sso.sso.google { GoogleSSO }
 import from jac_scale.utils { generate_random_password }
 import from jac_scale.config_loader { get_scale_config }
-
 import from jac_scale.webhook { ApiKeyManager, WebhookUtils }
 
 # Load configuration from jac.toml with env var overrides

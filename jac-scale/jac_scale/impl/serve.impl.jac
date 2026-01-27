@@ -1593,13 +1593,9 @@ impl JacAPIServer.register_dynamic_introspection_endpoints -> None {
     );
 }
 
-# ============================================================================
-# Webhook Support Implementation
-# ============================================================================
 """Get or create the API key manager instance."""
 impl JacAPIServer.get_api_key_manager -> ApiKeyManager {
     if self._api_key_manager is None {
-        import from jac_scale.webhook { ApiKeyManager }
         self._api_key_manager = ApiKeyManager();
     }
     return self._api_key_manager;
@@ -1797,10 +1793,6 @@ impl JacAPIServer.get_transport_type_for_walker(walker_name: str) -> str {
 impl JacAPIServer.create_webhook_callback(
     walker_name: str
 ) -> Callable[..., TransportResponse] {
-    import from jaclang.runtimelib.transport { TransportResponse, Meta }
-    import from jac_scale.webhook { WebhookUtils }
-    import from jac_scale.config_loader { get_scale_config }
-    import from fastapi { Request }
     async def callback(request: Request, **kwargs: JsonValue) -> TransportResponse {
         webhook_config = get_scale_config().get_webhook_config();
         signature_header = webhook_config.get(
@@ -1957,10 +1949,6 @@ impl JacAPIServer.register_webhook_endpoints -> None {
 
 """Register dynamic webhook endpoint for HMR support."""
 impl JacAPIServer.register_dynamic_webhook_endpoint -> None {
-    import from jaclang.runtimelib.transport { TransportResponse, Meta }
-    import from jac_scale.webhook { WebhookUtils }
-    import from jac_scale.config_loader { get_scale_config }
-    import from fastapi { Request }
     async def dynamic_webhook_handler(
         request: Request, walker_name: str
     ) -> TransportResponse {

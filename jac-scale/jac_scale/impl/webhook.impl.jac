@@ -91,9 +91,6 @@ impl WebhookUtils.extract_signature(header_value: str) -> str {
     return header_value;
 }
 
-# ============================================================================
-# ApiKeyManager Implementation
-# ============================================================================
 """Create a new API key for a user."""
 impl ApiKeyManager.create_api_key(
     username: str, name: str, expiry_days: int | None = None

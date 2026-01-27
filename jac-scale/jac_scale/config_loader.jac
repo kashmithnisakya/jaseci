@@ -12,7 +12,7 @@ import os;
 
 """Scale-specific configuration loader.
 
-Provides access to jwt, sso, database, kubernetes, server, and webhook configuration
+Provides access to jwt, sso, database, kubernetes, server and webhook configuration
 from the [plugins.scale] section of jac.toml.
 """
 class JacScaleConfig(PluginConfigBase) {
