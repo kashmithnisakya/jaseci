@@ -1597,11 +1597,11 @@ class TestJacScaleServe:
 
         # NormalPayment does NOT have transport_type=WEBHOOK -> should NOT have /webhook/ endpoint
         assert "/webhook/NormalPayment" not in paths, (
-            f"NormalPayment should NOT have webhook endpoint but found in paths"
+            "NormalPayment should NOT have webhook endpoint but found in paths"
         )
         # NormalPayment should be accessible via /walker/ endpoint
         assert "/walker/NormalPayment" in paths or "/walker/{walker_name}" in paths, (
-            f"NormalPayment should be accessible via /walker/ endpoint"
+            "NormalPayment should be accessible via /walker/ endpoint"
         )
 
     def test_normal_walker_accessible_via_walker_endpoint(self) -> None:
