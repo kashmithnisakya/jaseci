@@ -1614,7 +1614,10 @@ class TestJacScaleServe:
             timeout=10,
         )
         assert register_response.status_code == 201
-        token = self._extract_transport_response_data(register_response.json())["token"]
+        register_data = cast(
+            dict[str, Any], self._extract_transport_response_data(register_response.json())
+        )
+        token = register_data["token"]
 
         # Call NormalPayment via /walker/ endpoint
         response = requests.post(
@@ -1632,7 +1635,9 @@ class TestJacScaleServe:
         assert response.status_code == 200, (
             f"Expected 200, got {response.status_code}: {response.text}"
         )
-        data = self._extract_transport_response_data(response.json())
+        data = cast(
+            dict[str, Any], self._extract_transport_response_data(response.json())
+        )
         assert "reports" in data
         report = data["reports"][0]
         assert report["status"] == "success"
@@ -1686,7 +1691,10 @@ class TestJacScaleServe:
             timeout=10,
         )
         assert register_response.status_code == 201
-        token = self._extract_transport_response_data(register_response.json())["token"]
+        register_data = cast(
+            dict[str, Any], self._extract_transport_response_data(register_response.json())
+        )
+        token = register_data["token"]
 
         # Create API key
         api_key_response = requests.post(
@@ -1698,7 +1706,9 @@ class TestJacScaleServe:
         assert api_key_response.status_code == 201, (
             f"Failed to create API key: {api_key_response.text}"
         )
-        api_key_data = self._extract_transport_response_data(api_key_response.json())
+        api_key_data = cast(
+            dict[str, Any], self._extract_transport_response_data(api_key_response.json())
+        )
         api_key = api_key_data["api_key"]
 
         # Call MinimalWebhook with valid API key (empty payload - no fields required)
@@ -1719,7 +1729,9 @@ class TestJacScaleServe:
         assert response.status_code == 200, (
             f"Expected 200, got {response.status_code}: {response.text}"
         )
-        data = self._extract_transport_response_data(response.json())
+        data = cast(
+            dict[str, Any], self._extract_transport_response_data(response.json())
+        )
         assert "reports" in data
         assert data["reports"][0]["status"] == "received"
         assert data["reports"][0]["transport"] == "webhook"
@@ -1734,7 +1746,10 @@ class TestJacScaleServe:
             timeout=10,
         )
         assert register_response.status_code == 201
-        token = self._extract_transport_response_data(register_response.json())["token"]
+        register_data = cast(
+            dict[str, Any], self._extract_transport_response_data(register_response.json())
+        )
+        token = register_data["token"]
 
         api_key_response = requests.post(
             f"{self.base_url}/api-key/create",
@@ -1743,9 +1758,10 @@ class TestJacScaleServe:
             timeout=10,
         )
         assert api_key_response.status_code == 201
-        api_key = self._extract_transport_response_data(api_key_response.json())[
-            "api_key"
-        ]
+        api_key_data = cast(
+            dict[str, Any], self._extract_transport_response_data(api_key_response.json())
+        )
+        api_key = api_key_data["api_key"]
 
         # Send payment webhook
         payload = json.dumps(
@@ -1773,7 +1789,9 @@ class TestJacScaleServe:
         assert response.status_code == 200, (
             f"Expected 200, got {response.status_code}: {response.text}"
         )
-        data = self._extract_transport_response_data(response.json())
+        data = cast(
+            dict[str, Any], self._extract_transport_response_data(response.json())
+        )
         assert "reports" in data
         report = data["reports"][0]
         assert report["status"] == "success"
@@ -1792,7 +1810,10 @@ class TestJacScaleServe:
             timeout=10,
         )
         assert register_response.status_code == 201
-        token = self._extract_transport_response_data(register_response.json())["token"]
+        register_data = cast(
+            dict[str, Any], self._extract_transport_response_data(register_response.json())
+        )
+        token = register_data["token"]
 
         # Try to access PaymentReceived (webhook walker) via /walker/ endpoint
         response = requests.post(
@@ -1823,7 +1844,10 @@ class TestJacScaleServe:
             timeout=10,
         )
         assert register_response.status_code == 201
-        token = self._extract_transport_response_data(register_response.json())["token"]
+        register_data = cast(
+            dict[str, Any], self._extract_transport_response_data(register_response.json())
+        )
+        token = register_data["token"]
 
         # Create API key
         api_key_response = requests.post(
@@ -1833,7 +1857,9 @@ class TestJacScaleServe:
             timeout=10,
         )
         assert api_key_response.status_code == 201
-        api_key_data = self._extract_transport_response_data(api_key_response.json())
+        api_key_data = cast(
+            dict[str, Any], self._extract_transport_response_data(api_key_response.json())
+        )
         api_key = api_key_data["api_key"]
         api_key_id = api_key_data["api_key_id"]
 
