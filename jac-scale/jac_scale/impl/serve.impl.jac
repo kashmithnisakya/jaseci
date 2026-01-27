@@ -2115,19 +2115,19 @@ impl JacAPIServer.register_dynamic_webhook_endpoint -> None {
                     type=ParameterType.PATH
                 ),
                 APIParameter(
-                    name='X-API-Key',
+                    name='x_api_key',
                     data_type='string',
                     required=True,
                     default=None,
-                    description='API key for webhook authentication',
+                    description='API key for webhook authentication (X-API-Key header)',
                     type=ParameterType.HEADER
                 ),
                 APIParameter(
-                    name='X-Webhook-Signature',
+                    name='x_webhook_signature',
                     data_type='string',
                     required=False,
                     default=None,
-                    description='HMAC-SHA256 signature of the request body',
+                    description='HMAC-SHA256 signature of the request body (X-Webhook-Signature header)',
                     type=ParameterType.HEADER
                 )
             ],
