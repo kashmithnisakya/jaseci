@@ -100,9 +100,11 @@ Webhook endpoints require API key authentication. Users must first create an API
 **Endpoint:** `POST /api-key/create`
 
 **Headers:**
+
 - `Authorization: Bearer <jwt_token>` (required)
 
 **Request Body:**
+
 ```json
 {
     "name": "My Webhook Key",
@@ -111,6 +113,7 @@ Webhook endpoints require API key authentication. Users must first create an API
 ```
 
 **Response:**
+
 ```json
 {
     "api_key": "eyJhbGciOiJIUzI1NiIs...",
@@ -126,9 +129,11 @@ Webhook endpoints require API key authentication. Users must first create an API
 **Endpoint:** `GET /api-key/list`
 
 **Headers:**
+
 - `Authorization: Bearer <jwt_token>` (required)
 
 **Response:**
+
 ```json
 {
     "api_keys": [
@@ -148,9 +153,11 @@ Webhook endpoints require API key authentication. Users must first create an API
 **Endpoint:** `DELETE /api-key/{api_key_id}`
 
 **Headers:**
+
 - `Authorization: Bearer <jwt_token>` (required)
 
 **Response:**
+
 ```json
 {
     "message": "API key 'a1b2c3d4e5f6...' has been revoked"
@@ -181,7 +188,6 @@ curl -X POST "http://localhost:8000/webhook/PaymentReceived" \
     -H "X-Webhook-Signature: $SIGNATURE" \
     -d "$PAYLOAD"
 ```
-
 
 ## 5. Comparison: Webhook vs Regular Walkers
 
