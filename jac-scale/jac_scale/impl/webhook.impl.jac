@@ -19,11 +19,7 @@ glob _jwt_config = get_scale_config().get_jwt_config(),
 
 """Generate HMAC-SHA256 signature for webhook payload."""
 impl WebhookUtils.generate_signature(payload: bytes, secret: str) -> str {
-    return hmac.new(
-        secret.encode('utf-8'),
-        payload,
-        hashlib.sha256
-    ).hexdigest();
+    return hmac.new(secret.encode('utf-8'), payload, hashlib.sha256).hexdigest();
 }
 
 """Verify HMAC-SHA256 signature for webhook payload."""
@@ -40,14 +36,10 @@ impl WebhookUtils.generate_api_key -> str {
 
 """Create a JWT-wrapped API key token."""
 impl WebhookUtils.create_api_key_token(
-    api_key_id: str,
-    username: str,
-    name: str,
-    expiry_days: int | None = None
+    api_key_id: str, username: str, name: str, expiry_days: int | None = None
 ) -> str {
     _webhook_config = get_scale_config().get_webhook_config();
     default_expiry = _webhook_config.get('api_key_expiry_days', 365);
-    
     payload: dict[str, Any] = {
         'type': 'api_key',
         'api_key_id': api_key_id,
@@ -55,7 +47,6 @@ impl WebhookUtils.create_api_key_token(
         'name': name,
         'iat': datetime.now(UTC)
     };
-    
     # Add expiry if specified
     if expiry_days is not None {
         payload['exp'] = datetime.now(UTC) + timedelta(days=expiry_days);
@@ -63,7 +54,6 @@ impl WebhookUtils.create_api_key_token(
         payload['exp'] = datetime.now(UTC) + timedelta(days=default_expiry);
     }
     # If expiry_days is 0 or negative, no expiry is set (permanent key)
-    
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM);
 }
 
@@ -71,12 +61,12 @@ impl WebhookUtils.create_api_key_token(
 impl WebhookUtils.validate_api_key(api_key: str) -> dict[str, str] | None {
     try {
         payload = jwt.decode(api_key, JWT_SECRET, algorithms=[JWT_ALGORITHM]);
-        
+
         # Verify this is an API key token
         if payload.get('type') != 'api_key' {
             return None;
         }
-        
+
         return {
             'username': payload.get('sub', ''),
             'api_key_id': payload.get('api_key_id', ''),
@@ -104,36 +94,25 @@ impl WebhookUtils.extract_signature(header_value: str) -> str {
 # ============================================================================
 # ApiKeyManager Implementation
 # ============================================================================
-
 """Create a new API key for a user."""
 impl ApiKeyManager.create_api_key(
-    username: str,
-    name: str,
-    expiry_days: int | None = None
+    username: str, name: str, expiry_days: int | None = None
 ) -> TransportResponse {
     # Generate unique API key ID
     api_key_id = secrets.token_hex(16);
-    
     # Create the JWT-wrapped API key
     api_key = WebhookUtils.create_api_key_token(
-        api_key_id=api_key_id,
-        username=username,
-        name=name,
-        expiry_days=expiry_days
+        api_key_id=api_key_id, username=username, name=name, expiry_days=expiry_days
     );
-    
     created_at = datetime.now(UTC);
     expires_at: datetime | None = None;
-    
     _webhook_config = get_scale_config().get_webhook_config();
     default_expiry = _webhook_config.get('api_key_expiry_days', 365);
-    
     if expiry_days is not None and expiry_days > 0 {
         expires_at = created_at + timedelta(days=expiry_days);
     } elif default_expiry > 0 {
         expires_at = created_at + timedelta(days=default_expiry);
     }
-    
     # Store key metadata (not the key itself for security)
     self._api_keys[api_key_id] = {
         'username': username,
@@ -142,13 +121,11 @@ impl ApiKeyManager.create_api_key(
         'expires_at': expires_at.isoformat() if expires_at else None,
         'revoked': False
     };
-    
     # Track keys by user
     if username not in self._user_keys {
         self._user_keys[username] = [];
     }
     self._user_keys[username].append(api_key_id);
-    
     return TransportResponse.success(
         data={
             'api_key': api_key,
@@ -164,24 +141,23 @@ impl ApiKeyManager.create_api_key(
 """List all API keys for a user (metadata only, not the keys)."""
 impl ApiKeyManager.list_api_keys(username: str) -> TransportResponse {
     user_key_ids = self._user_keys.get(username, []);
-    
     keys: list[dict[str, Any]] = [];
     for key_id in user_key_ids {
         key_info = self._api_keys.get(key_id);
         if key_info and not key_info.get('revoked', False) {
-            keys.append({
-                'api_key_id': key_id,
-                'name': key_info.get('name', ''),
-                'created_at': key_info.get('created_at'),
-                'expires_at': key_info.get('expires_at'),
-                'active': True
-            });
+            keys.append(
+                {
+                    'api_key_id': key_id,
+                    'name': key_info.get('name', ''),
+                    'created_at': key_info.get('created_at'),
+                    'expires_at': key_info.get('expires_at'),
+                    'active': True
+                }
+            );
         }
     }
-    
     return TransportResponse.success(
-        data={'api_keys': keys},
-        meta=Meta(extra={'http_status': 200})
+        data={'api_keys': keys}, meta=Meta(extra={'http_status': 200})
     );
 }
 
@@ -195,7 +171,6 @@ impl ApiKeyManager.revoke_api_key(username: str, api_key_id: str) -> TransportRe
             meta=Meta(extra={'http_status': 404})
         );
     }
-    
     # Check if key belongs to user
     key_info = self._api_keys[api_key_id];
     if key_info.get('username') != username {
@@ -205,10 +180,8 @@ impl ApiKeyManager.revoke_api_key(username: str, api_key_id: str) -> TransportRe
             meta=Meta(extra={'http_status': 403})
         );
     }
-    
     # Mark as revoked
     self._api_keys[api_key_id]['revoked'] = True;
-    
     return TransportResponse.success(
         data={'message': f"API key '{api_key_id}' has been revoked"},
         meta=Meta(extra={'http_status': 200})
@@ -222,14 +195,11 @@ impl ApiKeyManager.validate_api_key(api_key: str) -> str | None {
     if not key_info {
         return None;
     }
-    
     api_key_id = key_info.get('api_key_id', '');
-    
     # Check if key is still active (not revoked)
     if not self.is_key_active(api_key_id) {
         return None;
     }
-    
     return key_info.get('username');
 }
 
@@ -243,4 +213,3 @@ impl ApiKeyManager.is_key_active(api_key_id: str) -> bool {
     }
     return not key_info.get('revoked', False);
 }
-

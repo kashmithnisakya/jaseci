@@ -1596,7 +1596,6 @@ impl JacAPIServer.register_dynamic_introspection_endpoints -> None {
 # ============================================================================
 # Webhook Support Implementation
 # ============================================================================
-
 """Get or create the API key manager instance."""
 impl JacAPIServer.get_api_key_manager -> ApiKeyManager {
     if self._api_key_manager is None {
@@ -1608,9 +1607,7 @@ impl JacAPIServer.get_api_key_manager -> ApiKeyManager {
 
 """Create a new API key for the authenticated user."""
 impl JacAPIServer.create_api_key(
-    name: str,
-    expiry_days: int | None = None,
-    Authorization: str | None = None
+    name: str, expiry_days: int | None = None, Authorization: str | None = None
 ) -> TransportResponse {
     # Validate JWT token to get username
     token: str | None = None;
@@ -1625,11 +1622,8 @@ impl JacAPIServer.create_api_key(
             meta=Meta(extra={'http_status': 401})
         );
     }
-    
     return self.get_api_key_manager().create_api_key(
-        username=username,
-        name=name,
-        expiry_days=expiry_days
+        username=username, name=name, expiry_days=expiry_days
     );
 }
 
@@ -1648,14 +1642,12 @@ impl JacAPIServer.list_api_keys(Authorization: str | None = None) -> TransportRe
             meta=Meta(extra={'http_status': 401})
         );
     }
-    
     return self.get_api_key_manager().list_api_keys(username);
 }
 
 """Revoke an API key for the authenticated user."""
 impl JacAPIServer.revoke_api_key(
-    api_key_id: str,
-    Authorization: str | None = None
+    api_key_id: str, Authorization: str | None = None
 ) -> TransportResponse {
     # Validate JWT token to get username
     token: str | None = None;
@@ -1670,7 +1662,6 @@ impl JacAPIServer.revoke_api_key(
             meta=Meta(extra={'http_status': 401})
         );
     }
-    
     return self.get_api_key_manager().revoke_api_key(username, api_key_id);
 }
 
@@ -1714,7 +1705,6 @@ impl JacAPIServer.register_api_key_endpoints -> None {
             description='Creates a new API key for webhook authentication. The API key is wrapped in a JWT and can be used with HMAC-SHA256 signature verification.'
         )
     );
-    
     # List API keys
     self.server.add_endpoint(
         JEndPoint(
@@ -1737,7 +1727,6 @@ impl JacAPIServer.register_api_key_endpoints -> None {
             description='Lists all API keys for the authenticated user (metadata only, not the actual keys).'
         )
     );
-    
     # Revoke API key
     self.server.add_endpoint(
         JEndPoint(
@@ -1777,11 +1766,9 @@ impl JacAPIServer.get_transport_type_for_walker(walker_name: str) -> str {
     if walker_name not in walkers {
         return TransportType.HTTP;
     }
-
     walker_cls = walkers[walker_name];
-
     # Get default value from dataclass field
-    def get_transport_default() -> str | None {
+    def get_transport_default -> str | None {
         try {
             for field in dc_fields(walker_cls) {
                 if field.name != 'transport_type' {
@@ -1799,27 +1786,28 @@ impl JacAPIServer.get_transport_type_for_walker(walker_name: str) -> str {
         } except Exception { }
         return None;
     }
-
     default_val = get_transport_default();
     if default_val in (TransportType.WEBHOOK, 'webhook') {
         return TransportType.WEBHOOK;
     }
-
     return TransportType.HTTP;
 }
 
 """Create webhook callback for a walker with HMAC-SHA256 signature verification."""
-impl JacAPIServer.create_webhook_callback(walker_name: str) -> Callable[..., TransportResponse] {
+impl JacAPIServer.create_webhook_callback(
+    walker_name: str
+) -> Callable[..., TransportResponse] {
     import from jaclang.runtimelib.transport { TransportResponse, Meta }
     import from jac_scale.webhook { WebhookUtils }
     import from jac_scale.config_loader { get_scale_config }
     import from fastapi { Request }
-    
     async def callback(request: Request, **kwargs: JsonValue) -> TransportResponse {
         webhook_config = get_scale_config().get_webhook_config();
-        signature_header = webhook_config.get('signature_header', 'X-Webhook-Signature');
+        signature_header = webhook_config.get(
+            'signature_header', 'X-Webhook-Signature'
+        );
         verify_signature = webhook_config.get('verify_signature', True);
-        
+
         # Get API key from header
         api_key = request.headers.get('X-API-Key');
         if not api_key {
@@ -1829,7 +1817,7 @@ impl JacAPIServer.create_webhook_callback(walker_name: str) -> Callable[..., Tra
                 meta=Meta(extra={'http_status': 401})
             );
         }
-        
+
         # Validate API key and get username
         username = self.get_api_key_manager().validate_api_key(api_key);
         if not username {
@@ -1839,7 +1827,7 @@ impl JacAPIServer.create_webhook_callback(walker_name: str) -> Callable[..., Tra
                 meta=Meta(extra={'http_status': 401})
             );
         }
-        
+
         # Verify HMAC-SHA256 signature if enabled
         if verify_signature {
             signature = request.headers.get(signature_header);
@@ -1850,11 +1838,9 @@ impl JacAPIServer.create_webhook_callback(walker_name: str) -> Callable[..., Tra
                     meta=Meta(extra={'http_status': 401})
                 );
             }
-            
             # Get raw body for signature verification
             body = await request.body();
             extracted_signature = WebhookUtils.extract_signature(signature);
-            
             # Use the API key as the secret for HMAC verification
             if not WebhookUtils.verify_signature(body, extracted_signature, api_key) {
                 return TransportResponse.fail(
@@ -1864,7 +1850,7 @@ impl JacAPIServer.create_webhook_callback(walker_name: str) -> Callable[..., Tra
                 );
             }
         }
-        
+
         # Parse body for walker fields
         try {
             import json;
@@ -1873,14 +1859,14 @@ impl JacAPIServer.create_webhook_callback(walker_name: str) -> Callable[..., Tra
         } except Exception {
             body_data = {};
         }
-        
+
         walker_kwargs: dict[str, Any] = dict(body_data) if body_data else {};
-        
+
         # Execute the walker
         result = await self.execution_manager.spawn_walker(
             self.get_walkers()[walker_name], walker_kwargs, username
         );
-        
+
         if 'error' in result {
             return TransportResponse.fail(
                 code='EXECUTION_ERROR',
@@ -1889,19 +1875,17 @@ impl JacAPIServer.create_webhook_callback(walker_name: str) -> Callable[..., Tra
                 meta=Meta(extra={'http_status': 500})
             );
         }
-        
+
         return TransportResponse.success(
             data=result, meta=Meta(extra={'http_status': 200})
         );
     }
-    
     return callback;
 }
 
 """Create parameters for webhook endpoint."""
 impl JacAPIServer.create_webhook_parameters(walker_name: str) -> list[APIParameter] {
     parameters: list[APIParameter] = [];
-
     # API key header (required for webhooks)
     # Use underscore naming for valid Python identifiers - FastAPI auto-converts to hyphenated headers
     parameters.append(
@@ -1914,7 +1898,6 @@ impl JacAPIServer.create_webhook_parameters(walker_name: str) -> list[APIParamet
             type=ParameterType.HEADER
         )
     );
-
     # Signature header (for HMAC verification)
     # Use underscore naming for valid Python identifiers
     parameters.append(
@@ -1927,12 +1910,10 @@ impl JacAPIServer.create_webhook_parameters(walker_name: str) -> list[APIParamet
             type=ParameterType.HEADER
         )
     );
-    
     # Add walker fields as body parameters (excluding transport_type)
     walker_fields = self.introspector.introspect_walker(
         self.get_walkers()[walker_name]
     )['fields'];
-    
     for field_name in walker_fields {
         if field_name in ('_jac_spawn_node', 'transport_type') {
             continue;
@@ -1949,7 +1930,6 @@ impl JacAPIServer.create_webhook_parameters(walker_name: str) -> list[APIParamet
             )
         );
     }
-    
     return parameters;
 }
 
@@ -1957,7 +1937,7 @@ impl JacAPIServer.create_webhook_parameters(walker_name: str) -> list[APIParamet
 impl JacAPIServer.register_webhook_endpoints -> None {
     for walker_name in self.get_walkers() {
         transport_type = self.get_transport_type_for_walker(walker_name);
-        
+
         if transport_type == TransportType.WEBHOOK {
             self.server.add_endpoint(
                 JEndPoint(
@@ -1981,19 +1961,17 @@ impl JacAPIServer.register_dynamic_webhook_endpoint -> None {
     import from jac_scale.webhook { WebhookUtils }
     import from jac_scale.config_loader { get_scale_config }
     import from fastapi { Request }
-    
     async def dynamic_webhook_handler(
-        request: Request,
-        walker_name: str
+        request: Request, walker_name: str
     ) -> TransportResponse {
         # Reload introspector if files changed (HMR)
         if self._hmr_pending {
             self.introspector.load(force_reload=True);
             self._hmr_pending = False;
         }
-        
+
         walkers = self.get_walkers();
-        
+
         if walker_name not in walkers {
             return TransportResponse.fail(
                 code='NOT_FOUND',
@@ -2001,7 +1979,7 @@ impl JacAPIServer.register_dynamic_webhook_endpoint -> None {
                 meta=Meta(extra={'http_status': 404})
             );
         }
-        
+
         # Verify this walker is configured for webhook transport
         transport_type = self.get_transport_type_for_walker(walker_name);
         if transport_type != TransportType.WEBHOOK {
@@ -2011,11 +1989,13 @@ impl JacAPIServer.register_dynamic_webhook_endpoint -> None {
                 meta=Meta(extra={'http_status': 400})
             );
         }
-        
+
         webhook_config = get_scale_config().get_webhook_config();
-        signature_header = webhook_config.get('signature_header', 'X-Webhook-Signature');
+        signature_header = webhook_config.get(
+            'signature_header', 'X-Webhook-Signature'
+        );
         verify_signature = webhook_config.get('verify_signature', True);
-        
+
         # Get API key from header
         api_key = request.headers.get('X-API-Key');
         if not api_key {
@@ -2025,7 +2005,7 @@ impl JacAPIServer.register_dynamic_webhook_endpoint -> None {
                 meta=Meta(extra={'http_status': 401})
             );
         }
-        
+
         # Validate API key and get username
         username = self.get_api_key_manager().validate_api_key(api_key);
         if not username {
@@ -2035,7 +2015,7 @@ impl JacAPIServer.register_dynamic_webhook_endpoint -> None {
                 meta=Meta(extra={'http_status': 401})
             );
         }
-        
+
         # Verify HMAC-SHA256 signature if enabled
         if verify_signature {
             signature = request.headers.get(signature_header);
@@ -2046,10 +2026,8 @@ impl JacAPIServer.register_dynamic_webhook_endpoint -> None {
                     meta=Meta(extra={'http_status': 401})
                 );
             }
-            
             body = await request.body();
             extracted_signature = WebhookUtils.extract_signature(signature);
-            
             if not WebhookUtils.verify_signature(body, extracted_signature, api_key) {
                 return TransportResponse.fail(
                     code='UNAUTHORIZED',
@@ -2058,7 +2036,7 @@ impl JacAPIServer.register_dynamic_webhook_endpoint -> None {
                 );
             }
         }
-        
+
         # Parse body for walker fields
         try {
             import json;
@@ -2067,14 +2045,14 @@ impl JacAPIServer.register_dynamic_webhook_endpoint -> None {
         } except Exception {
             body_data = {};
         }
-        
+
         walker_kwargs: dict[str, Any] = dict(body_data) if body_data else {};
-        
+
         # Execute the walker
         result = await self.execution_manager.spawn_walker(
             walkers[walker_name], walker_kwargs, username
         );
-        
+
         if 'error' in result {
             return TransportResponse.fail(
                 code='EXECUTION_ERROR',
@@ -2083,12 +2061,11 @@ impl JacAPIServer.register_dynamic_webhook_endpoint -> None {
                 meta=Meta(extra={'http_status': 500})
             );
         }
-        
+
         return TransportResponse.success(
             data=result, meta=Meta(extra={'http_status': 200})
         );
     }
-    
     # Register dynamic webhook route
     self.server.add_endpoint(
         JEndPoint(

@@ -100,15 +100,14 @@ obj JacAPIServer(JServer) {
     # Webhook support methods
     def get_api_key_manager -> ApiKeyManager;
     def create_api_key(
-        name: str,
-        expiry_days: int | None = None,
-        Authorization: str | None = None
+        name: str, expiry_days: int | None = None, Authorization: str | None = None
     ) -> TransportResponse;
+
     def list_api_keys(Authorization: str | None = None) -> TransportResponse;
     def revoke_api_key(
-        api_key_id: str,
-        Authorization: str | None = None
+        api_key_id: str, Authorization: str | None = None
     ) -> TransportResponse;
+
     def register_api_key_endpoints -> None;
     def register_webhook_endpoints -> None;
     def create_webhook_callback(walker_name: str) -> Callable[..., TransportResponse];
