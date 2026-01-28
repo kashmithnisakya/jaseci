@@ -7,6 +7,8 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **Streaming Response Support**: Streaming responses are supported with walker spawn calls and function calls.
 - **Webhook Support**: Added webhook transport for walkers with HMAC-SHA256 signature verification. Walkers can be configured with `transport_type=TransportType.WEBHOOK` to receive webhook requests at `/webhook/{walker_name}` endpoints with API key authentication and signature verification.
 
+- **Internal**: Explicitly declared all postinit fields across the codebase.
+
 ### PyPI Installation by Default
 
 Kubernetes deployments now install Jaseci packages from PyPI by default instead of cloning the entire repository. This provides faster startup times and more reproducible deployments.
@@ -40,6 +42,13 @@ jac_byllm = "none"     # use "none" to skip installation (will insall elvant byl
 ```
 
 When not specified, defaults to `"latest"` for all packages.
+
+### Enhanced `restspec` Decorator
+
+The `@restspec` decorator now supports custom HTTP methods and custom endpoint paths for both walkers and functions.
+
+- **Custom Methods**: Use `method=HTTPMethod.GET`, `method=HTTPMethod.PUT`, etc.
+- **Custom Paths**: Use `path="/my/custom/path"` to override the default routing.
 
 ## jac-scale 0.1.1 (Latest Release)
 

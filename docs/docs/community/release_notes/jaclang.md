@@ -4,12 +4,26 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 ## jaclang 0.9.12 (Unreleased)
 
+- **Enhanced Hot Module Replacement**: Improved client code recompilation to handle exports comprehensively, ensuring all exported symbols are properly updated during hot reloads.
 - **Native Binary Compilation via `na {}` Blocks and `.na.jac` Files**: Added a third compilation target to Jac using `na {}` context blocks and `.na.jac` file conventions. Code within the `na` context compiles to native LLVM IR via llvmlite and is JIT-compiled to machine code at runtime. Functions defined in `na {}` blocks are callable via ctypes function pointers. Supports integer, float, and boolean types, arithmetic and comparison operators, if/else and while control flow, recursive function calls, local variables with type inference, and `print()` mapped to native `printf`. Native code is fully isolated from Python (`sv`) and JavaScript (`cl`) codegen -- `na` functions are excluded from both `py_ast` and `es_ast` output, and vice versa. The `llvmlite` package is now a core dependency.
 - **Startup error handling improvements:** Aggregates initialization errors and displays concise, formatted Vite/Bun bundling failures after the API endpoint list.
-- **Pip-Compatible Uninstall with RECORD Support**: Package removal now matches `pip uninstall` by using `RECORD` files to accurately remove all installed files, including scripts and data directories, while cleaning up leftover paths.
+- **Venv-Based Dependency Management**: Migrated `jac add`/`jac remove`/`jac install` from `pip install --target` to stdlib `venv` at `.jac/venv/`. This eliminates manual RECORD-based uninstall logic and metadata cleanup workarounds, delegating all package management to the venv's own pip. No third-party dependencies added.
+- **Ensurepip Error Handling**: Added a clear error message when venv creation fails due to missing `ensurepip` (common on Debian/Ubuntu where `python3-venv` is a separate package), with platform-specific install instructions.
 - **Rest API Specifications Supported**: Rest api specifications supported from jaclang. Developers can utilize it using `@restspec()` decorator.
+- **Suppress Warnings in `jac check`**: Added `--nowarn` flag to `jac check` command to suppress warning output while still counting warnings in the summary.
+- **Rest API Specifications Supported**: The `@restspec` decorator now supports custom HTTP methods and custom endpoint paths for both walkers and functions.
+
+- **Custom Methods**: Use `method=HTTPMethod.GET`, `method=HTTPMethod.PUT`, etc.
+- **Custom Paths**: Use `path="/my/custom/path"` to override the default routing.
+
+- **Internal**: Explicitly declared all postinit fields across the codebase.
+- **Support Go to Definition for Nested Unpacking Assignments**: Fixed symbol table generation to support recursive nested unpacking (e.g., `[a, [b, c]] = val`) ensuring all inner variables are registered.
 
 ## jaclang 0.9.11 (Latest Release)
+
+- **MTIR Generation Pass**: Added `MTIRGenPass` compiler pass that extracts semantic type information from GenAI `by` call sites at compile time. The pass captures parameter types, return types, semstrings, tool schemas, and class structures into `Info` dataclasses (`FunctionInfo`, `MethodInfo`, `ClassInfo`, `ParamInfo`, `FieldInfo`). MTIR is stored in `JacProgram.mtir_map` keyed by scope path.
+
+- **MTIR Bytecode Caching**: Extended `DiskBytecodeCache` to cache MTIR maps alongside bytecode (`.mtir.pkl` files). MTIR is automatically saved after compilation and restored from cache on subsequent runs, avoiding redundant extraction.
 
 - **Reactive Effects with `can with entry/exit`**: The `can with entry` and `can with exit` syntax now automatically generates React `useEffect` hooks in client-side code. When used inside a `cl` codespace, `async can with entry { items = await fetch(); }` generates `useEffect(() => { (async () => { setItems(await fetch()); })(); }, []);`. Supports dependency arrays using list or tuple syntax: `can with (userId, count) entry { ... }` generates effects that re-run when dependencies change. The `can with exit` variant generates cleanup functions via `return () => { ... }` inside the effect. This provides a declarative, Jac-native way to handle component lifecycle without manual `useEffect` boilerplate.
 
