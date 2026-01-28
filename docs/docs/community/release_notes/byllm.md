@@ -8,6 +8,8 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **Python Library Fallback Mode**: When MTIR is unavailable (e.g., using byLLM as a Python library without Jac compilation), the runtime gracefully falls back to introspection-based schema generation, maintaining backward compatibility.
 - **Internal**: Explicitly declared all postinit fields across the codebase.
 
+- **Internal refactors**: Removed orphaned files, etc.
+
 ## byllm 0.4.15 (Latest Release)
 
 - **Direct HTTP model calls:** Added support for calling custom LLM endpoints via direct HTTP (`http_client` in model config).
