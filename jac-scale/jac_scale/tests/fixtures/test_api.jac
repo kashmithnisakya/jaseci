@@ -190,16 +190,16 @@ walker : pub PublicFileUpload {
 # ============================================================================
 # Webhook Walkers
 # ============================================================================
-import from jac_scale.serve { TransportType }
+import from jaclang.runtimelib.builtin { restspec }
 
-"""Test 1: Webhook walker with multiple fields AND transport_type=WEBHOOK.
+"""Test 1: Webhook walker with multiple fields using @restspec(webhook=True).
 This walker should be accessible ONLY via /webhook/PaymentReceived endpoint."""
+@restspec(webhook=True)
 walker PaymentReceived {
     has payment_id: str,
         order_id: str,
         amount: float,
-        currency: str = 'USD',
-        transport_type: TransportType = TransportType.WEBHOOK;
+        currency: str = 'USD';
 
     can process with `root entry {
         response = {
@@ -214,7 +214,7 @@ walker PaymentReceived {
     }
 }
 
-"""Test 2: Normal walker WITHOUT transport_type (defaults to HTTP).
+"""Test 2: Normal walker without @restspec(webhook=True) (defaults to HTTP).
 This walker should be accessible via /walker/NormalPayment endpoint, NOT /webhook/."""
 walker NormalPayment {
     has payment_id: str,
@@ -236,11 +236,10 @@ walker NormalPayment {
     }
 }
 
-"""Test 3: Minimal webhook walker with ONLY transport_type=WEBHOOK.
+"""Test 3: Minimal webhook walker with ONLY @restspec(webhook=True).
 This walker should be accessible ONLY via /webhook/MinimalWebhook endpoint."""
+@restspec(webhook=True)
 walker MinimalWebhook {
-    has transport_type: TransportType = TransportType.WEBHOOK;
-
     can process with `root entry {
         report {
             "status": "received",

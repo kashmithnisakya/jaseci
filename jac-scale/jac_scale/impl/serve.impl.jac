@@ -1813,35 +1813,15 @@ impl JacAPIServer.register_api_key_endpoints -> None {
     );
 }
 
-"""Get the transport type for a walker by checking its fields."""
+"""Get the transport type for a walker by checking its restspec."""
 impl JacAPIServer.get_transport_type_for_walker(walker_name: str) -> str {
-    import from dataclasses { fields as dc_fields, MISSING }
     walkers = self.get_walkers();
     if walker_name not in walkers {
         return TransportType.HTTP;
     }
     walker_cls = walkers[walker_name];
-    # Get default value from dataclass field
-    def get_transport_default -> str | None {
-        try {
-            for field in dc_fields(walker_cls) {
-                if field.name != 'transport_type' {
-                    continue;
-                }
-                # Direct default value
-                if field.default is not MISSING {
-                    return field.default;
-                }
-                # Default factory (used for enum defaults)
-                if field.default_factory is not MISSING {
-                    return field.default_factory();
-                }
-            }
-        } except Exception { }
-        return None;
-    }
-    default_val = get_transport_default();
-    if default_val in (TransportType.WEBHOOK, 'webhook') {
+    restspec = walker_cls.restspec if walker_cls?.restspec else None;
+    if restspec?.webhook {
         return TransportType.WEBHOOK;
     }
     return TransportType.HTTP;
@@ -1964,7 +1944,7 @@ impl JacAPIServer.create_webhook_parameters(walker_name: str) -> list[APIParamet
         self.get_walkers()[walker_name]
     )['fields'];
     for field_name in walker_fields {
-        if field_name in ('_jac_spawn_node', 'transport_type') {
+        if field_name in ('_jac_spawn_node',) {
             continue;
         }
         field_type = walker_fields[field_name]['type'];

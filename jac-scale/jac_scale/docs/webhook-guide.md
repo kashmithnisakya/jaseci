@@ -44,18 +44,18 @@ export WEBHOOK_SECRET="your-secure-random-secret"
 
 ## 2. Creating Webhook Walkers
 
-To create a webhook endpoint, add `transport_type: TransportType.WEBHOOK` to your walker definition.
+To create a webhook endpoint, use the `@restspec(webhook=True)` decorator on your walker definition.
 
 ### Basic Webhook Walker
 
 ```jac
-import from jac_scale.serve { TransportType }
+import from jaclang.runtimelib.builtin { restspec }
 
+@restspec(webhook=True)
 walker PaymentReceived {
     has payment_id: str,
         amount: float,
-        currency: str = 'USD',
-        transport_type: TransportType = TransportType.WEBHOOK;
+        currency: str = 'USD';
 
     can process with `root entry {
         # Process the payment notification
@@ -74,11 +74,10 @@ This walker will be accessible at `POST /webhook/PaymentReceived`.
 ### Minimal Webhook Walker
 
 ```jac
-import from jac_scale.serve { TransportType }
+import from jaclang.runtimelib.builtin { restspec }
 
+@restspec(webhook=True)
 walker WebhookHandler {
-    has transport_type: TransportType = TransportType.WEBHOOK;
-
     can process with `root entry {
         report {"status": "received", "message": "Webhook processed"};
     }
@@ -89,7 +88,6 @@ walker WebhookHandler {
 
 - Webhook walkers are **only** accessible via `/webhook/{walker_name}` endpoints
 - They are **not** accessible via the standard `/walker/{walker_name}` endpoint
-- The `transport_type` field is automatically excluded from the request body schema
 
 ## 3. API Key Management
 
