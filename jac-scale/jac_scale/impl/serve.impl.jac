@@ -1944,7 +1944,7 @@ impl JacAPIServer.create_webhook_parameters(walker_name: str) -> list[APIParamet
         self.get_walkers()[walker_name]
     )['fields'];
     for field_name in walker_fields {
-        if field_name in ('_jac_spawn_node',) {
+        if field_name in ('_jac_spawn_node', ) {
             continue;
         }
         field_type = walker_fields[field_name]['type'];
