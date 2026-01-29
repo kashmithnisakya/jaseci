@@ -190,8 +190,6 @@ walker : pub PublicFileUpload {
 # ============================================================================
 # Webhook Walkers
 # ============================================================================
-import from jaclang.runtimelib.builtin { restspec }
-
 """Test 1: Webhook walker with multiple fields using @restspec(webhook=True).
 This walker should be accessible ONLY via /webhook/PaymentReceived endpoint."""
 @restspec(webhook=True)

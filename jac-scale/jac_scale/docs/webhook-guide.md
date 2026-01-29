@@ -49,8 +49,6 @@ To create a webhook endpoint, use the `@restspec(webhook=True)` decorator on you
 ### Basic Webhook Walker
 
 ```jac
-import from jaclang.runtimelib.builtin { restspec }
-
 @restspec(webhook=True)
 walker PaymentReceived {
     has payment_id: str,
@@ -74,8 +72,6 @@ This walker will be accessible at `POST /webhook/PaymentReceived`.
 ### Minimal Webhook Walker
 
 ```jac
-import from jaclang.runtimelib.builtin { restspec }
-
 @restspec(webhook=True)
 walker WebhookHandler {
     can process with `root entry {
