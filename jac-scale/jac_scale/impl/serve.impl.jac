@@ -1,6 +1,3 @@
-import from jaclang.cli.console { console }
-import from jaclang.cli.banners { JAC_DISCORD_URL }
-
 """Helper function to convert TransportResponse to dict for JSONResponse."""
 def _transport_response_to_dict(
     transport_response: TransportResponse
@@ -2286,7 +2283,6 @@ impl JacAPIServer.get_ws_manager -> WebSocketConnectionManager {
 
 """Create a WebSocket handler for a specific walker."""
 impl JacAPIServer.create_websocket_handler(walker_name: str) -> Callable {
-    import from fastapi { WebSocket, WebSocketDisconnect }
     ws_manager = self.get_ws_manager();
     requires_auth = self.introspector.is_auth_required_for_walker(walker_name);
     async def websocket_handler(websocket: WebSocket) -> None {
@@ -2375,7 +2371,6 @@ impl JacAPIServer.register_websocket_endpoints -> None {
 
 """Register dynamic WebSocket endpoint for HMR support (dev mode)."""
 impl JacAPIServer.register_dynamic_websocket_endpoint -> None {
-    import from fastapi { WebSocket, WebSocketDisconnect }
     ws_manager = self.get_ws_manager();
     async def dynamic_ws_handler(websocket: WebSocket, walker_name: str) -> None {
         if self._hmr_pending {

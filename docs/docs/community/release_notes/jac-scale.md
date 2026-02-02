@@ -6,6 +6,29 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 - **Client bundle error help message**: When the client bundle build fails during `jac start`, the server now prints a troubleshooting suggestion to run `jac clean --all` and a link to the Discord community for support.
 
+- **WebSocket Support**: Added WebSocket transport for walkers. Walkers decorated with `@restspec(protocol=APIProtocol.WEBSOCKET)` are accessible via persistent `ws://host/ws/{walker_name}` connections. Features include:
+  - Persistent bidirectional connections with JSON message protocol
+  - Per-walker connection tracking via `WebSocketConnectionManager`
+  - JWT authentication support (via `token` field in message payload or query parameter)
+  - Dynamic endpoint registration with HMR support in dev mode
+  - WebSocket walkers are excluded from OpenAPI schema and HTTP `/walker/` routes
+
+  ```jac
+  import from jaclang.runtimelib.server { APIProtocol }
+
+  @restspec(protocol=APIProtocol.WEBSOCKET)
+  async walker : pub ChatHandler {
+      has message: str;
+      async can respond with `root entry {
+          report {"echo": self.message};
+      }
+  }
+  ```
+
+- **`APIProtocol` enum**: Replaced separate boolean flags (`webhook=True`) in `RestSpecs` with a single typed `protocol` field using the `APIProtocol` enum (`HTTP`, `WEBHOOK`, `WEBSOCKET`). The enum is defined in `jaclang.runtimelib.server` and should be imported by user code. The previous `webhook=True` syntax is no longer supported.
+
+  **Migration**: Change `@restspec(webhook=True)` to `@restspec(protocol=APIProtocol.WEBHOOK)` and add `import from jaclang.runtimelib.server { APIProtocol }` to your module.
+
 ## jac-scale 0.1.4 (Latest Release)
 
 - **Console infrastructure**: Replaced bare `print()` calls with `console` abstraction for consistent output formatting.

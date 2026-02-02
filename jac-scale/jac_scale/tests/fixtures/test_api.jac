@@ -248,3 +248,37 @@ walker MinimalWebhook {
         };
     }
 }
+
+# ============================================================================
+# WebSocket Walkers
+# ============================================================================
+
+"""Test 1: Async WebSocket walker with fields using @restspec(protocol=APIProtocol.WEBSOCKET).
+This walker should be accessible ONLY via ws://host/ws/EchoMessage endpoint."""
+@restspec(protocol=APIProtocol.WEBSOCKET)
+async walker : pub EchoMessage {
+    has message: str;
+    has client_id: str = "anonymous";
+
+    async can echo with `root entry {
+        report {
+            "status": "success",
+            "echo": self.message,
+            "client_id": self.client_id,
+            "protocol": "websocket"
+        };
+    }
+}
+
+"""Test 2: Minimal async WebSocket walker with ONLY @restspec(protocol=APIProtocol.WEBSOCKET).
+This walker should be accessible ONLY via ws://host/ws/MinimalWebSocket endpoint."""
+@restspec(protocol=APIProtocol.WEBSOCKET)
+async walker : pub MinimalWebSocket {
+    async can process with `root entry {
+        report {
+            "status": "connected",
+            "message": "MinimalWebSocket executed successfully",
+            "protocol": "websocket"
+        };
+    }
+}

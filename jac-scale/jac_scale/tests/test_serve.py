@@ -2240,3 +2240,241 @@ class TestJacScaleServeDevMode:
         # They get concatenated together in the stream
         expected = "Func 0Func 1"
         assert content == expected, f"Expected '{expected}', got '{content}'"
+
+
+class TestJacScaleWebSocket:
+    """Test WebSocket support for jac-scale serve.
+
+    Tests that walkers decorated with @restspec(protocol=APIProtocol.WEBSOCKET) are
+    accessible via WebSocket at /ws/{walker_name} and NOT via /walker/{walker_name}.
+    """
+
+    server_process: subprocess.Popen[str] | None = None
+    port: int = 0
+    base_url: str = ""
+    ws_url: str = ""
+    fixtures_dir: Path = Path()
+    test_file: Path = Path()
+
+    @classmethod
+    def setup_class(cls) -> None:
+        """Set up test class - start the server."""
+        cls.fixtures_dir = Path(__file__).parent / "fixtures"
+        cls.test_file = cls.fixtures_dir / "test_api.jac"
+
+        if not cls.test_file.exists():
+            raise FileNotFoundError(f"Test fixture not found: {cls.test_file}")
+
+        cls.port = get_free_port()
+        cls.base_url = f"http://localhost:{cls.port}"
+        cls.ws_url = f"ws://localhost:{cls.port}"
+
+        cls._cleanup_db_files()
+        cls._start_server()
+
+    @classmethod
+    def teardown_class(cls) -> None:
+        """Tear down test class - stop the server."""
+        if cls.server_process:
+            cls.server_process.terminate()
+            try:
+                cls.server_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                cls.server_process.kill()
+                cls.server_process.wait()
+        time.sleep(0.5)
+        gc.collect()
+        cls._cleanup_db_files()
+
+    @classmethod
+    def _start_server(cls) -> None:
+        """Start the jac-scale server in a subprocess."""
+        import sys
+
+        jac_executable = Path(sys.executable).parent / "jac"
+        cmd = [
+            str(jac_executable),
+            "start",
+            cls.test_file.name,
+            "--port",
+            str(cls.port),
+        ]
+
+        cls.server_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=str(cls.fixtures_dir),
+        )
+
+        max_attempts = 50
+        server_ready = False
+        for _ in range(max_attempts):
+            if cls.server_process.poll() is not None:
+                stdout, stderr = cls.server_process.communicate()
+                raise RuntimeError(
+                    f"Server process terminated unexpectedly.\n"
+                    f"STDOUT: {stdout}\nSTDERR: {stderr}"
+                )
+            try:
+                response = requests.get(f"{cls.base_url}/docs", timeout=2)
+                if response.status_code in (200, 404):
+                    print(f"WebSocket test server started on port {cls.port}")
+                    server_ready = True
+                    break
+            except (requests.ConnectionError, requests.Timeout):
+                time.sleep(2)
+
+        if not server_ready:
+            cls.server_process.terminate()
+            try:
+                stdout, stderr = cls.server_process.communicate(timeout=2)
+            except subprocess.TimeoutExpired:
+                cls.server_process.kill()
+                stdout, stderr = cls.server_process.communicate()
+            raise RuntimeError(
+                f"Server failed to start after {max_attempts} attempts.\n"
+                f"STDOUT: {stdout}\nSTDERR: {stderr}"
+            )
+
+    @classmethod
+    def _cleanup_db_files(cls) -> None:
+        """Delete database files."""
+        import shutil
+
+        for pattern in ["*.db", "*.db-wal", "*.db-shm"]:
+            for db_file in glob.glob(str(cls.fixtures_dir / pattern)):
+                with contextlib.suppress(Exception):
+                    Path(db_file).unlink()
+        client_build_dir = cls.fixtures_dir / ".jac"
+        if client_build_dir.exists():
+            with contextlib.suppress(Exception):
+                shutil.rmtree(client_build_dir)
+
+    def test_websocket_endpoint_not_in_openapi(self) -> None:
+        """WebSocket endpoints should NOT appear in the OpenAPI schema (they are not HTTP routes)."""
+        response = requests.get(f"{self.base_url}/openapi.json", timeout=5)
+        assert response.status_code == 200
+        schema = response.json()
+        paths = schema.get("paths", {})
+
+        # WebSocket walkers should not have /walker/ endpoints
+        assert "/walker/EchoMessage" not in paths, (
+            "WebSocket walker EchoMessage should not be in /walker/ paths"
+        )
+        assert "/walker/MinimalWebSocket" not in paths, (
+            "WebSocket walker MinimalWebSocket should not be in /walker/ paths"
+        )
+
+    def test_websocket_connect_and_echo(self) -> None:
+        """Test WebSocket connection and message exchange with EchoMessage walker."""
+        import asyncio
+        import websockets
+
+        async def _test() -> None:
+            async with websockets.connect(
+                f"{self.ws_url}/ws/EchoMessage"
+            ) as ws:
+                await ws.send(
+                    json.dumps({"message": "hello", "client_id": "test-1"})
+                )
+                response = json.loads(await ws.recv())
+                assert response["ok"] is True, f"Expected ok=True, got {response}"
+                data = response["data"]
+                # Walker reports are returned as a list
+                report = data["reports"][0] if "reports" in data else data
+                assert report["echo"] == "hello"
+                assert report["client_id"] == "test-1"
+                assert report["protocol"] == "websocket"
+
+        asyncio.run(_test())
+
+    def test_websocket_minimal_walker(self) -> None:
+        """Test MinimalWebSocket walker with no fields."""
+        import asyncio
+        import websockets
+
+        async def _test() -> None:
+            async with websockets.connect(
+                f"{self.ws_url}/ws/MinimalWebSocket"
+            ) as ws:
+                await ws.send(json.dumps({}))
+                response = json.loads(await ws.recv())
+                assert response["ok"] is True, f"Expected ok=True, got {response}"
+                data = response["data"]
+                report = data["reports"][0] if "reports" in data else data
+                assert report["status"] == "connected"
+                assert report["protocol"] == "websocket"
+
+        asyncio.run(_test())
+
+    def test_websocket_multiple_messages(self) -> None:
+        """Test sending multiple messages over a single WebSocket connection."""
+        import asyncio
+        import websockets
+
+        async def _test() -> None:
+            async with websockets.connect(
+                f"{self.ws_url}/ws/EchoMessage"
+            ) as ws:
+                for i in range(3):
+                    await ws.send(
+                        json.dumps({"message": f"msg-{i}", "client_id": f"client-{i}"})
+                    )
+                    response = json.loads(await ws.recv())
+                    assert response["ok"] is True
+                    data = response["data"]
+                    report = data["reports"][0] if "reports" in data else data
+                    assert report["echo"] == f"msg-{i}"
+                    assert report["client_id"] == f"client-{i}"
+
+        asyncio.run(_test())
+
+    def test_websocket_not_accessible_via_walker_endpoint(self) -> None:
+        """WebSocket walkers should NOT be accessible via /walker/ HTTP endpoint."""
+        response = requests.post(
+            f"{self.base_url}/walker/EchoMessage",
+            json={"message": "test", "client_id": "test"},
+            timeout=10,
+        )
+        # Should return 400/404/405 (not registered as HTTP endpoint)
+        assert response.status_code in (400, 404, 405), (
+            f"Expected 400/404/405, got {response.status_code}: {response.text}"
+        )
+
+    def test_websocket_nonexistent_walker(self) -> None:
+        """Connecting to a non-existent WebSocket walker should fail."""
+        import asyncio
+        import websockets
+
+        async def _test() -> None:
+            try:
+                async with websockets.connect(
+                    f"{self.ws_url}/ws/NonExistentWalker"
+                ) as ws:
+                    # If connection is accepted, we should get an error or close
+                    await ws.recv()
+                    pytest.fail("Expected connection to be rejected")
+            except (websockets.exceptions.ConnectionClosed, Exception):
+                # Connection should be rejected/closed
+                pass
+
+        asyncio.run(_test())
+
+    def test_http_walker_not_accessible_via_ws(self) -> None:
+        """HTTP walkers should NOT be accessible via /ws/ WebSocket endpoint."""
+        import asyncio
+        import websockets
+
+        async def _test() -> None:
+            try:
+                async with websockets.connect(
+                    f"{self.ws_url}/ws/CreateTask"
+                ) as ws:
+                    await ws.recv()
+                    pytest.fail("Expected connection to be rejected for HTTP walker")
+            except (websockets.exceptions.ConnectionClosed, Exception):
+                pass
+
+        asyncio.run(_test())
