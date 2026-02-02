@@ -2370,15 +2370,12 @@ class TestJacScaleWebSocket:
     def test_websocket_connect_and_echo(self) -> None:
         """Test WebSocket connection and message exchange with EchoMessage walker."""
         import asyncio
+
         import websockets
 
         async def _test() -> None:
-            async with websockets.connect(
-                f"{self.ws_url}/ws/EchoMessage"
-            ) as ws:
-                await ws.send(
-                    json.dumps({"message": "hello", "client_id": "test-1"})
-                )
+            async with websockets.connect(f"{self.ws_url}/ws/EchoMessage") as ws:
+                await ws.send(json.dumps({"message": "hello", "client_id": "test-1"}))
                 response = json.loads(await ws.recv())
                 assert response["ok"] is True, f"Expected ok=True, got {response}"
                 data = response["data"]
@@ -2393,12 +2390,11 @@ class TestJacScaleWebSocket:
     def test_websocket_minimal_walker(self) -> None:
         """Test MinimalWebSocket walker with no fields."""
         import asyncio
+
         import websockets
 
         async def _test() -> None:
-            async with websockets.connect(
-                f"{self.ws_url}/ws/MinimalWebSocket"
-            ) as ws:
+            async with websockets.connect(f"{self.ws_url}/ws/MinimalWebSocket") as ws:
                 await ws.send(json.dumps({}))
                 response = json.loads(await ws.recv())
                 assert response["ok"] is True, f"Expected ok=True, got {response}"
@@ -2412,12 +2408,11 @@ class TestJacScaleWebSocket:
     def test_websocket_multiple_messages(self) -> None:
         """Test sending multiple messages over a single WebSocket connection."""
         import asyncio
+
         import websockets
 
         async def _test() -> None:
-            async with websockets.connect(
-                f"{self.ws_url}/ws/EchoMessage"
-            ) as ws:
+            async with websockets.connect(f"{self.ws_url}/ws/EchoMessage") as ws:
                 for i in range(3):
                     await ws.send(
                         json.dumps({"message": f"msg-{i}", "client_id": f"client-{i}"})
@@ -2446,6 +2441,7 @@ class TestJacScaleWebSocket:
     def test_websocket_nonexistent_walker(self) -> None:
         """Connecting to a non-existent WebSocket walker should fail."""
         import asyncio
+
         import websockets
 
         async def _test() -> None:
@@ -2465,13 +2461,12 @@ class TestJacScaleWebSocket:
     def test_http_walker_not_accessible_via_ws(self) -> None:
         """HTTP walkers should NOT be accessible via /ws/ WebSocket endpoint."""
         import asyncio
+
         import websockets
 
         async def _test() -> None:
             try:
-                async with websockets.connect(
-                    f"{self.ws_url}/ws/CreateTask"
-                ) as ws:
+                async with websockets.connect(f"{self.ws_url}/ws/CreateTask") as ws:
                     await ws.recv()
                     pytest.fail("Expected connection to be rejected for HTTP walker")
             except (websockets.exceptions.ConnectionClosed, Exception):
