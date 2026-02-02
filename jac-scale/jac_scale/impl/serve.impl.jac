@@ -2289,7 +2289,6 @@ impl JacAPIServer.create_websocket_handler(walker_name: str) -> Callable {
     import from fastapi { WebSocket, WebSocketDisconnect }
     ws_manager = self.get_ws_manager();
     requires_auth = self.introspector.is_auth_required_for_walker(walker_name);
-
     async def websocket_handler(websocket: WebSocket) -> None {
         await ws_manager.connect(websocket, walker_name);
         try {
@@ -2299,18 +2298,21 @@ impl JacAPIServer.create_websocket_handler(walker_name: str) -> Callable {
                 # Handle authentication if required
                 username: (str | None) = None;
                 if requires_auth {
-                    token = data.pop('token', None) or websocket.query_params.get('token');
+                    token = data.pop('token', None)
+                    or websocket.query_params.get('token');
                     if token {
                         username = self.user_manager.validate_jwt_token(token);
                     }
                     if not username {
-                        await websocket.send_json({
-                            'ok': False,
-                            'error': {
-                                'code': 'UNAUTHORIZED',
-                                'message': 'Invalid or missing token'
+                        await websocket.send_json(
+                            {
+                                'ok': False,
+                                'error': {
+                                    'code': 'UNAUTHORIZED',
+                                    'message': 'Invalid or missing token'
+                                }
                             }
-                        });
+                        );
                         continue;
                     }
                 }
@@ -2323,28 +2325,30 @@ impl JacAPIServer.create_websocket_handler(walker_name: str) -> Callable {
                         (username or '__guest__')
                     );
                     if isinstance(result, dict) and 'error' in result {
-                        await websocket.send_json({
-                            'ok': False,
-                            'error': {
-                                'code': 'EXECUTION_ERROR',
-                                'message': result.get('error', 'Walker execution failed')
+                        await websocket.send_json(
+                            {
+                                'ok': False,
+                                'error': {
+                                    'code': 'EXECUTION_ERROR',
+                                    'message': result.get(
+                                        'error', 'Walker execution failed'
+                                    )
+                                }
                             }
-                        });
+                        );
                     } else {
-                        await websocket.send_json({
-                            'ok': True,
-                            'data': result
-                        });
+                        await websocket.send_json({'ok': True, 'data': result});
                     }
                 } except Exception as e {
-                    logger.error(f"WebSocket walker execution error for '{walker_name}': {e}");
-                    await websocket.send_json({
-                        'ok': False,
-                        'error': {
-                            'code': 'INTERNAL_ERROR',
-                            'message': str(e)
+                    logger.error(
+                        f"WebSocket walker execution error for '{walker_name}': {e}"
+                    );
+                    await websocket.send_json(
+                        {
+                            'ok': False,
+                            'error': {'code': 'INTERNAL_ERROR', 'message': str(e)}
                         }
-                    });
+                    );
                 }
             }
         } except WebSocketDisconnect {
@@ -2373,7 +2377,6 @@ impl JacAPIServer.register_websocket_endpoints -> None {
 impl JacAPIServer.register_dynamic_websocket_endpoint -> None {
     import from fastapi { WebSocket, WebSocketDisconnect }
     ws_manager = self.get_ws_manager();
-
     async def dynamic_ws_handler(websocket: WebSocket, walker_name: str) -> None {
         if self._hmr_pending {
             self.introspector.load(force_reload=True);
@@ -2382,7 +2385,9 @@ impl JacAPIServer.register_dynamic_websocket_endpoint -> None {
 
         walkers = self.get_walkers();
         if walker_name not in walkers {
-            await websocket.close(code=4004, reason=f"Walker '{walker_name}' not found");
+            await websocket.close(
+                code=4004, reason=f"Walker '{walker_name}' not found"
+            );
             return;
         }
 
@@ -2398,6 +2403,5 @@ impl JacAPIServer.register_dynamic_websocket_endpoint -> None {
         handler = self.create_websocket_handler(walker_name);
         await handler(websocket);
     }
-
     self.server.app.websocket("/ws/{walker_name}")(dynamic_ws_handler);
 }

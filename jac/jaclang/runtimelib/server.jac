@@ -44,7 +44,11 @@ glob JsonValue: TypeAlias = None | str | int | float | bool | <>list['JsonValue'
      ],
      StatusCode: TypeAlias = Literal[(200, 201, 400, 401, 404, 500, 503)];
 
-enum APIProtocol ( StrEnum ) { HTTP = 'http', WEBHOOK = 'webhook', WEBSOCKET = 'websocket' }
+enum APIProtocol ( StrEnum ) {
+    HTTP = 'http',
+    WEBHOOK = 'webhook',
+    WEBSOCKET = 'websocket'
+}
 
 """Base response container (HTTP-specific, kept for backward compatibility)."""
 obj Response {

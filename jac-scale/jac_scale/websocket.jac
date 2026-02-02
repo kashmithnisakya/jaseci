@@ -29,7 +29,9 @@ obj WebSocketConnectionManager {
     def disconnect(websocket: WebSocket, walker_name: str) -> None {
         if walker_name in self._active_connections {
             self._active_connections[walker_name] = [
-                ws for ws in self._active_connections[walker_name] if ws != websocket
+                ws
+                for ws in self._active_connections[walker_name]
+                if ws != websocket
             ];
             logger.info(
                 f"WebSocket disconnected for walker '{walker_name}'. "
