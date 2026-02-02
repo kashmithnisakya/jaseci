@@ -36,6 +36,7 @@ import from jaclang.cli.console { console }
 import from jaclang.cli.banners { JAC_DISCORD_URL }
 import from fastapi { WebSocket, WebSocketDisconnect }
 
+
 # Load configuration from jac.toml with env var overrides
 glob _jwt_config = get_scale_config().get_jwt_config(),
      _sso_config = get_scale_config().get_sso_config(),
