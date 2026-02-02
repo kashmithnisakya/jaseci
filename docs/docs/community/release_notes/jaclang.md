@@ -4,6 +4,8 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 ## jaclang 0.9.15 (Unreleased)
 
+- **`APIProtocol` Enum in `RestSpecs`**: Added `APIProtocol` enum (`HTTP`, `WEBHOOK`, `WEBSOCKET`) to `jaclang.runtimelib.server` and replaced the boolean `webhook` flag in `RestSpecs` with a single typed `protocol: APIProtocol` field. This provides a unified way to declare walker transport types via `@restspec(protocol=APIProtocol.WEBSOCKET)`.
+
 ## jaclang 0.9.14 (Latest Release)
 
 - **Fix: `jac format` No Longer Deletes Files with Syntax Errors**: Fixed a bug where `jac format` would overwrite a file's contents with an empty string when the file contained syntax errors. The formatter now checks for parse errors before writing and leaves the original file untouched.
