@@ -7,6 +7,7 @@ import json;
 import os;
 import secrets;
 import from collections.abc { Callable }
+import from enum { StrEnum }
 import from contextlib { suppress }
 import from http.server { BaseHTTPRequestHandler, HTTPServer }
 import from inspect { iscoroutine, isgenerator }
@@ -42,6 +43,8 @@ glob JsonValue: TypeAlias = None | str | int | float | bool | <>list['JsonValue'
          (str, 'JsonValue')
      ],
      StatusCode: TypeAlias = Literal[(200, 201, 400, 401, 404, 500, 503)];
+
+enum APIProtocol ( StrEnum ) { HTTP = 'http', WEBHOOK = 'webhook', WEBSOCKET = 'websocket' }
 
 """Base response container (HTTP-specific, kept for backward compatibility)."""
 obj Response {
@@ -226,7 +229,7 @@ obj JacAPIServer {
     obj RestSpecs {
         has method: str = "",
             path: str = "",
-            webhook: bool = False;
+            protocol: APIProtocol = APIProtocol.HTTP;
     }
 
     def postinit -> None;

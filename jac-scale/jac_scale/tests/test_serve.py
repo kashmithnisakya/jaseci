@@ -1573,29 +1573,29 @@ class TestJacScaleServe:
         return hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
 
     def test_webhook_endpoint_exists_for_webhook_walkers(self) -> None:
-        """Test 1: Verify webhook endpoints are registered for walkers with @restspec(webhook=True)."""
+        """Test 1: Verify webhook endpoints are registered for walkers with @restspec(protocol=APIProtocol.WEBHOOK)."""
         response = requests.get(f"{self.base_url}/openapi.json", timeout=5)
         assert response.status_code == 200
         schema = response.json()
         paths = schema.get("paths", {})
 
-        # PaymentReceived has @restspec(webhook=True) -> should have /webhook/ endpoint
+        # PaymentReceived has @restspec(protocol=APIProtocol.WEBHOOK) -> should have /webhook/ endpoint
         assert "/webhook/PaymentReceived" in paths, (
             f"Expected /webhook/PaymentReceived in paths: {list(paths.keys())}"
         )
-        # MinimalWebhook has @restspec(webhook=True) -> should have /webhook/ endpoint
+        # MinimalWebhook has @restspec(protocol=APIProtocol.WEBHOOK) -> should have /webhook/ endpoint
         assert "/webhook/MinimalWebhook" in paths, (
             f"Expected /webhook/MinimalWebhook in paths: {list(paths.keys())}"
         )
 
     def test_normal_walker_not_in_webhook_endpoint(self) -> None:
-        """Test 2: Verify normal walkers (without @restspec(webhook=True)) are NOT in /webhook/."""
+        """Test 2: Verify normal walkers (without @restspec(protocol=APIProtocol.WEBHOOK)) are NOT in /webhook/."""
         response = requests.get(f"{self.base_url}/openapi.json", timeout=5)
         assert response.status_code == 200
         schema = response.json()
         paths = schema.get("paths", {})
 
-        # NormalPayment does NOT have @restspec(webhook=True) -> should NOT have /webhook/ endpoint
+        # NormalPayment does NOT have @restspec(protocol=APIProtocol.WEBHOOK) -> should NOT have /webhook/ endpoint
         assert "/webhook/NormalPayment" not in paths, (
             "NormalPayment should NOT have webhook endpoint but found in paths"
         )
@@ -1683,7 +1683,7 @@ class TestJacScaleServe:
         )
 
     def test_minimal_webhook_with_valid_api_key(self) -> None:
-        """Test 3: MinimalWebhook (with @restspec(webhook=True)) works with valid API key."""
+        """Test 3: MinimalWebhook (with @restspec(protocol=APIProtocol.WEBHOOK)) works with valid API key."""
         # Create user and get auth token
         username = f"minimal_webhook_user_{uuid.uuid4().hex[:8]}"
         register_response = requests.post(
@@ -1740,7 +1740,7 @@ class TestJacScaleServe:
         assert data["reports"][0]["transport"] == "webhook"
 
     def test_webhook_payment_received_with_fields(self) -> None:
-        """Test 1: PaymentReceived webhook walker with multiple fields + @restspec(webhook=True)."""
+        """Test 1: PaymentReceived webhook walker with multiple fields + @restspec(protocol=APIProtocol.WEBHOOK)."""
         # Create user and get API key
         username = f"payment_user_{uuid.uuid4().hex[:8]}"
         register_response = requests.post(
@@ -1806,7 +1806,7 @@ class TestJacScaleServe:
         assert report["currency"] == "USD"
 
     def test_webhook_not_accessible_via_regular_walker_endpoint(self) -> None:
-        """Test that webhook walkers (with @restspec(webhook=True)) are NOT accessible via /walker/."""
+        """Test that webhook walkers (with @restspec(protocol=APIProtocol.WEBHOOK)) are NOT accessible via /walker/."""
         # Create user and get token
         username = f"webhook_path_user_{uuid.uuid4().hex[:8]}"
         register_response = requests.post(

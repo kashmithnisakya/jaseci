@@ -1,5 +1,7 @@
 """Test API fixture for jac-scale serve tests."""
 
+import from jaclang.runtimelib.server { APIProtocol }
+
 # ============================================================================
 # Test Functions
 # ============================================================================
@@ -190,9 +192,9 @@ walker : pub PublicFileUpload {
 # ============================================================================
 # Webhook Walkers
 # ============================================================================
-"""Test 1: Webhook walker with multiple fields using @restspec(webhook=True).
+"""Test 1: Webhook walker with multiple fields using @restspec(protocol=APIProtocol.WEBHOOK).
 This walker should be accessible ONLY via /webhook/PaymentReceived endpoint."""
-@restspec(webhook=True)
+@restspec(protocol=APIProtocol.WEBHOOK)
 walker PaymentReceived {
     has payment_id: str,
         order_id: str,
@@ -212,7 +214,7 @@ walker PaymentReceived {
     }
 }
 
-"""Test 2: Normal walker without @restspec(webhook=True) (defaults to HTTP).
+"""Test 2: Normal walker without @restspec(protocol=APIProtocol.WEBHOOK) (defaults to HTTP).
 This walker should be accessible via /walker/NormalPayment endpoint, NOT /webhook/."""
 walker NormalPayment {
     has payment_id: str,
@@ -234,9 +236,9 @@ walker NormalPayment {
     }
 }
 
-"""Test 3: Minimal webhook walker with ONLY @restspec(webhook=True).
+"""Test 3: Minimal webhook walker with ONLY @restspec(protocol=APIProtocol.WEBHOOK).
 This walker should be accessible ONLY via /webhook/MinimalWebhook endpoint."""
-@restspec(webhook=True)
+@restspec(protocol=APIProtocol.WEBHOOK)
 walker MinimalWebhook {
     can process with `root entry {
         report {
