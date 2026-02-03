@@ -5,6 +5,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 ## jaclang 0.9.15 (Unreleased)
 
 - **`APIProtocol` Enum in `RestSpecs`**: Added `APIProtocol` enum (`HTTP`, `WEBHOOK`, `WEBSOCKET`) to `jaclang.runtimelib.server` and replaced the boolean `webhook` flag in `RestSpecs` with a single typed `protocol: APIProtocol` field. This provides a unified way to declare walker transport types via `@restspec(protocol=APIProtocol.WEBSOCKET)`.
+- **First-Run Progress Messages**: The first time `jac` is run after installation, it now prints clear progress messages to stderr showing each internal compiler module being compiled and cached, so users understand why the first launch is slower and don't think the process is hanging.
 
 ## jaclang 0.9.14 (Latest Release)
 
