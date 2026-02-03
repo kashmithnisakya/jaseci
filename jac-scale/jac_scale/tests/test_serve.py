@@ -2507,7 +2507,9 @@ class TestJacScaleWebSocket:
             json={"username": username, "password": password},
             timeout=10,
         )
-        assert response.status_code in (200, 201), f"Failed to create user: {response.text}"
+        assert response.status_code in (200, 201), (
+            f"Failed to create user: {response.text}"
+        )
 
         # Login to get token
         response = requests.post(
@@ -2521,7 +2523,9 @@ class TestJacScaleWebSocket:
         async def _test() -> None:
             async with websockets.connect(f"{self.ws_url}/ws/PrivateWebSocket") as ws:
                 # Send message with token in payload
-                await ws.send(json.dumps({"message": "authenticated hello", "token": token}))
+                await ws.send(
+                    json.dumps({"message": "authenticated hello", "token": token})
+                )
                 response = json.loads(await ws.recv())
                 assert response["ok"] is True, f"Expected ok=True, got {response}"
                 data = response["data"]
@@ -2593,12 +2597,20 @@ class TestJacScaleWebSocket:
                     )
 
                     # Both clients should receive the broadcast
-                    response1 = json.loads(await asyncio.wait_for(ws1.recv(), timeout=5))
-                    response2 = json.loads(await asyncio.wait_for(ws2.recv(), timeout=5))
+                    response1 = json.loads(
+                        await asyncio.wait_for(ws1.recv(), timeout=5)
+                    )
+                    response2 = json.loads(
+                        await asyncio.wait_for(ws2.recv(), timeout=5)
+                    )
 
                     # Both should be successful
-                    assert response1["ok"] is True, f"Client1 expected ok=True: {response1}"
-                    assert response2["ok"] is True, f"Client2 expected ok=True: {response2}"
+                    assert response1["ok"] is True, (
+                        f"Client1 expected ok=True: {response1}"
+                    )
+                    assert response2["ok"] is True, (
+                        f"Client2 expected ok=True: {response2}"
+                    )
 
                     # Both should have the same content
                     data1 = response1["data"]
@@ -2659,41 +2671,45 @@ class TestJacScaleWebSocket:
                 timeout=10,
             )
             assert response.status_code == 200
-            users.append({"username": username, "token": response.json()["data"]["token"]})
+            users.append(
+                {"username": username, "token": response.json()["data"]["token"]}
+            )
 
         async def _test() -> None:
             # Connect two authenticated clients
-            async with websockets.connect(
-                f"{self.ws_url}/ws/PrivateBroadcastChat?token={users[0]['token']}"
-            ) as ws1:
-                async with websockets.connect(
+            async with (
+                websockets.connect(
+                    f"{self.ws_url}/ws/PrivateBroadcastChat?token={users[0]['token']}"
+                ) as ws1,
+                websockets.connect(
                     f"{self.ws_url}/ws/PrivateBroadcastChat?token={users[1]['token']}"
-                ) as ws2:
-                    await asyncio.sleep(0.1)
+                ) as ws2,
+            ):
+                await asyncio.sleep(0.1)
 
-                    # Client 1 sends a message
-                    await ws1.send(
-                        json.dumps({"message": "secret broadcast", "room": "team"})
-                    )
+                # Client 1 sends a message
+                await ws1.send(
+                    json.dumps({"message": "secret broadcast", "room": "team"})
+                )
 
-                    # Both clients should receive
-                    response1 = json.loads(await asyncio.wait_for(ws1.recv(), timeout=5))
-                    response2 = json.loads(await asyncio.wait_for(ws2.recv(), timeout=5))
+                # Both clients should receive
+                response1 = json.loads(await asyncio.wait_for(ws1.recv(), timeout=5))
+                response2 = json.loads(await asyncio.wait_for(ws2.recv(), timeout=5))
 
-                    assert response1["ok"] is True
-                    assert response2["ok"] is True
+                assert response1["ok"] is True
+                assert response2["ok"] is True
 
-                    data1 = response1["data"]
-                    data2 = response2["data"]
-                    report1 = data1["reports"][0] if "reports" in data1 else data1
-                    report2 = data2["reports"][0] if "reports" in data2 else data2
+                data1 = response1["data"]
+                data2 = response2["data"]
+                report1 = data1["reports"][0] if "reports" in data1 else data1
+                report2 = data2["reports"][0] if "reports" in data2 else data2
 
-                    assert report1["content"] == "secret broadcast"
-                    assert report1["authenticated"] is True
-                    assert report1["broadcast"] is True
+                assert report1["content"] == "secret broadcast"
+                assert report1["authenticated"] is True
+                assert report1["broadcast"] is True
 
-                    assert report2["content"] == "secret broadcast"
-                    assert report2["authenticated"] is True
+                assert report2["content"] == "secret broadcast"
+                assert report2["authenticated"] is True
 
         asyncio.run(_test())
 

@@ -91,6 +91,7 @@ async walker : pub ChatRoom {
 ```
 
 When a client sends a message, **all connected clients** receive the response, making it ideal for:
+
 - Chat rooms
 - Live notifications
 - Real-time collaboration
