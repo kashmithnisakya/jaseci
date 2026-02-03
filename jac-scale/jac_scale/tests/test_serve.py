@@ -2586,45 +2586,47 @@ class TestJacScaleWebSocket:
 
         async def _test() -> None:
             # Connect two clients
-            async with websockets.connect(f"{self.ws_url}/ws/BroadcastChat") as ws1:
-                async with websockets.connect(f"{self.ws_url}/ws/BroadcastChat") as ws2:
-                    # Give connections time to establish
-                    await asyncio.sleep(0.1)
+            async with (
+                websockets.connect(f"{self.ws_url}/ws/BroadcastChat") as ws1,
+                websockets.connect(f"{self.ws_url}/ws/BroadcastChat") as ws2,
+            ):
+                # Give connections time to establish
+                await asyncio.sleep(0.1)
 
-                    # Client 1 sends a message
-                    await ws1.send(
-                        json.dumps({"message": "hello everyone", "sender": "client1"})
-                    )
+                # Client 1 sends a message
+                await ws1.send(
+                    json.dumps({"message": "hello everyone", "sender": "client1"})
+                )
 
-                    # Both clients should receive the broadcast
-                    response1 = json.loads(
-                        await asyncio.wait_for(ws1.recv(), timeout=5)
-                    )
-                    response2 = json.loads(
-                        await asyncio.wait_for(ws2.recv(), timeout=5)
-                    )
+                # Both clients should receive the broadcast
+                response1 = json.loads(
+                    await asyncio.wait_for(ws1.recv(), timeout=5)
+                )
+                response2 = json.loads(
+                    await asyncio.wait_for(ws2.recv(), timeout=5)
+                )
 
-                    # Both should be successful
-                    assert response1["ok"] is True, (
-                        f"Client1 expected ok=True: {response1}"
-                    )
-                    assert response2["ok"] is True, (
-                        f"Client2 expected ok=True: {response2}"
-                    )
+                # Both should be successful
+                assert response1["ok"] is True, (
+                    f"Client1 expected ok=True: {response1}"
+                )
+                assert response2["ok"] is True, (
+                    f"Client2 expected ok=True: {response2}"
+                )
 
-                    # Both should have the same content
-                    data1 = response1["data"]
-                    data2 = response2["data"]
-                    report1 = data1["reports"][0] if "reports" in data1 else data1
-                    report2 = data2["reports"][0] if "reports" in data2 else data2
+                # Both should have the same content
+                data1 = response1["data"]
+                data2 = response2["data"]
+                report1 = data1["reports"][0] if "reports" in data1 else data1
+                report2 = data2["reports"][0] if "reports" in data2 else data2
 
-                    assert report1["content"] == "hello everyone"
-                    assert report1["sender"] == "client1"
-                    assert report1["broadcast"] is True
+                assert report1["content"] == "hello everyone"
+                assert report1["sender"] == "client1"
+                assert report1["broadcast"] is True
 
-                    assert report2["content"] == "hello everyone"
-                    assert report2["sender"] == "client1"
-                    assert report2["broadcast"] is True
+                assert report2["content"] == "hello everyone"
+                assert report2["sender"] == "client1"
+                assert report2["broadcast"] is True
 
         asyncio.run(_test())
 
