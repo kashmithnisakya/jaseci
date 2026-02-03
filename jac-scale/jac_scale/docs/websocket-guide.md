@@ -68,10 +68,63 @@ async walker SecureChat {
 }
 ```
 
+### Broadcasting WebSocket Walker
+
+Use `broadcast=True` to send messages to ALL connected clients of this walker:
+
+```jac
+import from jaclang.runtimelib.server { APIProtocol }
+
+@restspec(protocol=APIProtocol.WEBSOCKET, broadcast=True)
+async walker : pub ChatRoom {
+    has message: str;
+    has sender: str = "anonymous";
+
+    async can handle with `root entry {
+        report {
+            "type": "message",
+            "sender": self.sender,
+            "content": self.message
+        };
+    }
+}
+```
+
+When a client sends a message, **all connected clients** receive the response, making it ideal for:
+- Chat rooms
+- Live notifications
+- Real-time collaboration
+- Game state synchronization
+
+### Private Broadcasting Walker
+
+Combine authentication with broadcasting for secure group communication:
+
+```jac
+import from jaclang.runtimelib.server { APIProtocol }
+
+@restspec(protocol=APIProtocol.WEBSOCKET, broadcast=True)
+async walker TeamChat {
+    has message: str;
+    has room: str = "general";
+
+    async can handle with `root entry {
+        report {
+            "room": self.room,
+            "content": self.message,
+            "authenticated": True
+        };
+    }
+}
+```
+
+Only authenticated users can connect and send messages, and all authenticated users receive broadcasts.
+
 ### Important Notes
 
 - WebSocket walkers **must** be declared as `async walker`
 - Use `: pub` for public access (no authentication required) or omit it to require JWT auth
+- Use `broadcast=True` to send responses to ALL connected clients (only valid with WEBSOCKET protocol)
 - WebSocket walkers are **only** accessible via `ws://host/ws/{walker_name}`
 - They are **not** accessible via the standard `/walker/{walker_name}` HTTP endpoint
 - They are **not** included in the OpenAPI schema
@@ -233,7 +286,8 @@ If authentication fails, the server responds with an error but keeps the connect
 | Decorator | `@restspec()` (default) | `@restspec(protocol=APIProtocol.WEBSOCKET)` | `@restspec(protocol=APIProtocol.WEBHOOK)` |
 | Connection | Request-response | Persistent bidirectional | Request-response |
 | Authentication | JWT Bearer header | JWT query param / payload | API Key + HMAC Signature |
-| Use Case | Standard APIs | Real-time / streaming | External service callbacks |
+| Broadcasting | N/A | `broadcast=True` option | N/A |
+| Use Case | Standard APIs | Real-time / streaming / chat | External service callbacks |
 | Multiple Messages | New request each time | Multiple on one connection | New request each time |
 | Endpoint Path | `/walker/{name}` | `/ws/{name}` | `/webhook/{name}` |
 | In OpenAPI Schema | Yes | No | No |
@@ -245,6 +299,13 @@ If authentication fails, the server responds with an error but keeps the connect
 | Protocol | Path | Description |
 |----------|------|-------------|
 | WS | `/ws/{walker_name}` | Connect to a WebSocket walker |
+
+### Decorator Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `protocol` | `APIProtocol` | `HTTP` | Transport protocol (`WEBSOCKET` for WebSocket walkers) |
+| `broadcast` | `bool` | `False` | When `True`, responses are sent to ALL connected clients (only valid with `WEBSOCKET`) |
 
 ### Message Fields
 

@@ -2285,6 +2285,12 @@ impl JacAPIServer.get_ws_manager -> WebSocketConnectionManager {
 impl JacAPIServer.create_websocket_handler(walker_name: str) -> Callable {
     ws_manager = self.get_ws_manager();
     requires_auth = self.introspector.is_auth_required_for_walker(walker_name);
+
+    # Check if this walker has broadcast enabled
+    walker_cls = self.get_walkers()[walker_name];
+    restspec = walker_cls.restspec if hasattr(walker_cls, 'restspec') and walker_cls.restspec else None;
+    is_broadcast = restspec.broadcast if restspec and hasattr(restspec, 'broadcast') else False;
+
     async def websocket_handler(websocket: WebSocket) -> None {
         await ws_manager.connect(websocket, walker_name);
         try {
@@ -2321,6 +2327,7 @@ impl JacAPIServer.create_websocket_handler(walker_name: str) -> Callable {
                         (username or '__guest__')
                     );
                     if isinstance(result, dict) and 'error' in result {
+                        # Errors always go only to sender
                         await websocket.send_json(
                             {
                                 'ok': False,
@@ -2333,12 +2340,20 @@ impl JacAPIServer.create_websocket_handler(walker_name: str) -> Callable {
                             }
                         );
                     } else {
-                        await websocket.send_json({'ok': True, 'data': result});
+                        response = {'ok': True, 'data': result};
+                        if is_broadcast {
+                            # Broadcast to ALL connections of this walker
+                            await ws_manager.broadcast(walker_name, response);
+                        } else {
+                            # Send only to sender
+                            await websocket.send_json(response);
+                        }
                     }
                 } except Exception as e {
                     logger.error(
                         f"WebSocket walker execution error for '{walker_name}': {e}"
                     );
+                    # Errors always go only to sender
                     await websocket.send_json(
                         {
                             'ok': False,

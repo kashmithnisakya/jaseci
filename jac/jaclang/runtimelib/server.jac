@@ -233,7 +233,8 @@ obj JacAPIServer {
     obj RestSpecs {
         has method: str = "",
             path: str = "",
-            protocol: APIProtocol = APIProtocol.HTTP;
+            protocol: APIProtocol = APIProtocol.HTTP,
+            broadcast: bool = False;
     }
 
     def postinit -> None;
