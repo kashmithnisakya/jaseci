@@ -6,6 +6,7 @@ configured with @restspec(protocol=APIProtocol.WEBSOCKET).
 import logging;
 import from fastapi { WebSocket }
 
+
 glob logger = logging.getLogger(__name__);
 
 """Manages active WebSocket connections, keyed by walker name."""
