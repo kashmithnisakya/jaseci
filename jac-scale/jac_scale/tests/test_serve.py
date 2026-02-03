@@ -2599,20 +2599,12 @@ class TestJacScaleWebSocket:
                 )
 
                 # Both clients should receive the broadcast
-                response1 = json.loads(
-                    await asyncio.wait_for(ws1.recv(), timeout=5)
-                )
-                response2 = json.loads(
-                    await asyncio.wait_for(ws2.recv(), timeout=5)
-                )
+                response1 = json.loads(await asyncio.wait_for(ws1.recv(), timeout=5))
+                response2 = json.loads(await asyncio.wait_for(ws2.recv(), timeout=5))
 
                 # Both should be successful
-                assert response1["ok"] is True, (
-                    f"Client1 expected ok=True: {response1}"
-                )
-                assert response2["ok"] is True, (
-                    f"Client2 expected ok=True: {response2}"
-                )
+                assert response1["ok"] is True, f"Client1 expected ok=True: {response1}"
+                assert response2["ok"] is True, f"Client2 expected ok=True: {response2}"
 
                 # Both should have the same content
                 data1 = response1["data"]
