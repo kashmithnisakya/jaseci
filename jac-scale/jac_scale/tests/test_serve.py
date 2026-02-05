@@ -36,6 +36,7 @@ class TestJacScaleServe:
     test_file: Path
     port: int
     base_url: str
+    ws_url: str
     server_process: subprocess.Popen[str] | None = None
 
     @classmethod
@@ -51,6 +52,7 @@ class TestJacScaleServe:
         # Use dynamically allocated free port
         cls.port = get_free_port()
         cls.base_url = f"http://localhost:{cls.port}"
+        cls.ws_url = f"ws://localhost:{cls.port}"
 
         # Clean up any existing database files before starting
         cls._cleanup_db_files()
@@ -1914,444 +1916,6 @@ class TestJacScaleServe:
             f"Expected 401 for revoked key, got {response.status_code}: {response.text}"
         )
 
-
-class TestJacScaleServeDevMode:
-    """Test jac-scale serve with --dev mode (dynamic routing).
-
-    This tests that the dynamic routing endpoints correctly parse request body
-    parameters, which is essential for HMR support.
-    """
-
-    fixtures_dir: Path
-    test_file: Path
-    port: int
-    base_url: str
-    server_process: subprocess.Popen[str] | None = None
-
-    @classmethod
-    def setup_class(cls) -> None:
-        """Set up test class - runs once for all tests."""
-        cls.fixtures_dir = Path(__file__).parent / "fixtures"
-        cls.test_file = cls.fixtures_dir / "test_api.jac"
-
-        if not cls.test_file.exists():
-            raise FileNotFoundError(f"Test fixture not found: {cls.test_file}")
-
-        cls.port = get_free_port()
-        cls.base_url = f"http://localhost:{cls.port}"
-
-        cls._cleanup_db_files()
-        cls.server_process = None
-        cls._start_server_dev_mode()
-
-    @classmethod
-    def teardown_class(cls) -> None:
-        """Tear down test class."""
-        if cls.server_process:
-            cls.server_process.terminate()
-            try:
-                cls.server_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                cls.server_process.kill()
-                cls.server_process.wait()
-
-        time.sleep(0.5)
-        gc.collect()
-        cls._cleanup_db_files()
-
-    @classmethod
-    def _start_server_dev_mode(cls) -> None:
-        """Start the jac-scale server in dev mode (dynamic routing).
-
-        In dev mode, the REST API runs on port+1 while Vite runs on port.
-        We connect directly to the REST API port to avoid Vite dependency issues.
-        """
-        import sys
-
-        jac_executable = Path(sys.executable).parent / "jac"
-        # Use --api-only to skip Vite dev server (if supported), otherwise use base port
-        # The REST API in dev mode runs on base_port + 1
-        vite_port = cls.port
-        api_port = cls.port + 1
-        cls.base_url = f"http://localhost:{api_port}"
-
-        cmd = [
-            str(jac_executable),
-            "start",
-            str(cls.test_file),
-            "--port",
-            str(vite_port),
-            "--dev",  # Enable dev mode for dynamic routing
-        ]
-
-        cls.server_process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-
-        max_attempts = 50
-        server_ready = False
-
-        for _ in range(max_attempts):
-            if cls.server_process.poll() is not None:
-                stdout, stderr = cls.server_process.communicate()
-                raise RuntimeError(
-                    f"Server process terminated unexpectedly.\n"
-                    f"STDOUT: {stdout}\nSTDERR: {stderr}"
-                )
-
-            try:
-                # Connect to the REST API port (port+1), not Vite port
-                response = requests.get(f"{cls.base_url}/docs", timeout=2)
-                if response.status_code in (200, 404):
-                    print(
-                        f"Dev mode server started successfully on API port {api_port}"
-                    )
-                    server_ready = True
-                    break
-            except (requests.ConnectionError, requests.Timeout):
-                time.sleep(2)
-
-        if not server_ready:
-            cls.server_process.terminate()
-            try:
-                stdout, stderr = cls.server_process.communicate(timeout=2)
-            except subprocess.TimeoutExpired:
-                cls.server_process.kill()
-                stdout, stderr = cls.server_process.communicate()
-
-            raise RuntimeError(
-                f"Server failed to start in dev mode after {max_attempts} attempts.\n"
-                f"STDOUT: {stdout}\nSTDERR: {stderr}"
-            )
-
-    @classmethod
-    def _cleanup_db_files(cls) -> None:
-        """Delete SQLite database files."""
-        import shutil
-
-        for pattern in [
-            "*.db",
-            "*.db-wal",
-            "*.db-shm",
-            "anchor_store.db.dat",
-            "anchor_store.db.bak",
-            "anchor_store.db.dir",
-        ]:
-            for db_file in glob.glob(pattern):
-                with contextlib.suppress(Exception):
-                    Path(db_file).unlink()
-
-        for pattern in ["*.db", "*.db-wal", "*.db-shm"]:
-            for db_file in glob.glob(str(cls.fixtures_dir / pattern)):
-                with contextlib.suppress(Exception):
-                    Path(db_file).unlink()
-
-        client_build_dir = cls.fixtures_dir / ".jac"
-        if client_build_dir.exists():
-            with contextlib.suppress(Exception):
-                shutil.rmtree(client_build_dir)
-
-    @staticmethod
-    def _extract_data(json_response: dict[str, Any]) -> dict[str, Any]:
-        """Extract data from TransportResponse envelope."""
-        if isinstance(json_response, dict) and "ok" in json_response:
-            if json_response.get("ok") and json_response.get("data") is not None:
-                return json_response["data"]
-            elif not json_response.get("ok") and json_response.get("error"):
-                error_info = json_response["error"]
-                return {"error": error_info.get("message", "Unknown error")}
-        return json_response
-
-    def test_dev_mode_walker_body_parsing(self) -> None:
-        """Test that walkers in dev mode correctly parse request body parameters.
-
-        This is a regression test for the fix where dynamic routing endpoints
-        weren't parsing JSON body content into walker fields.
-        """
-        # Register user
-        register_response = requests.post(
-            f"{self.base_url}/user/register",
-            json={"username": f"devtest_{uuid.uuid4().hex[:8]}", "password": "pass"},
-            timeout=10,
-        )
-        assert register_response.status_code == 201
-        token = self._extract_data(register_response.json())["token"]
-
-        # Call walker with body parameters - this is what was broken
-        response = requests.post(
-            f"{self.base_url}/walker/CreateTask",
-            json={"title": "Watch Mode Task", "priority": 5},
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10,
-        )
-
-        assert response.status_code == 200, (
-            f"Expected 200, got {response.status_code}: {response.text}"
-        )
-        data = self._extract_data(response.json())
-
-        # Verify the walker received and processed the body parameters
-        assert "result" in data or "reports" in data, f"Unexpected response: {data}"
-
-    def test_dev_mode_function_body_parsing(self) -> None:
-        """Test that functions in dev mode correctly parse request body parameters."""
-        # Register user
-        register_response = requests.post(
-            f"{self.base_url}/user/register",
-            json={"username": f"devfunc_{uuid.uuid4().hex[:8]}", "password": "pass"},
-            timeout=10,
-        )
-        assert register_response.status_code == 201
-        token = self._extract_data(register_response.json())["token"]
-
-        # Call function with body parameters
-        response = requests.post(
-            f"{self.base_url}/function/add_numbers",
-            json={"a": 42, "b": 58},
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10,
-        )
-
-        assert response.status_code == 200, (
-            f"Expected 200, got {response.status_code}: {response.text}"
-        )
-        data = self._extract_data(response.json())
-
-        # Verify the function received and processed the body parameters
-        assert "result" in data, f"Expected 'result' in response: {data}"
-        assert data["result"] == 100, f"Expected 100, got {data['result']}"
-
-    def test_dev_mode_public_walker_no_auth(self) -> None:
-        """Test that public walkers work without auth in dev mode."""
-        response = requests.post(
-            f"{self.base_url}/walker/PublicInfo",
-            json={},
-            timeout=10,
-        )
-
-        assert response.status_code == 200
-        data = self._extract_data(response.json())
-        assert "reports" in data
-        assert data["reports"][0]["message"] == "This is a public endpoint"
-
-    def test_dev_mode_private_walker_requires_auth(self) -> None:
-        """Test that private walkers require auth in dev mode."""
-        response = requests.post(
-            f"{self.base_url}/walker/PrivateCreateTask",
-            json={"title": "Private Task", "priority": 1},
-            timeout=10,
-        )
-
-        assert response.status_code == 401
-
-    # Async Walker Test
-    def test_async_walker_basic_execution(self) -> None:
-        """Test that async walkers execute correctly with await."""
-        # Create user
-        username = f"asyncuser_{uuid.uuid4().hex[:8]}"
-        register_response = requests.post(
-            f"{self.base_url}/user/register",
-            json={"username": username, "password": "password123"},
-            timeout=10,
-        )
-        assert register_response.status_code == 201
-        token = self._extract_data(register_response.json())["token"]
-
-        # Spawn async walker
-        response = requests.post(
-            f"{self.base_url}/walker/AsyncCreateTask",
-            json={"title": "Async Test Task", "delay_ms": 50},
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10,
-        )
-
-        assert response.status_code == 200, (
-            f"Expected 200, got {response.status_code}: {response.text}"
-        )
-        data = self._extract_data(response.json())
-
-        # Verify reports show the async execution flow
-        assert "reports" in data, f"Expected 'reports' in response: {data}"
-        reports = data["reports"]
-
-        # Should have 3 reports: started, after_async_wait, completed
-        assert len(reports) >= 3, f"Expected at least 3 reports, got {len(reports)}"
-
-        # Check the execution order
-        assert reports[0]["status"] == "started"
-        assert reports[0]["title"] == "Async Test Task"
-        assert reports[1]["status"] == "after_async_wait"
-        assert reports[2]["status"] == "completed"
-        assert "task" in reports[2]
-
-    def test_walker_stream_response(self) -> None:
-        """Test that walker streaming responses work correctly."""
-        response = requests.post(
-            f"{self.base_url}/walker/WalkerStream",
-            json={"count": 3},
-            timeout=30,
-            stream=True,
-        )
-
-        assert response.status_code == 200, (
-            f"Failed with status {response.status_code}: {response.text}"
-        )
-        assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
-        assert response.headers.get("cache-control") == "no-cache"
-        assert response.headers.get("connection") == "close"
-
-        # Collect streaming content
-        content = ""
-        for chunk in response.iter_content(chunk_size=1024, decode_unicode=True):
-            if chunk:
-                content += chunk
-
-        # The generator yields "Report 0", "Report 1", "Report 2" without delimiters
-        # They get concatenated together in the stream
-        expected = "Report 0Report 1Report 2"
-        assert content == expected, f"Expected '{expected}', got '{content}'"
-
-    def test_function_stream_response(self) -> None:
-        """Test that function streaming responses work correctly."""
-        response = requests.post(
-            f"{self.base_url}/function/FunctionStream",
-            json={"count": 2},
-            timeout=30,
-            stream=True,
-        )
-
-        assert response.status_code == 200, (
-            f"Failed with status {response.status_code}: {response.text}"
-        )
-        assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
-        assert response.headers.get("cache-control") == "no-cache"
-        assert response.headers.get("connection") == "close"
-
-        # Collect streaming content
-        content = ""
-        for chunk in response.iter_content(chunk_size=1024, decode_unicode=True):
-            if chunk:
-                content += chunk
-
-        # The generator yields "Func 0", "Func 1" without delimiters
-        # They get concatenated together in the stream
-        expected = "Func 0Func 1"
-        assert content == expected, f"Expected '{expected}', got '{content}'"
-
-
-class TestJacScaleWebSocket:
-    """Test WebSocket support for jac-scale serve.
-
-    Tests that walkers decorated with @restspec(protocol=APIProtocol.WEBSOCKET) are
-    accessible via WebSocket at /ws/{walker_name} and NOT via /walker/{walker_name}.
-    """
-
-    server_process: subprocess.Popen[str] | None = None
-    port: int = 0
-    base_url: str = ""
-    ws_url: str = ""
-    fixtures_dir: Path = Path()
-    test_file: Path = Path()
-
-    @classmethod
-    def setup_class(cls) -> None:
-        """Set up test class - start the server."""
-        cls.fixtures_dir = Path(__file__).parent / "fixtures"
-        cls.test_file = cls.fixtures_dir / "test_api.jac"
-
-        if not cls.test_file.exists():
-            raise FileNotFoundError(f"Test fixture not found: {cls.test_file}")
-
-        cls.port = get_free_port()
-        cls.base_url = f"http://localhost:{cls.port}"
-        cls.ws_url = f"ws://localhost:{cls.port}"
-
-        cls._cleanup_db_files()
-        cls._start_server()
-
-    @classmethod
-    def teardown_class(cls) -> None:
-        """Tear down test class - stop the server."""
-        if cls.server_process:
-            cls.server_process.terminate()
-            try:
-                cls.server_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                cls.server_process.kill()
-                cls.server_process.wait()
-        time.sleep(0.5)
-        gc.collect()
-        cls._cleanup_db_files()
-
-    @classmethod
-    def _start_server(cls) -> None:
-        """Start the jac-scale server in a subprocess."""
-        import sys
-
-        jac_executable = Path(sys.executable).parent / "jac"
-        cmd = [
-            str(jac_executable),
-            "start",
-            cls.test_file.name,
-            "--port",
-            str(cls.port),
-        ]
-
-        cls.server_process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            cwd=str(cls.fixtures_dir),
-        )
-
-        max_attempts = 50
-        server_ready = False
-        for _ in range(max_attempts):
-            if cls.server_process.poll() is not None:
-                stdout, stderr = cls.server_process.communicate()
-                raise RuntimeError(
-                    f"Server process terminated unexpectedly.\n"
-                    f"STDOUT: {stdout}\nSTDERR: {stderr}"
-                )
-            try:
-                response = requests.get(f"{cls.base_url}/docs", timeout=2)
-                if response.status_code in (200, 404):
-                    print(f"WebSocket test server started on port {cls.port}")
-                    server_ready = True
-                    break
-            except (requests.ConnectionError, requests.Timeout):
-                time.sleep(2)
-
-        if not server_ready:
-            cls.server_process.terminate()
-            try:
-                stdout, stderr = cls.server_process.communicate(timeout=2)
-            except subprocess.TimeoutExpired:
-                cls.server_process.kill()
-                stdout, stderr = cls.server_process.communicate()
-            raise RuntimeError(
-                f"Server failed to start after {max_attempts} attempts.\n"
-                f"STDOUT: {stdout}\nSTDERR: {stderr}"
-            )
-
-    @classmethod
-    def _cleanup_db_files(cls) -> None:
-        """Delete database files."""
-        import shutil
-
-        for pattern in ["*.db", "*.db-wal", "*.db-shm"]:
-            for db_file in glob.glob(str(cls.fixtures_dir / pattern)):
-                with contextlib.suppress(Exception):
-                    Path(db_file).unlink()
-        client_build_dir = cls.fixtures_dir / ".jac"
-        if client_build_dir.exists():
-            with contextlib.suppress(Exception):
-                shutil.rmtree(client_build_dir)
-
     def test_websocket_endpoint_not_in_openapi(self) -> None:
         """WebSocket endpoints should NOT appear in the OpenAPI schema (they are not HTTP routes)."""
         response = requests.get(f"{self.base_url}/openapi.json", timeout=5)
@@ -2726,3 +2290,330 @@ class TestJacScaleWebSocket:
             assert f"/walker/{walker}" not in paths, (
                 f"WebSocket walker {walker} should not be in /walker/ paths"
             )
+
+
+class TestJacScaleServeDevMode:
+    """Test jac-scale serve with --dev mode (dynamic routing).
+
+    This tests that the dynamic routing endpoints correctly parse request body
+    parameters, which is essential for HMR support.
+    """
+
+    fixtures_dir: Path
+    test_file: Path
+    port: int
+    base_url: str
+    server_process: subprocess.Popen[str] | None = None
+
+    @classmethod
+    def setup_class(cls) -> None:
+        """Set up test class - runs once for all tests."""
+        cls.fixtures_dir = Path(__file__).parent / "fixtures"
+        cls.test_file = cls.fixtures_dir / "test_api.jac"
+
+        if not cls.test_file.exists():
+            raise FileNotFoundError(f"Test fixture not found: {cls.test_file}")
+
+        cls.port = get_free_port()
+        cls.base_url = f"http://localhost:{cls.port}"
+
+        cls._cleanup_db_files()
+        cls.server_process = None
+        cls._start_server_dev_mode()
+
+    @classmethod
+    def teardown_class(cls) -> None:
+        """Tear down test class."""
+        if cls.server_process:
+            cls.server_process.terminate()
+            try:
+                cls.server_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                cls.server_process.kill()
+                cls.server_process.wait()
+
+        time.sleep(0.5)
+        gc.collect()
+        cls._cleanup_db_files()
+
+    @classmethod
+    def _start_server_dev_mode(cls) -> None:
+        """Start the jac-scale server in dev mode (dynamic routing).
+
+        In dev mode, the REST API runs on port+1 while Vite runs on port.
+        We connect directly to the REST API port to avoid Vite dependency issues.
+        """
+        import sys
+
+        jac_executable = Path(sys.executable).parent / "jac"
+        # Use --api-only to skip Vite dev server (if supported), otherwise use base port
+        # The REST API in dev mode runs on base_port + 1
+        vite_port = cls.port
+        api_port = cls.port + 1
+        cls.base_url = f"http://localhost:{api_port}"
+
+        cmd = [
+            str(jac_executable),
+            "start",
+            str(cls.test_file),
+            "--port",
+            str(vite_port),
+            "--dev",  # Enable dev mode for dynamic routing
+        ]
+
+        cls.server_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        max_attempts = 50
+        server_ready = False
+
+        for _ in range(max_attempts):
+            if cls.server_process.poll() is not None:
+                stdout, stderr = cls.server_process.communicate()
+                raise RuntimeError(
+                    f"Server process terminated unexpectedly.\n"
+                    f"STDOUT: {stdout}\nSTDERR: {stderr}"
+                )
+
+            try:
+                # Connect to the REST API port (port+1), not Vite port
+                response = requests.get(f"{cls.base_url}/docs", timeout=2)
+                if response.status_code in (200, 404):
+                    print(
+                        f"Dev mode server started successfully on API port {api_port}"
+                    )
+                    server_ready = True
+                    break
+            except (requests.ConnectionError, requests.Timeout):
+                time.sleep(2)
+
+        if not server_ready:
+            cls.server_process.terminate()
+            try:
+                stdout, stderr = cls.server_process.communicate(timeout=2)
+            except subprocess.TimeoutExpired:
+                cls.server_process.kill()
+                stdout, stderr = cls.server_process.communicate()
+
+            raise RuntimeError(
+                f"Server failed to start in dev mode after {max_attempts} attempts.\n"
+                f"STDOUT: {stdout}\nSTDERR: {stderr}"
+            )
+
+    @classmethod
+    def _cleanup_db_files(cls) -> None:
+        """Delete SQLite database files."""
+        import shutil
+
+        for pattern in [
+            "*.db",
+            "*.db-wal",
+            "*.db-shm",
+            "anchor_store.db.dat",
+            "anchor_store.db.bak",
+            "anchor_store.db.dir",
+        ]:
+            for db_file in glob.glob(pattern):
+                with contextlib.suppress(Exception):
+                    Path(db_file).unlink()
+
+        for pattern in ["*.db", "*.db-wal", "*.db-shm"]:
+            for db_file in glob.glob(str(cls.fixtures_dir / pattern)):
+                with contextlib.suppress(Exception):
+                    Path(db_file).unlink()
+
+        client_build_dir = cls.fixtures_dir / ".jac"
+        if client_build_dir.exists():
+            with contextlib.suppress(Exception):
+                shutil.rmtree(client_build_dir)
+
+    @staticmethod
+    def _extract_data(json_response: dict[str, Any]) -> dict[str, Any]:
+        """Extract data from TransportResponse envelope."""
+        if isinstance(json_response, dict) and "ok" in json_response:
+            if json_response.get("ok") and json_response.get("data") is not None:
+                return json_response["data"]
+            elif not json_response.get("ok") and json_response.get("error"):
+                error_info = json_response["error"]
+                return {"error": error_info.get("message", "Unknown error")}
+        return json_response
+
+    def test_dev_mode_walker_body_parsing(self) -> None:
+        """Test that walkers in dev mode correctly parse request body parameters.
+
+        This is a regression test for the fix where dynamic routing endpoints
+        weren't parsing JSON body content into walker fields.
+        """
+        # Register user
+        register_response = requests.post(
+            f"{self.base_url}/user/register",
+            json={"username": f"devtest_{uuid.uuid4().hex[:8]}", "password": "pass"},
+            timeout=10,
+        )
+        assert register_response.status_code == 201
+        token = self._extract_data(register_response.json())["token"]
+
+        # Call walker with body parameters - this is what was broken
+        response = requests.post(
+            f"{self.base_url}/walker/CreateTask",
+            json={"title": "Watch Mode Task", "priority": 5},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: {response.text}"
+        )
+        data = self._extract_data(response.json())
+
+        # Verify the walker received and processed the body parameters
+        assert "result" in data or "reports" in data, f"Unexpected response: {data}"
+
+    def test_dev_mode_function_body_parsing(self) -> None:
+        """Test that functions in dev mode correctly parse request body parameters."""
+        # Register user
+        register_response = requests.post(
+            f"{self.base_url}/user/register",
+            json={"username": f"devfunc_{uuid.uuid4().hex[:8]}", "password": "pass"},
+            timeout=10,
+        )
+        assert register_response.status_code == 201
+        token = self._extract_data(register_response.json())["token"]
+
+        # Call function with body parameters
+        response = requests.post(
+            f"{self.base_url}/function/add_numbers",
+            json={"a": 42, "b": 58},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: {response.text}"
+        )
+        data = self._extract_data(response.json())
+
+        # Verify the function received and processed the body parameters
+        assert "result" in data, f"Expected 'result' in response: {data}"
+        assert data["result"] == 100, f"Expected 100, got {data['result']}"
+
+    def test_dev_mode_public_walker_no_auth(self) -> None:
+        """Test that public walkers work without auth in dev mode."""
+        response = requests.post(
+            f"{self.base_url}/walker/PublicInfo",
+            json={},
+            timeout=10,
+        )
+
+        assert response.status_code == 200
+        data = self._extract_data(response.json())
+        assert "reports" in data
+        assert data["reports"][0]["message"] == "This is a public endpoint"
+
+    def test_dev_mode_private_walker_requires_auth(self) -> None:
+        """Test that private walkers require auth in dev mode."""
+        response = requests.post(
+            f"{self.base_url}/walker/PrivateCreateTask",
+            json={"title": "Private Task", "priority": 1},
+            timeout=10,
+        )
+
+        assert response.status_code == 401
+
+    # Async Walker Test
+    def test_async_walker_basic_execution(self) -> None:
+        """Test that async walkers execute correctly with await."""
+        # Create user
+        username = f"asyncuser_{uuid.uuid4().hex[:8]}"
+        register_response = requests.post(
+            f"{self.base_url}/user/register",
+            json={"username": username, "password": "password123"},
+            timeout=10,
+        )
+        assert register_response.status_code == 201
+        token = self._extract_data(register_response.json())["token"]
+
+        # Spawn async walker
+        response = requests.post(
+            f"{self.base_url}/walker/AsyncCreateTask",
+            json={"title": "Async Test Task", "delay_ms": 50},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: {response.text}"
+        )
+        data = self._extract_data(response.json())
+
+        # Verify reports show the async execution flow
+        assert "reports" in data, f"Expected 'reports' in response: {data}"
+        reports = data["reports"]
+
+        # Should have 3 reports: started, after_async_wait, completed
+        assert len(reports) >= 3, f"Expected at least 3 reports, got {len(reports)}"
+
+        # Check the execution order
+        assert reports[0]["status"] == "started"
+        assert reports[0]["title"] == "Async Test Task"
+        assert reports[1]["status"] == "after_async_wait"
+        assert reports[2]["status"] == "completed"
+        assert "task" in reports[2]
+
+    def test_walker_stream_response(self) -> None:
+        """Test that walker streaming responses work correctly."""
+        response = requests.post(
+            f"{self.base_url}/walker/WalkerStream",
+            json={"count": 3},
+            timeout=30,
+            stream=True,
+        )
+
+        assert response.status_code == 200, (
+            f"Failed with status {response.status_code}: {response.text}"
+        )
+        assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+        assert response.headers.get("cache-control") == "no-cache"
+        assert response.headers.get("connection") == "close"
+
+        # Collect streaming content
+        content = ""
+        for chunk in response.iter_content(chunk_size=1024, decode_unicode=True):
+            if chunk:
+                content += chunk
+
+        # The generator yields "Report 0", "Report 1", "Report 2" without delimiters
+        # They get concatenated together in the stream
+        expected = "Report 0Report 1Report 2"
+        assert content == expected, f"Expected '{expected}', got '{content}'"
+
+    def test_function_stream_response(self) -> None:
+        """Test that function streaming responses work correctly."""
+        response = requests.post(
+            f"{self.base_url}/function/FunctionStream",
+            json={"count": 2},
+            timeout=30,
+            stream=True,
+        )
+
+        assert response.status_code == 200, (
+            f"Failed with status {response.status_code}: {response.text}"
+        )
+        assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+        assert response.headers.get("cache-control") == "no-cache"
+        assert response.headers.get("connection") == "close"
+
+        # Collect streaming content
+        content = ""
+        for chunk in response.iter_content(chunk_size=1024, decode_unicode=True):
+            if chunk:
+                content += chunk
+
+        # The generator yields "Func 0", "Func 1" without delimiters
+        # They get concatenated together in the stream
+        expected = "Func 0Func 1"
+        assert content == expected, f"Expected '{expected}', got '{content}'"
