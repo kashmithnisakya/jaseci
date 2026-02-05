@@ -24,7 +24,9 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 - **`APIProtocol` enum**: Replaced separate boolean flags (`webhook=True`) in `RestSpecs` with a single typed `protocol` field using the `APIProtocol` enum (`HTTP`, `WEBHOOK`, `WEBSOCKET`). The enum is defined in `jaclang.runtimelib.server` and should be imported by user code. The previous `webhook=True` syntax is no longer supported.
 
-  **Migration**: Change `@restspec(webhook=True)` to `@restspec(protocol=APIProtocol.WEBHOOK)` and add `import from jaclang.runtimelib.server { APIProtocol }` to your module.
+- **Migration**: Change `@restspec(webhook=True)` to `@restspec(protocol=APIProtocol.WEBHOOK)` and add `import from jaclang.runtimelib.server { APIProtocol }` to your module.
+
+- **fix: Exclude `jac.local.toml` during K8s code sync**: The local dev override file (`jac.local.toml`) is now excluded when syncing application code to the Kubernetes PVC. Previously, this file could override deployment settings such as the serve port, causing health check failures.
 
 ## jac-scale 0.1.5 (Latest Release)
 
