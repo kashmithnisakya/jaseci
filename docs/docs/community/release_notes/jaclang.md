@@ -5,7 +5,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 ## jaclang 0.9.16 (Unreleased)
 
 - **`APIProtocol` Builtin Enum**: Added `APIProtocol` enum (`HTTP`, `WEBHOOK`, `WEBSOCKET`) as a builtin, replacing the boolean `webhook` flag in `RestSpecs` with a typed `protocol` field. Use `@restspec(protocol=APIProtocol.WEBSOCKET)` directly without imports.
- 
+
 ## jaclang 0.9.15 (Latest Release)
 
 - **Fix: Type Errors in Impl Files Now Show Correct Location**: Type errors in `.impl.jac` files now point to the actual error location instead of the declaration in the main file.
