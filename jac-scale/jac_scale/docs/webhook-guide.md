@@ -49,8 +49,6 @@ To create a webhook endpoint, use the `@restspec(protocol=APIProtocol.WEBHOOK)` 
 ### Basic Webhook Walker
 
 ```jac
-import from jaclang.runtimelib.server { APIProtocol }
-
 @restspec(protocol=APIProtocol.WEBHOOK)
 walker PaymentReceived {
     has payment_id: str,

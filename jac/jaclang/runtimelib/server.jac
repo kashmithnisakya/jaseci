@@ -7,7 +7,6 @@ import json;
 import os;
 import secrets;
 import from collections.abc { Callable }
-import from enum { StrEnum }
 import from contextlib { suppress }
 import from http.server { BaseHTTPRequestHandler, HTTPServer }
 import from inspect { iscoroutine, isgenerator }
@@ -223,12 +222,6 @@ obj JacAPIServer {
         execution_handler: ExecutionHandler by postinit,
         transport: BaseTransport by postinit,
         server: Any by postinit;
-
-    enum APIProtocol ( StrEnum ) {
-        HTTP = 'http',
-        WEBHOOK = 'webhook',
-        WEBSOCKET = 'websocket'
-    }
 
     obj RestSpecs {
         has method: str = "",

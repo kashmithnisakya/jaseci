@@ -21,7 +21,6 @@ import from jac_scale.jserver.jserver {
 import from jaclang.pycore.runtime { JacRuntime as Jac }
 import from jaclang.runtimelib.server { JacAPIServer as JServer }
 import from jaclang.runtimelib.server { JsonValue }
-import from jaclang.runtimelib.server { APIProtocol }
 import from jaclang.runtimelib.transport { TransportResponse, Meta, MessageType }
 import from enum { StrEnum }
 import from fastapi_sso.sso.google { GoogleSSO }

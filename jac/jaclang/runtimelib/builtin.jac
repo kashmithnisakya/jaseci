@@ -2,8 +2,14 @@
 import json;
 import from abc { abstractmethod }
 import from collections.abc { Callable }
+import from enum { StrEnum }
 import from typing { TYPE_CHECKING, Any, ClassVar, override }
-import from jaclang.runtimelib.server { APIProtocol }
+
+enum APIProtocol ( StrEnum ) {
+    HTTP = 'http',
+    WEBHOOK = 'webhook',
+    WEBSOCKET = 'websocket'
+}
 
 with entry {
     if TYPE_CHECKING {
