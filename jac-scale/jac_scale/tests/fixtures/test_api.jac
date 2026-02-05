@@ -1,7 +1,5 @@
 """Test API fixture for jac-scale serve tests."""
 
-import from jaclang.runtimelib.server { APIProtocol }
-
 # ============================================================================
 # Test Functions
 # ============================================================================

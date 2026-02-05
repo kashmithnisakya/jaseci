@@ -4,7 +4,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 ## jaclang 0.9.15 (Unreleased)
 
-- **`APIProtocol` Enum in `RestSpecs`**: Added `APIProtocol` enum (`HTTP`, `WEBHOOK`, `WEBSOCKET`) to `jaclang.runtimelib.server` and replaced the boolean `webhook` flag in `RestSpecs` with a single typed `protocol: APIProtocol` field. This provides a unified way to declare walker transport types via `@restspec(protocol=APIProtocol.WEBSOCKET)`.
+- **`APIProtocol` Builtin Enum**: Added `APIProtocol` enum (`HTTP`, `WEBHOOK`, `WEBSOCKET`) as a builtin, replacing the boolean `webhook` flag in `RestSpecs` with a typed `protocol` field. Use `@restspec(protocol=APIProtocol.WEBSOCKET)` directly without imports.
 - **First-Run Progress Messages**: The first time `jac` is run after installation, it now prints clear progress messages to stderr showing each internal compiler module being compiled and cached, so users understand why the first launch is slower and don't think the process is hanging.
 - **Self-Hosted Recursive Descent Parser**: Added a hand-written recursive descent parser and lexer implemented entirely in Jac (`jac/jaclang/compiler/parser/`). The parser is designed for native compilation with no runtime reflection - grammar rules are encoded directly in AST type definitions. Features include a 28-level expression precedence chain matching the Lark grammar, contextual lexing for f-strings and JSX, and comprehensive pattern matching support. This lays the groundwork for a fully self-hosted Jac compiler.
 - **LSP Responsiveness During Rapid Typing**: Improved editor responsiveness when typing quickly by properly cancelling outdated type-check operations.

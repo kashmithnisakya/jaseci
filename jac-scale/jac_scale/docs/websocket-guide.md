@@ -15,13 +15,11 @@ WebSockets allow persistent, full-duplex connections between a client and your J
 
 ## 1. Creating WebSocket Walkers
 
-To create a WebSocket endpoint, use the `@restspec(protocol=APIProtocol.WEBSOCKET)` decorator on an `async walker` definition. You must import `APIProtocol` from `jaclang.runtimelib.server`.
+To create a WebSocket endpoint, use the `@restspec(protocol=APIProtocol.WEBSOCKET)` decorator on an `async walker` definition.
 
 ### Basic WebSocket Walker (Public)
 
 ```jac
-import from jaclang.runtimelib.server { APIProtocol }
-
 @restspec(protocol=APIProtocol.WEBSOCKET)
 async walker : pub EchoMessage {
     has message: str;
@@ -41,8 +39,6 @@ This walker will be accessible at `ws://localhost:8000/ws/EchoMessage`.
 ### Minimal WebSocket Walker
 
 ```jac
-import from jaclang.runtimelib.server { APIProtocol }
-
 @restspec(protocol=APIProtocol.WEBSOCKET)
 async walker : pub PingPong {
     async can pong with `root entry {
@@ -56,8 +52,6 @@ async walker : pub PingPong {
 Omit `: pub` to require JWT authentication:
 
 ```jac
-import from jaclang.runtimelib.server { APIProtocol }
-
 @restspec(protocol=APIProtocol.WEBSOCKET)
 async walker SecureChat {
     has message: str;
@@ -73,8 +67,6 @@ async walker SecureChat {
 Use `broadcast=True` to send messages to ALL connected clients of this walker:
 
 ```jac
-import from jaclang.runtimelib.server { APIProtocol }
-
 @restspec(protocol=APIProtocol.WEBSOCKET, broadcast=True)
 async walker : pub ChatRoom {
     has message: str;
@@ -102,8 +94,6 @@ When a client sends a message, **all connected clients** receive the response, m
 Combine authentication with broadcasting for secure group communication:
 
 ```jac
-import from jaclang.runtimelib.server { APIProtocol }
-
 @restspec(protocol=APIProtocol.WEBSOCKET, broadcast=True)
 async walker TeamChat {
     has message: str;

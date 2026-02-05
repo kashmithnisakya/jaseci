@@ -3,6 +3,7 @@ import json;
 import from abc { abstractmethod }
 import from collections.abc { Callable }
 import from typing { TYPE_CHECKING, Any, ClassVar, override }
+import from jaclang.runtimelib.server { APIProtocol }
 
 with entry {
     if TYPE_CHECKING {
@@ -76,5 +77,6 @@ glob __all__ = [
          'ReadPerm',
          'ConnectPerm',
          'WritePerm',
-         'restspec'
+         'restspec',
+         'APIProtocol'
      ];

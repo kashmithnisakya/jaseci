@@ -4,27 +4,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 ## jac-scale 0.1.6 (Unreleased)
 
-- **WebSocket Support**: Added WebSocket transport for walkers. Walkers decorated with `@restspec(protocol=APIProtocol.WEBSOCKET)` are accessible via persistent `ws://host/ws/{walker_name}` connections. Features include:
-  - Persistent bidirectional connections with JSON message protocol
-  - Per-walker connection tracking via `WebSocketConnectionManager`
-  - Dynamic endpoint registration with HMR support in dev mode
-  - WebSocket walkers are excluded from OpenAPI schema and HTTP `/walker/` routes
-
-  ```jac
-  import from jaclang.runtimelib.server { APIProtocol }
-
-  @restspec(protocol=APIProtocol.WEBSOCKET)
-  async walker : pub ChatHandler {
-      has message: str;
-      async can respond with `root entry {
-          report {"echo": self.message};
-      }
-  }
-  ```
-
-- **`APIProtocol` enum**: Replaced separate boolean flags (`webhook=True`) in `RestSpecs` with a single typed `protocol` field using the `APIProtocol` enum (`HTTP`, `WEBHOOK`, `WEBSOCKET`). The enum is defined in `jaclang.runtimelib.server` and should be imported by user code. The previous `webhook=True` syntax is no longer supported.
-
-- **Migration**: Change `@restspec(webhook=True)` to `@restspec(protocol=APIProtocol.WEBHOOK)` and add `import from jaclang.runtimelib.server { APIProtocol }` to your module.
+- **WebSocket Support**: Added WebSocket transport for walkers via `@restspec(protocol=APIProtocol.WEBSOCKET)` with persistent bidirectional connections at `ws://host/ws/{walker_name}`. The `APIProtocol` enum (`HTTP`, `WEBHOOK`, `WEBSOCKET`) replaces the previous `webhook=True` flag—migrate by changing `@restspec(webhook=True)` to `@restspec(protocol=APIProtocol.WEBHOOK)`.
 
 - **fix: Exclude `jac.local.toml` during K8s code sync**: The local dev override file (`jac.local.toml`) is now excluded when syncing application code to the Kubernetes PVC. Previously, this file could override deployment settings such as the serve port, causing health check failures.
 
