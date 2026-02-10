@@ -28,12 +28,11 @@ impl WebhookUtils.create_api_key_token(
         'iat': datetime.now(UTC)
     };
     # Add expiry if specified
+    current_time = datetime.now(UTC);
     if expiry_days is not None {
-        exp_time: datetime = datetime.now(UTC) + timedelta(days=expiry_days);
-        payload['exp'] = exp_time;
+        payload['exp'] = (current_time + timedelta(days=int(expiry_days)));
     } elif default_expiry > 0 {
-        exp_time: datetime = datetime.now(UTC) + timedelta(days=default_expiry);
-        payload['exp'] = exp_time;
+        payload['exp'] = (current_time + timedelta(days=int(default_expiry)));
     }
     # If expiry_days is 0 or negative, no expiry is set (permanent key)
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM);
@@ -83,22 +82,20 @@ impl ApiKeyManager.create_api_key(
     api_key = WebhookUtils.create_api_key_token(
         api_key_id=api_key_id, username=username, name=name, expiry_days=expiry_days
     );
-    created_at = datetime.now(UTC);
+    key_created_at: datetime = datetime.now(UTC);
     expires_at: datetime | None = None;
     default_expiry = WEBHOOK_API_KEY_EXPIRY_DAYS;
     if expiry_days is not None and expiry_days > 0 {
-        expires_at_val: datetime = created_at + timedelta(days=expiry_days);
-        expires_at = expires_at_val;
+        expires_at = (key_created_at + timedelta(days=int(expiry_days)));
     } elif default_expiry > 0 {
-        expires_at_val: datetime = created_at + timedelta(days=default_expiry);
-        expires_at = expires_at_val;
+        expires_at = (key_created_at + timedelta(days=int(default_expiry)));
     }
     # Persist key metadata
     key_doc = {
         '_id': api_key_id,
         'username': username,
         'name': name,
-        'created_at': created_at.isoformat(),
+        'created_at': key_created_at.isoformat(),
         'expires_at': expires_at.isoformat() if expires_at else None,
         'revoked': False
     };
@@ -112,7 +109,7 @@ impl ApiKeyManager.create_api_key(
             'api_key': api_key,
             'api_key_id': api_key_id,
             'name': name,
-            'created_at': created_at.isoformat(),
+            'created_at': key_created_at.isoformat(),
             'expires_at': expires_at.isoformat() if expires_at else None
         },
         meta=Meta(extra={'http_status': 201})
