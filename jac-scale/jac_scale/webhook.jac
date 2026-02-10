@@ -72,7 +72,7 @@ obj WebhookUtils {
 }
 
 """Create database connection for API key storage, or None if MongoDB not configured."""
-def _create_api_key_db() -> Db | None {
+def _create_api_key_db -> Db | None {
     db_config = get_scale_config().get_database_config();
     if db_config.get('mongodb_uri') is not None {
         return Db(
