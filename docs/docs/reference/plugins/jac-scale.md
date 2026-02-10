@@ -524,18 +524,7 @@ This walker will be accessible at `ws://localhost:8000/ws/EchoMessage`.
 
 #### Authenticated WebSocket Walker
 
-Omit `: pub` to require JWT authentication:
-
-```jac
-@restspec(protocol=APIProtocol.WEBSOCKET)
-async walker SecureChat {
-    has message: str;
-
-    async can respond with Root entry {
-        report {"echo": self.message, "authenticated": True};
-    }
-}
-```
+To create a private walker that requires JWT authentication, simply remove `: pub` from the walker definition.
 
 #### Broadcasting WebSocket Walker
 
@@ -566,25 +555,7 @@ When a client sends a message, **all connected clients** receive the response, m
 
 #### Private Broadcasting Walker
 
-Combine authentication with broadcasting for secure group communication:
-
-```jac
-@restspec(protocol=APIProtocol.WEBSOCKET, broadcast=True)
-async walker TeamChat {
-    has message: str;
-    has room: str = "general";
-
-    async can handle with Root entry {
-        report {
-            "room": self.room,
-            "content": self.message,
-            "authenticated": True
-        };
-    }
-}
-```
-
-Only authenticated users can connect and send messages, and all authenticated users receive broadcasts.
+To create a private broadcasting walker, remove `: pub` from the walker definition. Only authenticated users can connect and send messages, and all authenticated users receive broadcasts.
 
 ### Important Notes
 
