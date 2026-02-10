@@ -1,22 +1,3 @@
-"""Implementation of Webhook utilities for Jac Scale.
-
-This module implements HMAC-SHA256 signature generation/verification
-and API key management for webhook authentication.
-"""
-import hmac;
-import hashlib;
-import secrets;
-import jwt;
-import from datetime { UTC, datetime, timedelta }
-import from typing { Any }
-import from jaclang.runtimelib.transport { TransportResponse, Meta }
-import from jac_scale.config_loader { get_scale_config }
-
-# Load JWT config for signing API keys
-glob _jwt_config = get_scale_config().get_jwt_config(),
-     JWT_SECRET = _jwt_config['secret'],
-     JWT_ALGORITHM = _jwt_config['algorithm'];
-
 """Generate HMAC-SHA256 signature for webhook payload."""
 impl WebhookUtils.generate_signature(payload: bytes, secret: str) -> str {
     return hmac.new(secret.encode('utf-8'), payload, hashlib.sha256).hexdigest();
@@ -38,8 +19,7 @@ impl WebhookUtils.generate_api_key -> str {
 impl WebhookUtils.create_api_key_token(
     api_key_id: str, username: str, name: str, expiry_days: int | None = None
 ) -> str {
-    _webhook_config = get_scale_config().get_webhook_config();
-    default_expiry = _webhook_config.get('api_key_expiry_days', 365);
+    default_expiry = WEBHOOK_API_KEY_EXPIRY_DAYS;
     payload: dict[str, Any] = {
         'type': 'api_key',
         'api_key_id': api_key_id,
@@ -54,13 +34,13 @@ impl WebhookUtils.create_api_key_token(
         payload['exp'] = datetime.now(UTC) + timedelta(days=default_expiry);
     }
     # If expiry_days is 0 or negative, no expiry is set (permanent key)
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM);
+    return jwt.encode(payload, WEBHOOK_SECRET, algorithm='HS256');
 }
 
 """Validate an API key token and extract user information."""
 impl WebhookUtils.validate_api_key(api_key: str) -> dict[str, str] | None {
     try {
-        payload = jwt.decode(api_key, JWT_SECRET, algorithms=[JWT_ALGORITHM]);
+        payload = jwt.decode(api_key, WEBHOOK_SECRET, algorithms=['HS256']);
 
         # Verify this is an API key token
         if payload.get('type') != 'api_key' {
@@ -103,8 +83,7 @@ impl ApiKeyManager.create_api_key(
     );
     created_at = datetime.now(UTC);
     expires_at: datetime | None = None;
-    _webhook_config = get_scale_config().get_webhook_config();
-    default_expiry = _webhook_config.get('api_key_expiry_days', 365);
+    default_expiry = WEBHOOK_API_KEY_EXPIRY_DAYS;
     if expiry_days is not None and expiry_days > 0 {
         expires_at = created_at + timedelta(days=expiry_days);
     } elif default_expiry > 0 {
