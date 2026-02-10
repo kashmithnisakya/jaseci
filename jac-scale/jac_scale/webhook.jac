@@ -76,9 +76,7 @@ def _create_api_key_db -> Db | None {
     db_config = get_scale_config().get_database_config();
     if db_config.get('mongodb_uri') is not None {
         return Db(
-            client=get_mongo_client(),
-            db_name='jac_db',
-            db_type=DatabaseType.MONGODB
+            client=get_mongo_client(), db_name='jac_db', db_type=DatabaseType.MONGODB
         );
     }
     return None;

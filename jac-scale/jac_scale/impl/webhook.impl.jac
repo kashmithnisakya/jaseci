@@ -119,7 +119,9 @@ impl ApiKeyManager.create_api_key(
 impl ApiKeyManager.list_api_keys(username: str) -> TransportResponse {
     keys: list[dict[str, Any]] = [];
     if self._db is not None {
-        cursor = self._db.find(self._collection, {'username': username, 'revoked': False});
+        cursor = self._db.find(
+            self._collection, {'username': username, 'revoked': False}
+        );
         for doc in cursor {
             keys.append(
                 {
@@ -178,9 +180,7 @@ impl ApiKeyManager.revoke_api_key(username: str, api_key_id: str) -> TransportRe
     # Mark as revoked
     if self._db is not None {
         self._db.update_one(
-            self._collection,
-            {'_id': api_key_id},
-            {'$set': {'revoked': True}}
+            self._collection, {'_id': api_key_id}, {'$set': {'revoked': True}}
         );
     } else {
         self._inmemory_store[api_key_id]['revoked'] = True;
