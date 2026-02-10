@@ -71,13 +71,23 @@ obj WebhookUtils {
     static def extract_signature(header_value: str) -> str;
 }
 
+"""Create database connection for API key storage, or None if MongoDB not configured."""
+def _create_api_key_db() -> Db | None {
+    db_config = get_scale_config().get_database_config();
+    if db_config.get('mongodb_uri') is not None {
+        return Db(
+            client=get_mongo_client(),
+            db_name='jac_db',
+            db_type=DatabaseType.MONGODB
+        );
+    }
+    return None;
+}
+
 """Manager for API keys associated with users."""
 obj ApiKeyManager {
-    has _db: Db = Db(
-        client=get_mongo_client(),
-        db_name='jac_db',
-        db_type=DatabaseType.MONGODB
-    ),
+    has _db: Db | None = _create_api_key_db(),
+        _inmemory_store: dict = {},
         _collection: str = 'webhook_api_keys';
 
     """Create a new API key for a user."""
