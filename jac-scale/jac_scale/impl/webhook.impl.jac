@@ -34,13 +34,13 @@ impl WebhookUtils.create_api_key_token(
         payload['exp'] = datetime.now(UTC) + timedelta(days=default_expiry);
     }
     # If expiry_days is 0 or negative, no expiry is set (permanent key)
-    return jwt.encode(payload, WEBHOOK_SECRET, algorithm=WEBHOOK_ALGORITHM);
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM);
 }
 
 """Validate an API key token and extract user information."""
 impl WebhookUtils.validate_api_key(api_key: str) -> dict[str, str] | None {
     try {
-        payload = jwt.decode(api_key, WEBHOOK_SECRET, algorithms=[WEBHOOK_ALGORITHM]);
+        payload = jwt.decode(api_key, JWT_SECRET, algorithms=[JWT_ALGORITHM]);
 
         # Verify this is an API key token
         if payload.get('type') != 'api_key' {

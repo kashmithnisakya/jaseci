@@ -130,14 +130,11 @@ impl JacScaleConfig.get_webhook_config(self: JacScaleConfig) -> dict[str, Any] {
     config = self.load();
     webhook_config = config.get('webhook', {});
     return {
-        'secret': os.environ.get('WEBHOOK_SECRET')
-        or webhook_config.get('secret', 'webhook-secret-key'),
         'signature_header': webhook_config.get(
             'signature_header', 'X-Webhook-Signature'
         ),
         'verify_signature': webhook_config.get('verify_signature', True),
-        'api_key_expiry_days': int(webhook_config.get('api_key_expiry_days', 365)),
-        'algorithm': webhook_config.get('algorithm', 'HS256')
+        'api_key_expiry_days': int(webhook_config.get('api_key_expiry_days', 365))
     };
 }
 
