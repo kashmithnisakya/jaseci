@@ -110,19 +110,18 @@ impl ApiKeyManager.create_api_key(
     } elif default_expiry > 0 {
         expires_at = created_at + timedelta(days=default_expiry);
     }
-    # Store key metadata (not the key itself for security)
-    self._api_keys[api_key_id] = {
-        'username': username,
-        'name': name,
-        'created_at': created_at.isoformat(),
-        'expires_at': expires_at.isoformat() if expires_at else None,
-        'revoked': False
-    };
-    # Track keys by user
-    if username not in self._user_keys {
-        self._user_keys[username] = [];
-    }
-    self._user_keys[username].append(api_key_id);
+    # Persist key metadata in database
+    self._db.insert_one(
+        self._collection,
+        {
+            '_id': api_key_id,
+            'username': username,
+            'name': name,
+            'created_at': created_at.isoformat(),
+            'expires_at': expires_at.isoformat() if expires_at else None,
+            'revoked': False
+        }
+    );
     return TransportResponse.success(
         data={
             'api_key': api_key,
@@ -137,21 +136,18 @@ impl ApiKeyManager.create_api_key(
 
 """List all API keys for a user (metadata only, not the keys)."""
 impl ApiKeyManager.list_api_keys(username: str) -> TransportResponse {
-    user_key_ids = self._user_keys.get(username, []);
+    cursor = self._db.find(self._collection, {'username': username, 'revoked': False});
     keys: list[dict[str, Any]] = [];
-    for key_id in user_key_ids {
-        key_info = self._api_keys.get(key_id);
-        if key_info and not key_info.get('revoked', False) {
-            keys.append(
-                {
-                    'api_key_id': key_id,
-                    'name': key_info.get('name', ''),
-                    'created_at': key_info.get('created_at'),
-                    'expires_at': key_info.get('expires_at'),
-                    'active': True
-                }
-            );
-        }
+    for doc in cursor {
+        keys.append(
+            {
+                'api_key_id': doc.get('_id', ''),
+                'name': doc.get('name', ''),
+                'created_at': doc.get('created_at'),
+                'expires_at': doc.get('expires_at'),
+                'active': True
+            }
+        );
     }
     return TransportResponse.success(
         data={'api_keys': keys}, meta=Meta(extra={'http_status': 200})
@@ -160,8 +156,9 @@ impl ApiKeyManager.list_api_keys(username: str) -> TransportResponse {
 
 """Revoke an API key."""
 impl ApiKeyManager.revoke_api_key(username: str, api_key_id: str) -> TransportResponse {
-    # Check if key exists
-    if api_key_id not in self._api_keys {
+    # Check if key exists in database
+    key_info = self._db.find_one(self._collection, {'_id': api_key_id});
+    if not key_info {
         return TransportResponse.fail(
             code='NOT_FOUND',
             message=f"API key '{api_key_id}' not found",
@@ -169,7 +166,6 @@ impl ApiKeyManager.revoke_api_key(username: str, api_key_id: str) -> TransportRe
         );
     }
     # Check if key belongs to user
-    key_info = self._api_keys[api_key_id];
     if key_info.get('username') != username {
         return TransportResponse.fail(
             code='FORBIDDEN',
@@ -177,8 +173,12 @@ impl ApiKeyManager.revoke_api_key(username: str, api_key_id: str) -> TransportRe
             meta=Meta(extra={'http_status': 403})
         );
     }
-    # Mark as revoked
-    self._api_keys[api_key_id]['revoked'] = True;
+    # Mark as revoked in database
+    self._db.update_one(
+        self._collection,
+        {'_id': api_key_id},
+        {'$set': {'revoked': True}}
+    );
     return TransportResponse.success(
         data={'message': f"API key '{api_key_id}' has been revoked"},
         meta=Meta(extra={'http_status': 200})
@@ -193,7 +193,7 @@ impl ApiKeyManager.validate_api_key(api_key: str) -> str | None {
         return None;
     }
     api_key_id = key_info.get('api_key_id', '');
-    # Check if key is still active (not revoked)
+    # Check if key is still active (not revoked) in database
     if not self.is_key_active(api_key_id) {
         return None;
     }
@@ -202,9 +202,9 @@ impl ApiKeyManager.validate_api_key(api_key: str) -> str | None {
 
 """Check if an API key ID exists and is not revoked."""
 impl ApiKeyManager.is_key_active(api_key_id: str) -> bool {
-    key_info = self._api_keys.get(api_key_id);
+    key_info = self._db.find_one(self._collection, {'_id': api_key_id});
     if not key_info {
-        # Key not in our store - could be from before server restart
+        # Key not in database - could be a legacy key
         # Allow it if JWT is valid (handled by validate_api_key)
         return True;
     }

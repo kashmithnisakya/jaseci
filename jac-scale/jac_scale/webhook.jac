@@ -17,6 +17,8 @@ import from typing { Any }
 import from pydantic { BaseModel, Field }
 import from jaclang.runtimelib.transport { TransportResponse, Meta }
 import from jac_scale.config_loader { get_scale_config }
+import from jac_scale.db { Db, get_mongo_client }
+import from jac_scale.factories.database_factory { DatabaseType }
 
 # Load webhook configuration
 glob _webhook_config = get_scale_config().get_webhook_config(),
@@ -71,8 +73,12 @@ obj WebhookUtils {
 
 """Manager for API keys associated with users."""
 obj ApiKeyManager {
-    has _api_keys: dict[str, dict[str, Any]] = {},  # api_key_id -> key info
-        _user_keys: dict[str, list[str]] = {};  # username -> list of api_key_ids
+    has _db: Db = Db(
+        client=get_mongo_client(),
+        db_name='jac_db',
+        db_type=DatabaseType.MONGODB
+    ),
+        _collection: str = 'webhook_api_keys';
 
     """Create a new API key for a user."""
     def create_api_key(
