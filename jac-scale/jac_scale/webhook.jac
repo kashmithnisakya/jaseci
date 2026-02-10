@@ -25,7 +25,8 @@ glob _webhook_config = get_scale_config().get_webhook_config(),
      WEBHOOK_SECRET = _webhook_config['secret'],
      WEBHOOK_SIGNATURE_HEADER = _webhook_config['signature_header'],
      WEBHOOK_VERIFY_SIGNATURE = _webhook_config['verify_signature'],
-     WEBHOOK_API_KEY_EXPIRY_DAYS = _webhook_config['api_key_expiry_days'];
+     WEBHOOK_API_KEY_EXPIRY_DAYS = _webhook_config['api_key_expiry_days'],
+     WEBHOOK_ALGORITHM = _webhook_config['algorithm'];
 
 """Pydantic model for API key creation request."""
 class CreateApiKeyRequest(BaseModel) {
