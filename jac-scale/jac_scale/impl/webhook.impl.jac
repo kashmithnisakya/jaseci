@@ -30,9 +30,9 @@ impl WebhookUtils.create_api_key_token(
     # Add expiry if specified
     current_time = datetime.now(UTC);
     if expiry_days is not None {
-        payload['exp'] = (current_time + timedelta(days=int(expiry_days)));
+        payload['exp'] = current_time + timedelta(days=int(expiry_days));
     } elif default_expiry > 0 {
-        payload['exp'] = (current_time + timedelta(days=int(default_expiry)));
+        payload['exp'] = current_time + timedelta(days=int(default_expiry));
     }
     # If expiry_days is 0 or negative, no expiry is set (permanent key)
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM);
@@ -86,9 +86,9 @@ impl ApiKeyManager.create_api_key(
     expires_at: datetime | None = None;
     default_expiry = WEBHOOK_API_KEY_EXPIRY_DAYS;
     if expiry_days is not None and expiry_days > 0 {
-        expires_at = (key_created_at + timedelta(days=int(expiry_days)));
+        expires_at = key_created_at + timedelta(days=int(expiry_days));
     } elif default_expiry > 0 {
-        expires_at = (key_created_at + timedelta(days=int(default_expiry)));
+        expires_at = key_created_at + timedelta(days=int(default_expiry));
     }
     # Persist key metadata
     key_doc = {
