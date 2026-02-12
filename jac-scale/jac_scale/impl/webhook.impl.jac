@@ -222,4 +222,3 @@ impl ApiKeyManager.is_key_active(api_key_id: str) -> bool {
     }
     return not key_info.get('revoked', False);
 }
-
