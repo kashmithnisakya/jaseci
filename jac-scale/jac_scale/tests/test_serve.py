@@ -2640,3 +2640,397 @@ class TestJacScaleServeDevMode:
         # They get concatenated together in the stream
         expected = "Func 0Func 1"
         assert content == expected, f"Expected '{expected}', got '{content}'"
+
+    # =========================================================================
+    # Scheduler Tests
+    # =========================================================================
+
+    def test_schedule_config_interval_creation(self) -> None:
+        """Test creating interval schedule config."""
+        from jac_scale.scheduler import ScheduleConfig, ScheduleTrigger
+
+        config = ScheduleConfig(
+            trigger=ScheduleTrigger.INTERVAL,
+            seconds=30,
+            minutes=5
+        )
+        assert config.trigger == ScheduleTrigger.INTERVAL
+        assert config.seconds == 30
+        assert config.minutes == 5
+
+    def test_schedule_config_cron_creation(self) -> None:
+        """Test creating cron schedule config."""
+        from jac_scale.scheduler import ScheduleConfig, ScheduleTrigger
+
+        config = ScheduleConfig(
+            trigger=ScheduleTrigger.CRON,
+            cron="0 * * * *"
+        )
+        assert config.trigger == ScheduleTrigger.CRON
+        assert config.cron == "0 * * * *"
+
+    def test_schedule_config_date_creation(self) -> None:
+        """Test creating date schedule config."""
+        from jac_scale.scheduler import ScheduleConfig, ScheduleTrigger
+
+        run_date = datetime.now() + timedelta(hours=1)
+        config = ScheduleConfig(
+            trigger=ScheduleTrigger.DATE,
+            run_date=run_date.isoformat()
+        )
+        assert config.trigger == ScheduleTrigger.DATE
+        assert config.run_date == run_date.isoformat()
+
+    def test_schedule_job_creation(self) -> None:
+        """Test creating a schedule job."""
+        from jac_scale.scheduler import ScheduleConfig, ScheduleJob, ScheduleTrigger
+
+        config = ScheduleConfig(
+            trigger=ScheduleTrigger.INTERVAL,
+            minutes=10
+        )
+        job = ScheduleJob(
+            id="test-job-1",
+            walker_name="my_walker",
+            config=config,
+            username="testuser"
+        )
+        assert job.id == "test-job-1"
+        assert job.walker_name == "my_walker"
+        assert job.username == "testuser"
+        assert job.is_active is True
+        assert job.is_static is False
+
+    def test_schedule_job_to_dict(self) -> None:
+        """Test serializing job to dict."""
+        from jac_scale.scheduler import ScheduleConfig, ScheduleJob, ScheduleTrigger
+
+        config = ScheduleConfig(
+            trigger=ScheduleTrigger.CRON,
+            hour=12,
+            minute=0
+        )
+        job = ScheduleJob(
+            id="job-123",
+            walker_name="daily_task",
+            config=config,
+            username="admin",
+            is_static=True
+        )
+        job_dict = job.to_dict()
+
+        assert job_dict["id"] == "job-123"
+        assert job_dict["walker_name"] == "daily_task"
+        assert job_dict["username"] == "admin"
+        assert job_dict["is_static"] is True
+        assert "config" in job_dict
+
+    def test_schedule_job_from_dict(self) -> None:
+        """Test deserializing job from dict."""
+        from jac_scale.scheduler import ScheduleJob, ScheduleTrigger
+
+        job_data = {
+            "id": "job-456",
+            "walker_name": "weekly_report",
+            "config": {
+                "trigger": "cron",
+                "day_of_week": "mon",
+                "hour": 9
+            },
+            "username": "reporter",
+            "is_active": True,
+            "is_static": False,
+            "last_run": None,
+            "next_run": None,
+            "run_count": 0,
+            "created_at": datetime.now().isoformat()
+        }
+        job = ScheduleJob.from_dict(job_data)
+
+        assert job.id == "job-456"
+        assert job.walker_name == "weekly_report"
+        assert job.config.trigger == ScheduleTrigger.CRON
+        assert job.config.day_of_week == "mon"
+
+    def test_schedule_store_create_job(self) -> None:
+        """Test creating a job in store."""
+        from jac_scale.scheduler import ScheduleConfig, ScheduleJob, ScheduleStore, ScheduleTrigger
+
+        store = ScheduleStore(mongodb_uri=None)
+        config = ScheduleConfig(
+            trigger=ScheduleTrigger.INTERVAL,
+            hours=1
+        )
+        job = ScheduleJob(
+            id="store-test-1",
+            walker_name="hourly_task",
+            config=config,
+            username="user1"
+        )
+
+        store.create(job)
+        retrieved = store.get("store-test-1")
+
+        assert retrieved is not None
+        assert retrieved.id == "store-test-1"
+        assert retrieved.walker_name == "hourly_task"
+
+    def test_schedule_store_list_jobs_by_user(self) -> None:
+        """Test listing jobs filtered by user."""
+        from jac_scale.scheduler import ScheduleConfig, ScheduleJob, ScheduleStore, ScheduleTrigger
+
+        store = ScheduleStore(mongodb_uri=None)
+        config = ScheduleConfig(trigger=ScheduleTrigger.INTERVAL, minutes=30)
+
+        # Create jobs for different users
+        store.create(ScheduleJob(id="j1", walker_name="w1", config=config, username="alice"))
+        store.create(ScheduleJob(id="j2", walker_name="w2", config=config, username="bob"))
+        store.create(ScheduleJob(id="j3", walker_name="w3", config=config, username="alice"))
+
+        alice_jobs = store.list(username="alice")
+        bob_jobs = store.list(username="bob")
+
+        assert len(alice_jobs) == 2
+        assert len(bob_jobs) == 1
+        assert all(j.username == "alice" for j in alice_jobs)
+
+    def test_schedule_store_update_job(self) -> None:
+        """Test updating a job."""
+        from jac_scale.scheduler import ScheduleConfig, ScheduleJob, ScheduleStore, ScheduleTrigger
+
+        store = ScheduleStore(mongodb_uri=None)
+        config = ScheduleConfig(trigger=ScheduleTrigger.INTERVAL, minutes=15)
+        job = ScheduleJob(id="update-test", walker_name="task", config=config, username="user")
+
+        store.create(job)
+
+        # Update the job
+        job.is_active = False
+        job.run_count = 5
+        store.update(job)
+
+        retrieved = store.get("update-test")
+        assert retrieved is not None
+        assert retrieved.is_active is False
+        assert retrieved.run_count == 5
+
+    def test_schedule_store_delete_job(self) -> None:
+        """Test deleting a job."""
+        from jac_scale.scheduler import ScheduleConfig, ScheduleJob, ScheduleStore, ScheduleTrigger
+
+        store = ScheduleStore(mongodb_uri=None)
+        config = ScheduleConfig(trigger=ScheduleTrigger.INTERVAL, seconds=10)
+        job = ScheduleJob(id="delete-test", walker_name="ephemeral", config=config, username="user")
+
+        store.create(job)
+        assert store.get("delete-test") is not None
+
+        result = store.delete("delete-test")
+        assert result is True
+        assert store.get("delete-test") is None
+
+    def test_schedule_store_list_static_jobs(self) -> None:
+        """Test listing only static jobs."""
+        from jac_scale.scheduler import ScheduleConfig, ScheduleJob, ScheduleStore, ScheduleTrigger
+
+        store = ScheduleStore(mongodb_uri=None)
+        config = ScheduleConfig(trigger=ScheduleTrigger.INTERVAL, minutes=5)
+
+        store.create(ScheduleJob(id="static1", walker_name="w1", config=config, username="sys", is_static=True))
+        store.create(ScheduleJob(id="dynamic1", walker_name="w2", config=config, username="user", is_static=False))
+        store.create(ScheduleJob(id="static2", walker_name="w3", config=config, username="sys", is_static=True))
+
+        static_jobs = store.list(static_only=True)
+
+        assert len(static_jobs) == 2
+        assert all(j.is_static for j in static_jobs)
+
+    def test_scheduler_manager_start_stop(self) -> None:
+        """Test starting and stopping the scheduler."""
+        from jac_scale.scheduler import SchedulerManager
+
+        manager = SchedulerManager(mongodb_uri=None)
+
+        assert manager._scheduler is None
+
+        manager.start()
+        assert manager._scheduler is not None
+        assert manager._scheduler.running
+
+        manager.stop()
+        assert not manager._scheduler.running
+
+    def test_scheduler_manager_add_job(self) -> None:
+        """Test adding a job to scheduler."""
+        from jac_scale.scheduler import ScheduleConfig, ScheduleJob, SchedulerManager, ScheduleTrigger
+
+        manager = SchedulerManager(mongodb_uri=None)
+        manager.start()
+
+        try:
+            config = ScheduleConfig(trigger=ScheduleTrigger.INTERVAL, seconds=60)
+            job = ScheduleJob(
+                id="sched-job-1",
+                walker_name="test_walker",
+                config=config,
+                username="tester"
+            )
+
+            result = manager.add_job(job, lambda: None)
+            assert result is True
+
+            # Job should be in store
+            stored = manager.store.get("sched-job-1")
+            assert stored is not None
+        finally:
+            manager.stop()
+
+    def test_scheduler_manager_remove_job(self) -> None:
+        """Test removing a job from scheduler."""
+        from jac_scale.scheduler import ScheduleConfig, ScheduleJob, SchedulerManager, ScheduleTrigger
+
+        manager = SchedulerManager(mongodb_uri=None)
+        manager.start()
+
+        try:
+            config = ScheduleConfig(trigger=ScheduleTrigger.INTERVAL, seconds=30)
+            job = ScheduleJob(
+                id="remove-job-1",
+                walker_name="removable",
+                config=config,
+                username="tester"
+            )
+
+            manager.add_job(job, lambda: None)
+            assert manager.store.get("remove-job-1") is not None
+
+            result = manager.remove_job("remove-job-1")
+            assert result is True
+            assert manager.store.get("remove-job-1") is None
+        finally:
+            manager.stop()
+
+    def test_scheduler_manager_pause_resume_job(self) -> None:
+        """Test pausing and resuming a job."""
+        from jac_scale.scheduler import ScheduleConfig, ScheduleJob, SchedulerManager, ScheduleTrigger
+
+        manager = SchedulerManager(mongodb_uri=None)
+        manager.start()
+
+        try:
+            config = ScheduleConfig(trigger=ScheduleTrigger.INTERVAL, minutes=1)
+            job = ScheduleJob(
+                id="pause-job-1",
+                walker_name="pausable",
+                config=config,
+                username="tester"
+            )
+
+            manager.add_job(job, lambda: None)
+
+            # Pause
+            manager.pause_job("pause-job-1")
+            stored = manager.store.get("pause-job-1")
+            assert stored.is_active is False
+
+            # Resume
+            manager.resume_job("pause-job-1")
+            stored = manager.store.get("pause-job-1")
+            assert stored.is_active is True
+        finally:
+            manager.stop()
+
+    def test_scheduler_default_config(self, tmp_path: Path) -> None:
+        """Test default scheduler config values."""
+        from jac_scale.config_loader import JacScaleConfig, reset_scale_config
+
+        # Reset to ensure fresh instance
+        reset_scale_config()
+
+        config = JacScaleConfig(project_dir=tmp_path)
+        scheduler_config = config.get_scheduler_config()
+
+        # Default should be enabled
+        assert scheduler_config.get("enabled") is True
+
+    def test_scheduler_disabled_config(self, tmp_path: Path) -> None:
+        """Test disabled scheduler config."""
+        from jac_scale.config_loader import JacScaleConfig, reset_scale_config
+
+        # Create jac.toml with scheduler disabled
+        toml_content = """
+[plugins.scale.scheduler]
+enabled = false
+"""
+        (tmp_path / "jac.toml").write_text(toml_content)
+
+        # Reset to ensure fresh instance
+        reset_scale_config()
+
+        config = JacScaleConfig(project_dir=tmp_path)
+        scheduler_config = config.get_scheduler_config()
+
+        assert scheduler_config.get("enabled") is False
+
+    def test_create_schedule_request_interval(self) -> None:
+        """Test valid interval schedule request."""
+        from jac_scale.scheduler import CreateScheduleRequest
+
+        request = CreateScheduleRequest(
+            walker_name="my_task",
+            trigger="interval",
+            hours=2,
+            minutes=30
+        )
+        assert request.walker_name == "my_task"
+        assert request.trigger == "interval"
+        assert request.hours == 2
+        assert request.minutes == 30
+
+    def test_create_schedule_request_cron(self) -> None:
+        """Test valid cron schedule request."""
+        from jac_scale.scheduler import CreateScheduleRequest
+
+        request = CreateScheduleRequest(
+            walker_name="daily_job",
+            trigger="cron",
+            hour=9,
+            minute=0
+        )
+        assert request.walker_name == "daily_job"
+        assert request.trigger == "cron"
+        assert request.hour == 9
+
+    def test_create_schedule_request_date(self) -> None:
+        """Test valid date schedule request."""
+        from jac_scale.scheduler import CreateScheduleRequest
+
+        future_date = (datetime.now() + timedelta(days=1)).isoformat()
+        request = CreateScheduleRequest(
+            walker_name="one_time_task",
+            trigger="date",
+            run_date=future_date
+        )
+        assert request.walker_name == "one_time_task"
+        assert request.trigger == "date"
+        assert request.run_date == future_date
+
+    def test_update_schedule_request_partial(self) -> None:
+        """Test partial update request."""
+        from jac_scale.scheduler import UpdateScheduleRequest
+
+        request = UpdateScheduleRequest(is_active=False)
+        assert request.is_active is False
+        assert request.trigger is None
+        assert request.hours is None
+
+    def test_update_schedule_request_config(self) -> None:
+        """Test config update request."""
+        from jac_scale.scheduler import UpdateScheduleRequest
+
+        request = UpdateScheduleRequest(
+            trigger="interval",
+            minutes=45
+        )
+        assert request.trigger == "interval"
+        assert request.minutes == 45

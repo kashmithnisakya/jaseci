@@ -128,6 +128,13 @@ impl JacAPIServer.start(
         self.register_webhook_endpoints();
         self.register_websocket_endpoints();
     }
+    # Register scheduler endpoints (always available, check enabled status internally)
+    self.register_schedule_endpoints();
+    # Register static schedules from @restspec decorators (only if scheduler is enabled)
+    scheduler_config = get_scale_config().get_scheduler_config();
+    if scheduler_config.get('enabled', True) {
+        self.register_static_schedules();
+    }
     self.register_root_asset_endpoint();
     self._configure_openapi_security();
     self.user_manager.create_user('__guest__', '__no_password__');
@@ -2488,4 +2495,840 @@ impl JacAPIServer.register_dynamic_websocket_endpoint -> None {
         await handler(websocket);
     }
     self.server.app.websocket("/ws/{walker_name}")(dynamic_ws_handler);
+}
+
+# ============================================================================
+# Scheduler Support Implementation
+# ============================================================================
+
+"""Check if scheduler is enabled, return error response if not."""
+impl JacAPIServer._check_scheduler_enabled -> TransportResponse | None {
+    scheduler_config = get_scale_config().get_scheduler_config();
+    if not scheduler_config.get('enabled', True) {
+        return TransportResponse.fail(
+            code='SCHEDULER_DISABLED',
+            message='Scheduler is disabled in configuration. Set [plugins.scale.scheduler] enabled = true to enable.',
+            meta=Meta(extra={'http_status': 503})
+        );
+    }
+    return None;
+}
+
+"""Get or create scheduler manager (lazy initialization)."""
+impl JacAPIServer.get_scheduler_manager -> SchedulerManager {
+    if self._scheduler_manager is None {
+        import from jac_scale.scheduler { SchedulerManager }
+        self._scheduler_manager = SchedulerManager();
+        self._scheduler_manager._execution_handler = self.execution_handler;
+        self._scheduler_manager.start();
+    }
+    return self._scheduler_manager;
+}
+
+"""Create a new scheduled walker."""
+impl JacAPIServer.create_schedule(
+    walker_name: str,
+    trigger: str,
+    run_date: str | None = None,
+    seconds: int | None = None,
+    minutes: int | None = None,
+    hours: int | None = None,
+    days: int | None = None,
+    weeks: int | None = None,
+    cron: str | None = None,
+    timezone: str = "UTC",
+    walker_fields: dict[str, Any] = {},
+    Authorization: str | None = None
+) -> TransportResponse {
+    # Check if scheduler is enabled
+    error_response = self._check_scheduler_enabled();
+    if error_response {
+        return error_response;
+    }
+    
+    # Validate authorization
+    username = self.auth_handler.validate_token(Authorization);
+    if not username {
+        return TransportResponse.fail(
+            code='UNAUTHORIZED',
+            message='Valid authentication required to create schedules',
+            meta=Meta(extra={'http_status': 401})
+        );
+    }
+    
+    # Validate walker exists
+    walkers = self.get_walkers();
+    if walker_name not in walkers {
+        return TransportResponse.fail(
+            code='NOT_FOUND',
+            message=f"Walker '{walker_name}' not found",
+            meta=Meta(extra={'http_status': 404})
+        );
+    }
+    
+    # Validate trigger type
+    import from jac_scale.scheduler { ScheduleTrigger, ScheduleConfig, ScheduleJob }
+    import from uuid { uuid4 }
+    import from datetime { datetime }
+    
+    try {
+        trigger_enum = ScheduleTrigger(trigger);
+    } except ValueError {
+        return TransportResponse.fail(
+            code='BAD_REQUEST',
+            message=f"Invalid trigger type '{trigger}'. Must be one of: date, interval, cron",
+            meta=Meta(extra={'http_status': 400})
+        );
+    }
+    
+    # Validate trigger-specific fields
+    if trigger_enum == ScheduleTrigger.DATE and not run_date {
+        return TransportResponse.fail(
+            code='BAD_REQUEST',
+            message='run_date is required for DATE trigger',
+            meta=Meta(extra={'http_status': 400})
+        );
+    }
+    
+    if trigger_enum == ScheduleTrigger.CRON and not cron {
+        return TransportResponse.fail(
+            code='BAD_REQUEST',
+            message='cron expression is required for CRON trigger',
+            meta=Meta(extra={'http_status': 400})
+        );
+    }
+    
+    if trigger_enum == ScheduleTrigger.INTERVAL {
+        if not any([seconds, minutes, hours, days, weeks]) {
+            return TransportResponse.fail(
+                code='BAD_REQUEST',
+                message='At least one interval (seconds, minutes, hours, days, weeks) is required for INTERVAL trigger',
+                meta=Meta(extra={'http_status': 400})
+            );
+        }
+    }
+    
+    # Parse run_date
+    parsed_run_date = None;
+    if run_date {
+        try {
+            parsed_run_date = datetime.fromisoformat(run_date);
+        } except ValueError {
+            return TransportResponse.fail(
+                code='BAD_REQUEST',
+                message='Invalid run_date format. Use ISO format (e.g., 2024-12-31T23:59:59)',
+                meta=Meta(extra={'http_status': 400})
+            );
+        }
+    }
+    
+    # Create schedule config and job
+    config = ScheduleConfig(
+        trigger=trigger_enum,
+        run_date=parsed_run_date,
+        seconds=seconds,
+        minutes=minutes,
+        hours=hours,
+        days=days,
+        weeks=weeks,
+        cron=cron,
+        timezone=timezone
+    );
+    
+    job = ScheduleJob(
+        id=str(uuid4()),
+        walker_name=walker_name,
+        walker_fields=walker_fields,
+        config=config,
+        username=username,
+        is_active=True,
+        is_static=False
+    );
+    
+    # Add to scheduler
+    job_id = self.get_scheduler_manager().add_job(job);
+    
+    # Get next run time
+    next_run = self.get_scheduler_manager().get_next_run_time(job_id);
+    
+    return TransportResponse.success(
+        data={
+            'id': job_id,
+            'walker_name': walker_name,
+            'trigger': trigger,
+            'is_active': True,
+            'is_static': False,
+            'next_run': next_run.isoformat() if next_run else None,
+            'created_at': job.created_at.isoformat()
+        },
+        meta=Meta(extra={'http_status': 201})
+    );
+}
+
+"""List all schedules for the authenticated user."""
+impl JacAPIServer.list_schedules(Authorization: str | None = None) -> TransportResponse {
+    # Check if scheduler is enabled
+    error_response = self._check_scheduler_enabled();
+    if error_response {
+        return error_response;
+    }
+    
+    # Validate authorization
+    username = self.auth_handler.validate_token(Authorization);
+    if not username {
+        return TransportResponse.fail(
+            code='UNAUTHORIZED',
+            message='Valid authentication required to list schedules',
+            meta=Meta(extra={'http_status': 401})
+        );
+    }
+    
+    # Get schedules for user
+    jobs = self.get_scheduler_manager()._store.list_all(username=username);
+    
+    # Also include static schedules (visible to all)
+    static_jobs = self.get_scheduler_manager()._store.list_all(username="__system__");
+    
+    # Combine and format response
+    all_jobs = jobs + [j for j in static_jobs if j not in jobs];
+    
+    schedules = [];
+    for job in all_jobs {
+        next_run = self.get_scheduler_manager().get_next_run_time(job.id);
+        schedules.append({
+            'id': job.id,
+            'walker_name': job.walker_name,
+            'trigger': job.config.trigger.value if hasattr(job.config.trigger, 'value') else str(job.config.trigger),
+            'is_active': job.is_active,
+            'is_static': job.is_static,
+            'created_at': job.created_at.isoformat() if job.created_at else None,
+            'updated_at': job.updated_at.isoformat() if job.updated_at else None,
+            'last_run': job.last_run.isoformat() if job.last_run else None,
+            'next_run': next_run.isoformat() if next_run else None,
+            'run_count': job.run_count,
+            'error_count': job.error_count
+        });
+    }
+    
+    return TransportResponse.success(
+        data=schedules,
+        meta=Meta(extra={'http_status': 200})
+    );
+}
+
+"""Get details of a specific schedule."""
+impl JacAPIServer.get_schedule(
+    schedule_id: str, Authorization: str | None = None
+) -> TransportResponse {
+    # Check if scheduler is enabled
+    error_response = self._check_scheduler_enabled();
+    if error_response {
+        return error_response;
+    }
+    
+    # Validate authorization
+    username = self.auth_handler.validate_token(Authorization);
+    if not username {
+        return TransportResponse.fail(
+            code='UNAUTHORIZED',
+            message='Valid authentication required to get schedule',
+            meta=Meta(extra={'http_status': 401})
+        );
+    }
+    
+    # Get schedule
+    job = self.get_scheduler_manager()._store.get(schedule_id);
+    if not job {
+        return TransportResponse.fail(
+            code='NOT_FOUND',
+            message=f"Schedule '{schedule_id}' not found",
+            meta=Meta(extra={'http_status': 404})
+        );
+    }
+    
+    # Check ownership (allow if owner or static schedule)
+    if job.username != username and job.username != "__system__" {
+        return TransportResponse.fail(
+            code='FORBIDDEN',
+            message='You do not have permission to view this schedule',
+            meta=Meta(extra={'http_status': 403})
+        );
+    }
+    
+    next_run = self.get_scheduler_manager().get_next_run_time(job.id);
+    
+    return TransportResponse.success(
+        data={
+            'id': job.id,
+            'walker_name': job.walker_name,
+            'trigger': job.config.trigger.value if hasattr(job.config.trigger, 'value') else str(job.config.trigger),
+            'config': {
+                'cron': job.config.cron,
+                'seconds': job.config.seconds,
+                'minutes': job.config.minutes,
+                'hours': job.config.hours,
+                'days': job.config.days,
+                'weeks': job.config.weeks,
+                'run_date': job.config.run_date.isoformat() if job.config.run_date else None,
+                'timezone': job.config.timezone
+            },
+            'walker_fields': job.walker_fields,
+            'is_active': job.is_active,
+            'is_static': job.is_static,
+            'created_at': job.created_at.isoformat() if job.created_at else None,
+            'updated_at': job.updated_at.isoformat() if job.updated_at else None,
+            'last_run': job.last_run.isoformat() if job.last_run else None,
+            'next_run': next_run.isoformat() if next_run else None,
+            'run_count': job.run_count,
+            'error_count': job.error_count,
+            'last_error': job.last_error
+        },
+        meta=Meta(extra={'http_status': 200})
+    );
+}
+
+"""Update an existing schedule."""
+impl JacAPIServer.update_schedule(
+    schedule_id: str,
+    trigger: str | None = None,
+    run_date: str | None = None,
+    seconds: int | None = None,
+    minutes: int | None = None,
+    hours: int | None = None,
+    days: int | None = None,
+    weeks: int | None = None,
+    cron: str | None = None,
+    timezone: str | None = None,
+    is_active: bool | None = None,
+    walker_fields: dict[str, Any] | None = None,
+    Authorization: str | None = None
+) -> TransportResponse {
+    # Check if scheduler is enabled
+    error_response = self._check_scheduler_enabled();
+    if error_response {
+        return error_response;
+    }
+    
+    # Validate authorization
+    username = self.auth_handler.validate_token(Authorization);
+    if not username {
+        return TransportResponse.fail(
+            code='UNAUTHORIZED',
+            message='Valid authentication required to update schedule',
+            meta=Meta(extra={'http_status': 401})
+        );
+    }
+    
+    # Get schedule
+    job = self.get_scheduler_manager()._store.get(schedule_id);
+    if not job {
+        return TransportResponse.fail(
+            code='NOT_FOUND',
+            message=f"Schedule '{schedule_id}' not found",
+            meta=Meta(extra={'http_status': 404})
+        );
+    }
+    
+    # Check if static schedule (cannot be modified via API)
+    if job.is_static {
+        return TransportResponse.fail(
+            code='BAD_REQUEST',
+            message='Static schedules (from @restspec decorator) cannot be modified via API',
+            meta=Meta(extra={'http_status': 400})
+        );
+    }
+    
+    # Check ownership
+    if job.username != username {
+        return TransportResponse.fail(
+            code='FORBIDDEN',
+            message='You do not have permission to modify this schedule',
+            meta=Meta(extra={'http_status': 403})
+        );
+    }
+    
+    # Build updates dict
+    updates: dict[str, Any] = {};
+    
+    if walker_fields is not None {
+        updates['walker_fields'] = walker_fields;
+    }
+    
+    if is_active is not None {
+        updates['is_active'] = is_active;
+        # Pause/resume job in scheduler
+        if is_active {
+            self.get_scheduler_manager().resume_job(schedule_id);
+        } else {
+            self.get_scheduler_manager().pause_job(schedule_id);
+        }
+    }
+    
+    # Handle config updates (requires rebuilding config)
+    if any([trigger, run_date, seconds, minutes, hours, days, weeks, cron, timezone]) {
+        import from jac_scale.scheduler { ScheduleTrigger, ScheduleConfig }
+        import from datetime { datetime }
+        
+        # Start with existing config
+        new_trigger = job.config.trigger;
+        if trigger {
+            try {
+                new_trigger = ScheduleTrigger(trigger);
+            } except ValueError {
+                return TransportResponse.fail(
+                    code='BAD_REQUEST',
+                    message=f"Invalid trigger type '{trigger}'",
+                    meta=Meta(extra={'http_status': 400})
+                );
+            }
+        }
+        
+        new_run_date = job.config.run_date;
+        if run_date {
+            try {
+                new_run_date = datetime.fromisoformat(run_date);
+            } except ValueError {
+                return TransportResponse.fail(
+                    code='BAD_REQUEST',
+                    message='Invalid run_date format',
+                    meta=Meta(extra={'http_status': 400})
+                );
+            }
+        }
+        
+        new_config = ScheduleConfig(
+            trigger=new_trigger,
+            run_date=new_run_date,
+            seconds=seconds if seconds is not None else job.config.seconds,
+            minutes=minutes if minutes is not None else job.config.minutes,
+            hours=hours if hours is not None else job.config.hours,
+            days=days if days is not None else job.config.days,
+            weeks=weeks if weeks is not None else job.config.weeks,
+            cron=cron if cron is not None else job.config.cron,
+            timezone=timezone if timezone is not None else job.config.timezone
+        );
+        
+        updates['config'] = new_config;
+        
+        # Reschedule job with new config
+        self.get_scheduler_manager().remove_job(schedule_id);
+        job.config = new_config;
+        self.get_scheduler_manager()._add_job_to_scheduler(job);
+    }
+    
+    # Apply updates
+    if updates {
+        self.get_scheduler_manager()._store.update(schedule_id, updates);
+    }
+    
+    # Get updated job
+    updated_job = self.get_scheduler_manager()._store.get(schedule_id);
+    next_run = self.get_scheduler_manager().get_next_run_time(schedule_id);
+    
+    return TransportResponse.success(
+        data={
+            'id': updated_job.id,
+            'walker_name': updated_job.walker_name,
+            'is_active': updated_job.is_active,
+            'next_run': next_run.isoformat() if next_run else None,
+            'updated_at': updated_job.updated_at.isoformat() if updated_job.updated_at else None
+        },
+        meta=Meta(extra={'http_status': 200})
+    );
+}
+
+"""Delete a schedule."""
+impl JacAPIServer.delete_schedule(
+    schedule_id: str, Authorization: str | None = None
+) -> TransportResponse {
+    # Check if scheduler is enabled
+    error_response = self._check_scheduler_enabled();
+    if error_response {
+        return error_response;
+    }
+    
+    # Validate authorization
+    username = self.auth_handler.validate_token(Authorization);
+    if not username {
+        return TransportResponse.fail(
+            code='UNAUTHORIZED',
+            message='Valid authentication required to delete schedule',
+            meta=Meta(extra={'http_status': 401})
+        );
+    }
+    
+    # Get schedule
+    job = self.get_scheduler_manager()._store.get(schedule_id);
+    if not job {
+        return TransportResponse.fail(
+            code='NOT_FOUND',
+            message=f"Schedule '{schedule_id}' not found",
+            meta=Meta(extra={'http_status': 404})
+        );
+    }
+    
+    # Check if static schedule (cannot be deleted via API)
+    if job.is_static {
+        return TransportResponse.fail(
+            code='BAD_REQUEST',
+            message='Static schedules (from @restspec decorator) cannot be deleted via API',
+            meta=Meta(extra={'http_status': 400})
+        );
+    }
+    
+    # Check ownership
+    if job.username != username {
+        return TransportResponse.fail(
+            code='FORBIDDEN',
+            message='You do not have permission to delete this schedule',
+            meta=Meta(extra={'http_status': 403})
+        );
+    }
+    
+    # Delete from scheduler and store
+    self.get_scheduler_manager().remove_job(schedule_id);
+    
+    return TransportResponse.success(
+        data={'deleted': True, 'id': schedule_id},
+        meta=Meta(extra={'http_status': 200})
+    );
+}
+
+"""Register schedule management endpoints."""
+impl JacAPIServer.register_schedule_endpoints -> None {
+    # POST /schedule/create
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.POST,
+            path='/schedule/create',
+            callback=self.create_schedule,
+            parameters=[
+                APIParameter(
+                    name='walker_name',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Name of the walker to schedule',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='trigger',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Trigger type: date, interval, or cron',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='run_date',
+                    data_type='string',
+                    required=False,
+                    default=None,
+                    description='ISO datetime for DATE trigger',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='seconds',
+                    data_type='integer',
+                    required=False,
+                    default=None,
+                    description='Seconds interval for INTERVAL trigger',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='minutes',
+                    data_type='integer',
+                    required=False,
+                    default=None,
+                    description='Minutes interval for INTERVAL trigger',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='hours',
+                    data_type='integer',
+                    required=False,
+                    default=None,
+                    description='Hours interval for INTERVAL trigger',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='days',
+                    data_type='integer',
+                    required=False,
+                    default=None,
+                    description='Days interval for INTERVAL trigger',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='weeks',
+                    data_type='integer',
+                    required=False,
+                    default=None,
+                    description='Weeks interval for INTERVAL trigger',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='cron',
+                    data_type='string',
+                    required=False,
+                    default=None,
+                    description='Cron expression for CRON trigger (5-field format)',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='timezone',
+                    data_type='string',
+                    required=False,
+                    default='UTC',
+                    description='Timezone for the schedule',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='walker_fields',
+                    data_type='object',
+                    required=False,
+                    default={},
+                    description='Fields to pass to the walker on each execution',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='Authorization',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Bearer token for authentication',
+                    type=ParameterType.HEADER
+                )
+            ],
+            response_model=None,
+            tags=['Scheduler'],
+            summary='Create a new scheduled walker',
+            description='Create a schedule to execute a walker at specified times. Supports cron, interval, and one-time date triggers.'
+        )
+    );
+    
+    # GET /schedule/list
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.GET,
+            path='/schedule/list',
+            callback=self.list_schedules,
+            parameters=[
+                APIParameter(
+                    name='Authorization',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Bearer token for authentication',
+                    type=ParameterType.HEADER
+                )
+            ],
+            response_model=None,
+            tags=['Scheduler'],
+            summary='List all schedules',
+            description='List all schedules for the authenticated user, plus all static schedules.'
+        )
+    );
+    
+    # GET /schedule/{schedule_id}
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.GET,
+            path='/schedule/{schedule_id}',
+            callback=self.get_schedule,
+            parameters=[
+                APIParameter(
+                    name='schedule_id',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='The ID of the schedule to retrieve',
+                    type=ParameterType.PATH
+                ),
+                APIParameter(
+                    name='Authorization',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Bearer token for authentication',
+                    type=ParameterType.HEADER
+                )
+            ],
+            response_model=None,
+            tags=['Scheduler'],
+            summary='Get schedule details',
+            description='Get detailed information about a specific schedule.'
+        )
+    );
+    
+    # PUT /schedule/{schedule_id}
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.PUT,
+            path='/schedule/{schedule_id}',
+            callback=self.update_schedule,
+            parameters=[
+                APIParameter(
+                    name='schedule_id',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='The ID of the schedule to update',
+                    type=ParameterType.PATH
+                ),
+                APIParameter(
+                    name='trigger',
+                    data_type='string',
+                    required=False,
+                    default=None,
+                    description='New trigger type',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='run_date',
+                    data_type='string',
+                    required=False,
+                    default=None,
+                    description='New run_date for DATE trigger',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='seconds',
+                    data_type='integer',
+                    required=False,
+                    default=None,
+                    description='New seconds interval',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='minutes',
+                    data_type='integer',
+                    required=False,
+                    default=None,
+                    description='New minutes interval',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='hours',
+                    data_type='integer',
+                    required=False,
+                    default=None,
+                    description='New hours interval',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='days',
+                    data_type='integer',
+                    required=False,
+                    default=None,
+                    description='New days interval',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='weeks',
+                    data_type='integer',
+                    required=False,
+                    default=None,
+                    description='New weeks interval',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='cron',
+                    data_type='string',
+                    required=False,
+                    default=None,
+                    description='New cron expression',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='timezone',
+                    data_type='string',
+                    required=False,
+                    default=None,
+                    description='New timezone',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='is_active',
+                    data_type='boolean',
+                    required=False,
+                    default=None,
+                    description='Enable/disable the schedule',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='walker_fields',
+                    data_type='object',
+                    required=False,
+                    default=None,
+                    description='New walker fields',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='Authorization',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Bearer token for authentication',
+                    type=ParameterType.HEADER
+                )
+            ],
+            response_model=None,
+            tags=['Scheduler'],
+            summary='Update a schedule',
+            description='Update an existing schedule configuration. Static schedules cannot be modified.'
+        )
+    );
+    
+    # DELETE /schedule/{schedule_id}
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.DELETE,
+            path='/schedule/{schedule_id}',
+            callback=self.delete_schedule,
+            parameters=[
+                APIParameter(
+                    name='schedule_id',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='The ID of the schedule to delete',
+                    type=ParameterType.PATH
+                ),
+                APIParameter(
+                    name='Authorization',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Bearer token for authentication',
+                    type=ParameterType.HEADER
+                )
+            ],
+            response_model=None,
+            tags=['Scheduler'],
+            summary='Delete a schedule',
+            description='Delete a schedule and stop its execution. Static schedules cannot be deleted.'
+        )
+    );
+}
+
+"""Register static schedules from @restspec decorators."""
+impl JacAPIServer.register_static_schedules -> None {
+    walkers = self.get_walkers();
+    scheduled_walkers: dict[str, type] = {};
+    
+    for (walker_name, walker_cls) in walkers.items() {
+        if hasattr(walker_cls, 'restspec') and hasattr(walker_cls.restspec, 'schedule') {
+            schedule_config = walker_cls.restspec.schedule;
+            if schedule_config {
+                scheduled_walkers[walker_name] = walker_cls;
+                logger.info(f"Found scheduled walker: {walker_name}");
+            }
+        }
+    }
+    
+    if scheduled_walkers {
+        self.get_scheduler_manager().register_static_schedules(scheduled_walkers);
+        logger.info(f"Registered {len(scheduled_walkers)} static scheduled walker(s)");
+    }
 }

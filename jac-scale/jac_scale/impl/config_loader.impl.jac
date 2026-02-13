@@ -82,6 +82,9 @@ impl JacScaleConfig.get_default_config(self: JacScaleConfig) -> dict[str, Any] {
                 5.0,
                 10.0
             ]
+        },
+        'scheduler': {
+            'enabled': True
         }
     };
 }
@@ -223,6 +226,15 @@ impl JacScaleConfig.get_metrics_config(self: JacScaleConfig) -> dict[str, Any] {
         'namespace': namespace,
         'walker_metrics': metrics_config.get('walker_metrics', False),
         'histogram_buckets': metrics_config.get('histogram_buckets', default_buckets)
+    };
+}
+
+"""Get scheduler configuration from jac.toml."""
+impl JacScaleConfig.get_scheduler_config(self: JacScaleConfig) -> dict[str, Any] {
+    config = self.load();
+    scheduler_config = config.get('scheduler', {});
+    return {
+        'enabled': scheduler_config.get('enabled', True)
     };
 }
 

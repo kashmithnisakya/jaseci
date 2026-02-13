@@ -11,6 +11,12 @@ enum APIProtocol ( StrEnum ) {
     WEBSOCKET = 'websocket'
 }
 
+enum ScheduleTrigger ( StrEnum ) {
+    DATE = 'date',
+    INTERVAL = 'interval',
+    CRON = 'cron'
+}
+
 with entry {
     if TYPE_CHECKING {
         import from enum { IntEnum }
@@ -84,5 +90,6 @@ glob __all__ = [
          'ConnectPerm',
          'WritePerm',
          'restspec',
-         'APIProtocol'
+         'APIProtocol',
+         'ScheduleTrigger'
      ];

@@ -331,3 +331,64 @@ async walker PrivateBroadcastChat {
         };
     }
 }
+
+# ============================================================================
+# Scheduled Walkers
+# ============================================================================
+
+"""A simple scheduled walker that logs execution with interval trigger."""
+@restspec(
+    schedule={
+        'trigger': 'interval',
+        'seconds': 5
+    }
+)
+walker scheduled_task {
+    has result: str = "task executed";
+
+    can execute with `root entry {
+        print(f"Scheduled task executed: {self.result}");
+    }
+}
+
+"""Walker without schedule for comparison."""
+@restspec(
+    methods=['GET'],
+    path='/regular-task'
+)
+walker regular_task {
+    has result: str = "regular task";
+
+    can execute with `root entry {
+        print(f"Regular task: {self.result}");
+    }
+}
+
+"""Cron-scheduled walker for testing."""
+@restspec(
+    schedule={
+        'trigger': 'cron',
+        'hour': 0,
+        'minute': 0
+    }
+)
+walker cron_task {
+    has data: dict = {};
+
+    can execute with `root entry {
+        print(f"Cron task with data: {self.data}");
+    }
+}
+
+"""Date-scheduled walker for one-time execution."""
+@restspec(
+    schedule={
+        'trigger': 'date',
+        'run_date': '2025-12-31T23:59:59'
+    }
+)
+walker onetime_task {
+    can execute with `root entry {
+        print("One-time task executed!");
+    }
+}

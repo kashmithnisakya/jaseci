@@ -227,7 +227,8 @@ obj JacAPIServer {
         has method: str = "",
             path: str = "",
             protocol: APIProtocol = APIProtocol.HTTP,
-            broadcast: bool = False;
+            broadcast: bool = False,
+            schedule: dict[str, Any] | None = None;  # Schedule configuration for scheduled walkers
     }
 
     def postinit -> None;

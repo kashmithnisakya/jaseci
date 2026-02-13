@@ -29,6 +29,7 @@ import from jac_scale.config_loader { get_scale_config }
 import from jac_scale.webhook { ApiKeyManager, WebhookUtils }
 import from jac_scale.abstractions.metrics { MetricsCollector }
 import from jac_scale.websocket { WebSocketConnectionManager }
+import from jac_scale.scheduler { SchedulerManager }
 import from typing { AsyncGenerator }
 import from inspect { isgenerator }
 import from fastapi.responses { StreamingResponse }
@@ -55,7 +56,8 @@ obj JacAPIServer(JServer) {
         _hot_reloader: Any | None = None,
         _api_key_manager: ApiKeyManager | None = None,
         _metrics: MetricsCollector | None = None,
-        _ws_manager: WebSocketConnectionManager | None = None;
+        _ws_manager: WebSocketConnectionManager | None = None,
+        _scheduler_manager: SchedulerManager | None = None;
 
     def postinit -> None;
     def login(username: str, password: str) -> TransportResponse;
@@ -135,6 +137,47 @@ obj JacAPIServer(JServer) {
     def create_websocket_handler(walker_name: str) -> Callable;
     def register_websocket_endpoints -> None;
     def register_dynamic_websocket_endpoint -> None;
+    # Scheduler support methods
+    def get_scheduler_manager -> SchedulerManager;
+    def _check_scheduler_enabled -> TransportResponse | None;
+    def create_schedule(
+        walker_name: str,
+        trigger: str,
+        run_date: str | None = None,
+        seconds: int | None = None,
+        minutes: int | None = None,
+        hours: int | None = None,
+        days: int | None = None,
+        weeks: int | None = None,
+        cron: str | None = None,
+        timezone: str = "UTC",
+        walker_fields: dict[str, Any] = {},
+        Authorization: str | None = None
+    ) -> TransportResponse;
+    def list_schedules(Authorization: str | None = None) -> TransportResponse;
+    def get_schedule(
+        schedule_id: str, Authorization: str | None = None
+    ) -> TransportResponse;
+    def update_schedule(
+        schedule_id: str,
+        trigger: str | None = None,
+        run_date: str | None = None,
+        seconds: int | None = None,
+        minutes: int | None = None,
+        hours: int | None = None,
+        days: int | None = None,
+        weeks: int | None = None,
+        cron: str | None = None,
+        timezone: str | None = None,
+        is_active: bool | None = None,
+        walker_fields: dict[str, Any] | None = None,
+        Authorization: str | None = None
+    ) -> TransportResponse;
+    def delete_schedule(
+        schedule_id: str, Authorization: str | None = None
+    ) -> TransportResponse;
+    def register_schedule_endpoints -> None;
+    def register_static_schedules -> None;
 }
 
 class UpdateUsernameRequest(BaseModel) {
