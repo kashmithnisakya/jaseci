@@ -83,9 +83,7 @@ impl JacScaleConfig.get_default_config(self: JacScaleConfig) -> dict[str, Any] {
                 10.0
             ]
         },
-        'scheduler': {
-            'enabled': True
-        }
+        'scheduler': {'enabled': True}
     };
 }
 
@@ -233,9 +231,7 @@ impl JacScaleConfig.get_metrics_config(self: JacScaleConfig) -> dict[str, Any] {
 impl JacScaleConfig.get_scheduler_config(self: JacScaleConfig) -> dict[str, Any] {
     config = self.load();
     scheduler_config = config.get('scheduler', {});
-    return {
-        'enabled': scheduler_config.get('enabled', True)
-    };
+    return {'enabled': scheduler_config.get('enabled', True)};
 }
 
 """Get or create the global JacScaleConfig instance."""

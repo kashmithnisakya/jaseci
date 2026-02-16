@@ -13,7 +13,7 @@ glob logger = logging.getLogger(__name__);
 
 impl ScheduleJob.postinit -> None {
     now = datetime.now(UTC);
-    if not hasattr(self, '_created_at_set') or not self._created_at_set {
+    if not self?._created_at_set or not self._created_at_set {
         self.created_at = now;
     }
     self.updated_at = now;
@@ -25,8 +25,10 @@ impl ScheduleJob.to_dict -> dict[str, Any] {
         'walker_name': self.walker_name,
         'walker_fields': self.walker_fields,
         'config': {
-            'trigger': self.config.trigger.value if hasattr(self.config.trigger, 'value') else str(self.config.trigger),
-            'run_date': self.config.run_date.isoformat() if self.config.run_date else None,
+            'trigger': self.config.trigger?.value or str(self.config.trigger),
+            'run_date': self.config.run_date.isoformat()
+            if self.config.run_date
+            else None,
             'seconds': self.config.seconds,
             'minutes': self.config.minutes,
             'hours': self.config.hours,
@@ -50,23 +52,19 @@ impl ScheduleJob.to_dict -> dict[str, Any] {
 
 impl ScheduleJob.from_dict(data: dict[str, Any]) -> ScheduleJob {
     import from jac_scale.scheduler { ScheduleConfig, ScheduleTrigger }
-
     config_data = data.get('config', {});
     trigger_str = config_data.get('trigger', 'cron');
-
     try {
         trigger = ScheduleTrigger(trigger_str);
     } except ValueError {
         trigger = ScheduleTrigger.CRON;
     }
-
     run_date = None;
     if config_data.get('run_date') {
         try {
             run_date = datetime.fromisoformat(config_data['run_date']);
-        } except Exception {}
+        } except Exception { }
     }
-
     config = ScheduleConfig(
         trigger=trigger,
         run_date=run_date,
@@ -78,7 +76,6 @@ impl ScheduleJob.from_dict(data: dict[str, Any]) -> ScheduleJob {
         cron=config_data.get('cron'),
         timezone=config_data.get('timezone', 'UTC')
     );
-
     job = ScheduleJob(
         id=data.get('id', str(uuid4())),
         walker_name=data.get('walker_name', ''),
@@ -91,15 +88,13 @@ impl ScheduleJob.from_dict(data: dict[str, Any]) -> ScheduleJob {
         error_count=data.get('error_count', 0),
         last_error=data.get('last_error')
     );
-
     for field in ['created_at', 'updated_at', 'last_run', 'next_run'] {
         if data.get(field) {
             try {
                 setattr(job, field, datetime.fromisoformat(data[field]));
-            } except Exception {}
+            } except Exception { }
         }
     }
-
     return job;
 }
 
@@ -119,15 +114,17 @@ impl ScheduleStore._init_mongodb -> bool {
         if mongodb_uri {
             import from jac_scale.db { get_mongo_client, Db }
             import from jac_scale.factories.database_factory { DatabaseType }
-
             client = get_mongo_client(mongodb_uri);
-            self._db = Db(client=client, db_name='jac_db', db_type=DatabaseType.MONGODB);
+            self._db = Db(
+                client=client, db_name='jac_db', db_type=DatabaseType.MONGODB
+            );
             return True;
         }
     } except Exception as e {
-        logger.warning(f"MongoDB init failed for schedules: {e}. Using in-memory storage.");
+        logger.warning(
+            f"MongoDB init failed for schedules: {e}. Using in-memory storage."
+        );
     }
-
     return False;
 }
 
@@ -161,10 +158,11 @@ impl ScheduleStore.get(schedule_id: str) -> ScheduleJob | None {
     return self._schedules.get(schedule_id);
 }
 
-impl ScheduleStore.list_all(username: str | None = None, include_static: bool = True) -> list[ScheduleJob] {
+impl ScheduleStore.list_all(
+    username: str | None = None, include_static: bool = True
+) -> list[ScheduleJob] {
     import from jac_scale.scheduler { ScheduleJob }
     jobs: list[ScheduleJob] = [];
-
     if self._use_mongodb and self._db {
         try {
             filter_query: dict[str, Any] = {};
@@ -183,7 +181,6 @@ impl ScheduleStore.list_all(username: str | None = None, include_static: bool = 
             logger.error(f"Failed to list schedules from MongoDB: {e}");
         }
     }
-
     for job in self._schedules.values() {
         if username and job.username != username {
             continue;
@@ -196,25 +193,23 @@ impl ScheduleStore.list_all(username: str | None = None, include_static: bool = 
     return jobs;
 }
 
-impl ScheduleStore.update(schedule_id: str, updates: dict[str, Any]) -> ScheduleJob | None {
+impl ScheduleStore.update(
+    schedule_id: str, updates: dict[str, Any]
+) -> ScheduleJob | None {
     job = self.get(schedule_id);
     if not job {
         return None;
     }
-
     for key in updates {
         if hasattr(job, key) {
             setattr(job, key, updates[key]);
         }
     }
     job.updated_at = datetime.now(UTC);
-
     if self._use_mongodb and self._db {
         try {
             self._db.update_one(
-                self._collection_name,
-                {'id': schedule_id},
-                {'$set': job.to_dict()}
+                self._collection_name, {'id': schedule_id}, {'$set': job.to_dict()}
             );
         } except Exception as e {
             logger.error(f"Failed to update schedule in MongoDB: {e}");
@@ -222,7 +217,6 @@ impl ScheduleStore.update(schedule_id: str, updates: dict[str, Any]) -> Schedule
     } else {
         self._schedules[schedule_id] = job;
     }
-
     return job;
 }
 
@@ -235,7 +229,6 @@ impl ScheduleStore.delete(schedule_id: str) -> bool {
             logger.error(f"Failed to delete schedule from MongoDB: {e}");
         }
     }
-
     if schedule_id in self._schedules {
         del self._schedules[schedule_id];
         return True;
@@ -243,25 +236,28 @@ impl ScheduleStore.delete(schedule_id: str) -> bool {
     return False;
 }
 
-impl ScheduleStore.update_run_stats(schedule_id: str, success: bool, error: str | None = None) -> None {
+impl ScheduleStore.update_run_stats(
+    schedule_id: str, success: bool, error: str | None = None
+) -> None {
     job = self.get(schedule_id);
     if not job {
         return;
     }
-
     job.last_run = datetime.now(UTC);
     job.run_count += 1;
     if not success {
         job.error_count += 1;
         job.last_error = error;
     }
-
-    self.update(schedule_id, {
-        'last_run': job.last_run,
-        'run_count': job.run_count,
-        'error_count': job.error_count,
-        'last_error': job.last_error
-    });
+    self.update(
+        schedule_id,
+        {
+            'last_run': job.last_run,
+            'run_count': job.run_count,
+            'error_count': job.error_count,
+            'last_error': job.last_error
+        }
+    );
 }
 
 impl SchedulerManager.postinit -> None {
@@ -276,14 +272,11 @@ impl SchedulerManager.start -> None {
     if self._is_running {
         return;
     }
-
     logging.getLogger('apscheduler.executors.default').setLevel(logging.WARNING);
     logging.getLogger('apscheduler.scheduler').setLevel(logging.WARNING);
-
     self._scheduler = BackgroundScheduler(timezone="UTC");
     self._scheduler.start();
     self._is_running = True;
-
     for job in self._store.list_all() {
         if job.is_active {
             self._add_job_to_scheduler(job);
@@ -331,7 +324,7 @@ impl SchedulerManager.remove_job(schedule_id: str) -> bool {
     if self._scheduler {
         try {
             self._scheduler.remove_job(schedule_id);
-        } except Exception {}
+        } except Exception { }
     }
     return self._store.delete(schedule_id);
 }
@@ -374,12 +367,10 @@ impl SchedulerManager.get_next_run_time(schedule_id: str) -> datetime | None {
 
 impl SchedulerManager._create_trigger(config: ScheduleConfig) -> Any {
     import from jac_scale.scheduler { ScheduleTrigger }
-
     trigger_type = config.trigger;
     if isinstance(trigger_type, str) {
         trigger_type = ScheduleTrigger(trigger_type);
     }
-
     if trigger_type == ScheduleTrigger.CRON {
         if config.cron {
             parts = config.cron.split();
@@ -396,18 +387,27 @@ impl SchedulerManager._create_trigger(config: ScheduleConfig) -> Any {
         }
     } elif trigger_type == ScheduleTrigger.INTERVAL {
         kwargs: dict[str, Any] = {'timezone': config.timezone};
-        if config.seconds { kwargs['seconds'] = config.seconds; }
-        if config.minutes { kwargs['minutes'] = config.minutes; }
-        if config.hours { kwargs['hours'] = config.hours; }
-        if config.days { kwargs['days'] = config.days; }
-        if config.weeks { kwargs['weeks'] = config.weeks; }
+        if config.seconds {
+            kwargs['seconds'] = config.seconds;
+        }
+        if config.minutes {
+            kwargs['minutes'] = config.minutes;
+        }
+        if config.hours {
+            kwargs['hours'] = config.hours;
+        }
+        if config.days {
+            kwargs['days'] = config.days;
+        }
+        if config.weeks {
+            kwargs['weeks'] = config.weeks;
+        }
         return IntervalTrigger(**kwargs);
     } elif trigger_type == ScheduleTrigger.DATE {
         if config.run_date {
             return DateTrigger(run_date=config.run_date, timezone=config.timezone);
         }
     }
-
     return None;
 }
 
@@ -418,7 +418,6 @@ impl SchedulerManager._run_async(coro: Any) -> Any {
     } except RuntimeError {
         loop = None;
     }
-
     if loop and loop.is_running() {
         future = asyncio.run_coroutine_threadsafe(coro, loop);
         return future.result(timeout=300);
@@ -432,16 +431,17 @@ impl SchedulerManager._execute_walker(schedule_id: str) -> None {
     if not job or not self._execution_handler {
         return;
     }
-
     try {
         if job.username == "__system__" {
             self._execute_system_walker(job);
         } else {
-            self._run_async(self._execution_handler.spawn_walker(
-                name=job.walker_name,
-                fields=job.walker_fields,
-                username=job.username
-            ));
+            self._run_async(
+                self._execution_handler.spawn_walker(
+                    name=job.walker_name,
+                    fields=job.walker_fields,
+                    username=job.username
+                )
+            );
         }
         self._store.update_run_stats(schedule_id, success=True);
     } except Exception as e {
@@ -452,28 +452,27 @@ impl SchedulerManager._execute_walker(schedule_id: str) -> None {
 
 impl SchedulerManager._execute_system_walker(job: ScheduleJob) -> None {
     if not self._execution_handler {
-        raise Exception("No execution handler configured");
+        raise Exception("No execution handler configured") ;
     }
-
     user_manager = self._execution_handler.execution_manager.user_manager;
     if not user_manager.user_exists(job.username) {
         user_manager.create_user(job.username, '__no_password__');
     }
-
-    self._run_async(self._execution_handler.spawn_walker(
-        job.walker_name, (job.walker_fields or {}), job.username
-    ));
+    self._run_async(
+        self._execution_handler.spawn_walker(
+            job.walker_name, (job.walker_fields or {}), job.username
+        )
+    );
 }
 
 impl SchedulerManager._inject_jaclib_globals(walker_cls: type) -> None {
     import from jaclang.jac0core { jaclib }
-
     for func_list in [
         getattr(walker_cls, '_jac_entry_funcs_', []),
         getattr(walker_cls, '_jac_exit_funcs_', [])
     ] {
         for func in func_list {
-            if hasattr(func, 'func') and hasattr(func.func, '__globals__') {
+            if func?.func and func.func?.__globals__ {
                 func_globals = func.func.__globals__;
                 for name in dir(jaclib) {
                     if not name.startswith('_') and name not in func_globals {
@@ -481,7 +480,9 @@ impl SchedulerManager._inject_jaclib_globals(walker_cls: type) -> None {
                     }
                 }
             }
-            try { _ = func.trigger; } except Exception {}
+            try {
+                _ = func.trigger;
+            } except Exception { }
         }
     }
 }
@@ -489,14 +490,12 @@ impl SchedulerManager._inject_jaclib_globals(walker_cls: type) -> None {
 impl SchedulerManager.register_static_schedules(walkers: dict[str, type]) -> None {
     import from jac_scale.scheduler { ScheduleJob, ScheduleConfig, ScheduleTrigger }
     import from uuid { uuid4 }
-
     self._walkers.update(walkers);
-
     for walker_name in walkers {
         walker_cls = walkers[walker_name];
         self._inject_jaclib_globals(walker_cls);
 
-        if not (hasattr(walker_cls, 'restspec') and hasattr(walker_cls.restspec, 'schedule')) {
+        if not (walker_cls?.restspec and walker_cls.restspec?.schedule) {
             continue;
         }
         schedule_dict = walker_cls.restspec.schedule;
@@ -508,7 +507,9 @@ impl SchedulerManager.register_static_schedules(walkers: dict[str, type]) -> Non
         try {
             trigger = ScheduleTrigger(trigger_str);
         } except ValueError {
-            logger.warning(f"Invalid trigger type '{trigger_str}' for walker {walker_name}");
+            logger.warning(
+                f"Invalid trigger type '{trigger_str}' for walker {walker_name}"
+            );
             continue;
         }
 
@@ -533,14 +534,16 @@ impl SchedulerManager.register_static_schedules(walkers: dict[str, type]) -> Non
             timezone=schedule_dict.get('timezone', 'UTC')
         );
 
-        self.add_job(ScheduleJob(
-            id=f"static-{walker_name}-{str(uuid4())[:8]}",
-            walker_name=walker_name,
-            walker_fields={},
-            config=config,
-            username="__system__",
-            is_active=True,
-            is_static=True
-        ));
+        self.add_job(
+            ScheduleJob(
+                id=f"static-{walker_name}-{str(uuid4())[:8]}",
+                walker_name=walker_name,
+                walker_fields={},
+                config=config,
+                username="__system__",
+                is_active=True,
+                is_static=True
+            )
+        );
     }
 }

@@ -6,7 +6,7 @@ import from typing { Any }
 import from pydantic { BaseModel, Field }
 import from jaclang.runtimelib.transport { TransportResponse, Meta }
 
-enum ScheduleTrigger(StrEnum) {
+enum ScheduleTrigger ( StrEnum ) {
     DATE = "date",
     INTERVAL = "interval",
     CRON = "cron"
@@ -42,8 +42,7 @@ obj ScheduleJob {
 
     def postinit -> None;
     def to_dict -> dict[str, Any];
-    @staticmethod
-    def from_dict(data: dict[str, Any]) -> 'ScheduleJob';
+    static def from_dict(data: dict[str, Any]) -> 'ScheduleJob';
 }
 
 class CreateScheduleRequest(BaseModel) {
@@ -57,7 +56,9 @@ class CreateScheduleRequest(BaseModel) {
         weeks: int | None = Field(None, description='Weeks interval'),
         cron: str | None = Field(None, description='Cron expression for CRON trigger'),
         timezone: str = Field("UTC", description='Timezone for schedule'),
-        walker_fields: dict[str, Any] = Field(default_factory=dict, description='Fields to pass to walker');
+        walker_fields: dict[str, Any] = Field(
+            default_factory=dict, description='Fields to pass to walker'
+        );
 }
 
 class UpdateScheduleRequest(BaseModel) {
@@ -98,10 +99,14 @@ obj ScheduleStore {
     def _init_mongodb -> bool;
     def create(job: ScheduleJob) -> ScheduleJob;
     def get(schedule_id: str) -> ScheduleJob | None;
-    def list_all(username: str | None = None, include_static: bool = True) -> list[ScheduleJob];
+    def list_all(
+        username: str | None = None, include_static: bool = True
+    ) -> list[ScheduleJob];
     def update(schedule_id: str, updates: dict[str, Any]) -> ScheduleJob | None;
     def delete(schedule_id: str) -> bool;
-    def update_run_stats(schedule_id: str, success: bool, error: str | None = None) -> None;
+    def update_run_stats(
+        schedule_id: str, success: bool, error: str | None = None
+    ) -> None;
 }
 
 obj SchedulerManager {

@@ -154,10 +154,12 @@ obj JacAPIServer(JServer) {
         walker_fields: dict[str, Any] = {},
         Authorization: str | None = None
     ) -> TransportResponse;
+
     def list_schedules(Authorization: str | None = None) -> TransportResponse;
     def get_schedule(
         schedule_id: str, Authorization: str | None = None
     ) -> TransportResponse;
+
     def update_schedule(
         schedule_id: str,
         trigger: str | None = None,
@@ -173,9 +175,11 @@ obj JacAPIServer(JServer) {
         walker_fields: dict[str, Any] | None = None,
         Authorization: str | None = None
     ) -> TransportResponse;
+
     def delete_schedule(
         schedule_id: str, Authorization: str | None = None
     ) -> TransportResponse;
+
     def register_schedule_endpoints -> None;
     def register_static_schedules -> None;
 }

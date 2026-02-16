@@ -231,3 +231,4 @@ watcher.impl.jac
 with_context.jac
 with_llm_method.jac
 yield_in_assignment.jac
+scheduler.impl.jac
