@@ -7,7 +7,7 @@ This guide covers how to use the scheduled walker feature in jac-scale, which al
 The scheduler feature supports three types of triggers:
 
 - **INTERVAL**: Execute at regular intervals (e.g., every 5 minutes)
-- **CRON**: Execute based on cron expressions (e.g., every day at midnight)  
+- **CRON**: Execute based on cron expressions (e.g., every day at midnight)
 - **DATE**: Execute once at a specific date/time
 
 ## Configuration
@@ -20,6 +20,7 @@ enabled = true  # default
 ```
 
 When `enabled = false`:
+
 - Static schedules from `@restspec` decorators are not registered
 - Dynamic schedule API endpoints return `503 Service Unavailable`
 
@@ -50,8 +51,9 @@ walker cleanup_task {
 ```
 
 Interval options:
+
 - `weeks`: int
-- `days`: int  
+- `days`: int
 - `hours`: int
 - `minutes`: int
 - `seconds`: int
@@ -77,7 +79,8 @@ walker daily_report {
 ```
 
 Cron options:
-- `cron`: str (full cron expression like "0 9 * * *")
+
+- `cron`: str (full cron expression like "0 9 ** *")
 - `year`: int/str
 - `month`: int/str
 - `day`: int/str
@@ -107,6 +110,7 @@ walker new_year_task {
 ```
 
 Date options:
+
 - `run_date`: str (ISO 8601 format)
 - `timezone`: str (default: "UTC")
 
@@ -129,6 +133,7 @@ Authorization: Bearer <token>
 ```
 
 Response:
+
 ```json
 {
     "status": "success",
@@ -246,7 +251,7 @@ import from builtin { ScheduleTrigger }
 )
 walker health_check {
     has services: list[str] = ['database', 'cache', 'api'];
-    
+
     can check_health with `root entry {
         for service in self.services {
             print(f"Checking {service}...");
