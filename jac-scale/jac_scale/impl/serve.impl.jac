@@ -2547,7 +2547,11 @@ impl JacAPIServer.create_schedule(
     }
 
     # Validate authorization
-    username = self.auth_handler.validate_token(Authorization);
+    token: str | None = None;
+    if Authorization and Authorization.startswith('Bearer ') {
+        token = Authorization[7:];
+    }
+    username = self.user_manager.validate_jwt_token(token) if token else None;
     if not username {
         return TransportResponse.fail(
             code='UNAUTHORIZED',
@@ -2674,7 +2678,11 @@ impl JacAPIServer.list_schedules(Authorization: str | None = None) -> TransportR
     }
 
     # Validate authorization
-    username = self.auth_handler.validate_token(Authorization);
+    token: str | None = None;
+    if Authorization and Authorization.startswith('Bearer ') {
+        token = Authorization[7:];
+    }
+    username = self.user_manager.validate_jwt_token(token) if token else None;
     if not username {
         return TransportResponse.fail(
             code='UNAUTHORIZED',
@@ -2727,7 +2735,11 @@ impl JacAPIServer.get_schedule(
     }
 
     # Validate authorization
-    username = self.auth_handler.validate_token(Authorization);
+    token: str | None = None;
+    if Authorization and Authorization.startswith('Bearer ') {
+        token = Authorization[7:];
+    }
+    username = self.user_manager.validate_jwt_token(token) if token else None;
     if not username {
         return TransportResponse.fail(
             code='UNAUTHORIZED',
@@ -2810,7 +2822,11 @@ impl JacAPIServer.update_schedule(
     }
 
     # Validate authorization
-    username = self.auth_handler.validate_token(Authorization);
+    token: str | None = None;
+    if Authorization and Authorization.startswith('Bearer ') {
+        token = Authorization[7:];
+    }
+    username = self.user_manager.validate_jwt_token(token) if token else None;
     if not username {
         return TransportResponse.fail(
             code='UNAUTHORIZED',
@@ -2948,7 +2964,11 @@ impl JacAPIServer.delete_schedule(
     }
 
     # Validate authorization
-    username = self.auth_handler.validate_token(Authorization);
+    token: str | None = None;
+    if Authorization and Authorization.startswith('Bearer ') {
+        token = Authorization[7:];
+    }
+    username = self.user_manager.validate_jwt_token(token) if token else None;
     if not username {
         return TransportResponse.fail(
             code='UNAUTHORIZED',

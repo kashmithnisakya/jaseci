@@ -258,7 +258,7 @@ impl JSONBodyParameterHandler.generate_body_model -> (type[BaseModel] | None) {
             if (param.default is None) {
                 model_fields[param.name] = (
                     (param_type | None),
-                    Field(description=description)
+                    Field(default=None, description=description)
                 );
             } else {
                 model_fields[param.name] = (
