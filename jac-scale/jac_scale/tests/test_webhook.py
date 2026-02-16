@@ -512,6 +512,7 @@ class TestWebhookWithoutMongo(_ServerMixin, WebhookTestMixin):
     """Webhook tests using file-based storage (no MongoDB)."""
 
     server_process: subprocess.Popen[str] | None = None
+    _original_mongodb_uri: str | None = None
 
     @classmethod
     def setup_class(cls) -> None:
