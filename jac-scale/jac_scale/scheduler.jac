@@ -102,6 +102,7 @@ obj ScheduleStore {
     def list_all(
         username: str | None = None, include_static: bool = True
     ) -> list[ScheduleJob];
+
     def update(schedule_id: str, updates: dict[str, Any]) -> ScheduleJob | None;
     def delete(schedule_id: str) -> bool;
     def update_run_stats(
