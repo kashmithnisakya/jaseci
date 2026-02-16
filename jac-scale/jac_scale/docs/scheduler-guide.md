@@ -31,19 +31,15 @@ Use the `@restspec` decorator to define schedules directly on walkers:
 ### Interval Trigger
 
 ```jac
-import from server { restspec }
-
 @restspec(
-    methods=['GET'],
-    path='/cleanup',
     schedule={
-        'trigger': 'interval',
+        'trigger': ScheduleTrigger.INTERVAL,
         'hours': 1,
         'minutes': 30
     }
 )
 walker cleanup_task {
-    can execute with `root entry {
+    can execute with Root entry {
         # Runs every 1 hour and 30 minutes
         print("Cleaning up...");
     }
@@ -62,16 +58,14 @@ Interval options:
 
 ```jac
 @restspec(
-    methods=['POST'],
-    path='/daily-report',
     schedule={
-        'trigger': 'cron',
+        'trigger': ScheduleTrigger.CRON,
         'hour': 9,
         'minute': 0
     }
 )
 walker daily_report {
-    can execute with `root entry {
+    can execute with Root entry {
         # Runs every day at 9:00 AM
         print("Generating daily report...");
     }
@@ -95,15 +89,13 @@ Cron options:
 
 ```jac
 @restspec(
-    methods=['POST'],
-    path='/new-year-task',
     schedule={
-        'trigger': 'date',
+        'trigger': ScheduleTrigger.DATE,
         'run_date': '2025-12-31T23:59:59'
     }
 )
 walker new_year_task {
-    can execute with `root entry {
+    can execute with Root entry {
         print("Happy New Year!");
     }
 }
@@ -231,59 +223,3 @@ Schedule data is persisted using:
 
 1. **MongoDB** (if `database.mongodb_uri` is configured in `jac.toml`)
 2. **In-memory** (fallback, data lost on restart)
-
-## Examples
-
-### Complete Example: Periodic Health Check
-
-```jac
-import from server { restspec }
-import from builtin { ScheduleTrigger }
-
-# Static schedule - runs every 5 minutes
-@restspec(
-    methods=['GET'],
-    path='/health-check',
-    schedule={
-        'trigger': 'interval',
-        'minutes': 5
-    }
-)
-walker health_check {
-    has services: list[str] = ['database', 'cache', 'api'];
-
-    can check_health with `root entry {
-        for service in self.services {
-            print(f"Checking {service}...");
-            # Add actual health check logic
-        }
-    }
-}
-```
-
-### Dynamic Schedule via API
-
-```python
-import requests
-
-# Create a schedule programmatically
-response = requests.post(
-    "http://localhost:8000/schedule/create",
-    headers={"Authorization": "Bearer <token>"},
-    json={
-        "walker_name": "data_sync",
-        "trigger": "cron",
-        "hour": 2,
-        "minute": 0  # Run at 2 AM daily
-    }
-)
-
-schedule_id = response.json()["data"]["schedule"]["id"]
-
-# Pause the schedule
-requests.put(
-    f"http://localhost:8000/schedule/{schedule_id}",
-    headers={"Authorization": "Bearer <token>"},
-    json={"is_active": False}
-)
-```
