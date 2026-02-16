@@ -1,16 +1,5 @@
 """Implementation of Scheduler support for Jac Scale."""
 
-import from datetime { datetime, UTC }
-import from typing { Any }
-import from uuid { uuid4 }
-import logging;
-import from apscheduler.schedulers.background { BackgroundScheduler }
-import from apscheduler.triggers.cron { CronTrigger }
-import from apscheduler.triggers.interval { IntervalTrigger }
-import from apscheduler.triggers.date { DateTrigger }
-
-glob logger = logging.getLogger(__name__);
-
 impl ScheduleJob.postinit -> None {
     now = datetime.now(UTC);
     if not self?._created_at_set or not self._created_at_set {
@@ -51,7 +40,6 @@ impl ScheduleJob.to_dict -> dict[str, Any] {
 }
 
 impl ScheduleJob.from_dict(data: dict[str, Any]) -> ScheduleJob {
-    import from jac_scale.scheduler { ScheduleConfig, ScheduleTrigger }
     config_data = data.get('config', {});
     trigger_str = config_data.get('trigger', 'cron');
     try {
@@ -105,9 +93,6 @@ impl ScheduleStore.postinit -> None {
 
 impl ScheduleStore._init_mongodb -> bool {
     try {
-        import from jac_scale.config_loader { get_scale_config }
-        import from jac_scale.factories.database_factory { _resolve_uri, DatabaseType }
-
         db_config = get_scale_config().get_database_config();
         mongodb_uri = db_config.get('mongodb_uri');
 
@@ -145,7 +130,6 @@ impl ScheduleStore.create(job: ScheduleJob) -> ScheduleJob {
 impl ScheduleStore.get(schedule_id: str) -> ScheduleJob | None {
     if self._use_mongodb and self._db {
         try {
-            import from jac_scale.scheduler { ScheduleJob }
             doc = self._db.find_one(self._collection_name, {'id': schedule_id});
             if doc {
                 return ScheduleJob.from_dict(doc);
@@ -161,7 +145,6 @@ impl ScheduleStore.get(schedule_id: str) -> ScheduleJob | None {
 impl ScheduleStore.list_all(
     username: str | None = None, include_static: bool = True
 ) -> list[ScheduleJob] {
-    import from jac_scale.scheduler { ScheduleJob }
     jobs: list[ScheduleJob] = [];
     if self._use_mongodb and self._db {
         try {
@@ -261,7 +244,6 @@ impl ScheduleStore.update_run_stats(
 }
 
 impl SchedulerManager.postinit -> None {
-    import from jac_scale.scheduler { ScheduleStore }
     self._store = ScheduleStore();
     self._scheduler = None;
     self._walkers = {};
@@ -366,7 +348,6 @@ impl SchedulerManager.get_next_run_time(schedule_id: str) -> datetime | None {
 }
 
 impl SchedulerManager._create_trigger(config: ScheduleConfig) -> Any {
-    import from jac_scale.scheduler { ScheduleTrigger }
     trigger_type = config.trigger;
     if isinstance(trigger_type, str) {
         trigger_type = ScheduleTrigger(trigger_type);
@@ -488,8 +469,6 @@ impl SchedulerManager._inject_jaclib_globals(walker_cls: type) -> None {
 }
 
 impl SchedulerManager.register_static_schedules(walkers: dict[str, type]) -> None {
-    import from jac_scale.scheduler { ScheduleJob, ScheduleConfig, ScheduleTrigger }
-    import from uuid { uuid4 }
     self._walkers.update(walkers);
     for walker_name in walkers {
         walker_cls = walkers[walker_name];
