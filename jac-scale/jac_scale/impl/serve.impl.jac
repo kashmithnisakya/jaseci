@@ -664,12 +664,17 @@ impl JacAPIServer.create_function_callback(
 
 impl JacAPIServer.register_walkers_endpoints -> None {
     for walker_name in self.get_walkers() {
-        # Skip walkers configured for webhook or websocket transport
+        # Skip walkers configured for webhook, websocket, or schedule-only
         protocol = self.get_walker_protocol(walker_name);
         if protocol == APIProtocol.WEBHOOK or protocol == APIProtocol.WEBSOCKET {
             continue;
         }
         walker_cls = self.get_walkers()[walker_name];
+        if walker_cls?.restspec
+        and walker_cls.restspec?.schedule
+        and walker_cls.restspec.schedule {
+            continue;
+        }
         restspec = walker_cls.restspec if walker_cls?.restspec else None;
         spec_method = restspec.method if restspec?.method else HTTPMethod.POST;
         spec_path = restspec.path if restspec?.path else f"/walker/{walker_name}";
@@ -1401,6 +1406,18 @@ impl JacAPIServer.register_dynamic_walker_endpoint -> None {
             return TransportResponse.fail(
                 code='BAD_REQUEST',
                 message=f"Walker '{walker_name}' is configured as a webhook. Use /webhook/{walker_name} instead.",
+                meta=Meta(extra={'http_status': 400})
+            );
+        }
+
+        # Reject schedule-only walkers
+        walker_cls = walkers[walker_name];
+        if walker_cls?.restspec
+        and walker_cls.restspec?.schedule
+        and walker_cls.restspec.schedule {
+            return TransportResponse.fail(
+                code='BAD_REQUEST',
+                message=f"Walker '{walker_name}' is a scheduled walker and cannot be invoked via API.",
                 meta=Meta(extra={'http_status': 400})
             );
         }
