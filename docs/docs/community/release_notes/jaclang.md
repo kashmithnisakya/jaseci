@@ -4,6 +4,8 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 ## jaclang 0.10.3 (Unreleased)
 
+- **Scheduled Walkers support**: Added `ScheduleTrigger` enum and `schedule` parameter to `RestSpecs` for walker scheduling via `@restspec(schedule=...)` decorator.
+
 ## jaclang 0.10.2 (Latest Release)
 
 - **Unified Primitive Codegen Interface**: Added abstract emitter contracts (`primitives.jac`) for all Jac primitive type methods and builtin functions. Each compilation backend (Python, ECMAScript, Native) must implement these interfaces, ensuring consistent primitive support across all code generation pathways. Python, JS, and Native backend implementations provided.

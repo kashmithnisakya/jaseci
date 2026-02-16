@@ -4,6 +4,8 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 ## jac-scale 0.1.10 (Unreleased)
 
+- **Scheduled Walkers**: Added scheduled walker execution via `@restspec(schedule=...)` decorator (static) and REST API endpoints (`/schedule/create`, `/schedule/list`, `/schedule/{id}`, PUT, DELETE) for dynamic scheduling. Supports cron, interval, and one-time date triggers using APScheduler.
+
 ## jac-scale 0.1.9 (Latest Release)
 
 - 1 Minor refactors/changes.
