@@ -3322,13 +3322,12 @@ impl JacAPIServer.register_static_schedules -> None {
             schedule_config = walker_cls.restspec.schedule;
             if schedule_config {
                 scheduled_walkers[walker_name] = walker_cls;
-                logger.info(f"Found scheduled walker: {walker_name}");
             }
         }
     }
     
     if scheduled_walkers {
         self.get_scheduler_manager().register_static_schedules(scheduled_walkers);
-        logger.info(f"Registered {len(scheduled_walkers)} static scheduled walker(s)");
+        logger.info("Scheduler started");
     }
 }

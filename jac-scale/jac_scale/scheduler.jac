@@ -1,10 +1,4 @@
-"""Scheduler support for Jac Scale.
-
-This module provides scheduled walker functionality including:
-- Schedule data models (ScheduleConfig, ScheduleJob)
-- Schedule storage interface (in-memory & MongoDB)
-- APScheduler integration for job execution
-"""
+"""Scheduler support for Jac Scale."""
 
 import from enum { StrEnum }
 import from datetime { datetime }
@@ -18,24 +12,18 @@ enum ScheduleTrigger(StrEnum) {
     CRON = "cron"
 }
 
-"""Schedule configuration for a walker."""
 obj ScheduleConfig {
     has trigger: ScheduleTrigger,
-        # For DATE trigger
         run_date: datetime | None = None,
-        # For INTERVAL trigger
         seconds: int | None = None,
         minutes: int | None = None,
         hours: int | None = None,
         days: int | None = None,
         weeks: int | None = None,
-        # For CRON trigger
         cron: str | None = None,
-        # Timezone
         timezone: str = "UTC";
 }
 
-"""Represents a scheduled job."""
 obj ScheduleJob {
     has id: str,
         walker_name: str,
@@ -58,7 +46,6 @@ obj ScheduleJob {
     def from_dict(data: dict[str, Any]) -> 'ScheduleJob';
 }
 
-"""Pydantic models for API requests/responses."""
 class CreateScheduleRequest(BaseModel) {
     has walker_name: str = Field(..., description='Name of the walker to schedule'),
         trigger: str = Field(..., description='Trigger type: date, interval, or cron'),
@@ -101,7 +88,6 @@ class ScheduleResponse(BaseModel) {
         error_count: int = 0;
 }
 
-"""Schedule storage interface - supports both in-memory and MongoDB."""
 obj ScheduleStore {
     has _schedules: dict[str, ScheduleJob] = {},
         _use_mongodb: bool = False,
@@ -118,11 +104,11 @@ obj ScheduleStore {
     def update_run_stats(schedule_id: str, success: bool, error: str | None = None) -> None;
 }
 
-"""Scheduler manager - integrates with APScheduler."""
 obj SchedulerManager {
     has _store: ScheduleStore by postinit,
         _scheduler: Any | None = None,
         _execution_handler: Any | None = None,
+        _walkers: dict[str, type] by postinit,
         _is_running: bool = False;
 
     def postinit -> None;
@@ -135,6 +121,9 @@ obj SchedulerManager {
     def resume_job(schedule_id: str) -> bool;
     def get_next_run_time(schedule_id: str) -> datetime | None;
     def _create_trigger(config: ScheduleConfig) -> Any;
+    def _run_async(coro: Any) -> Any;
     def _execute_walker(schedule_id: str) -> None;
+    def _execute_system_walker(job: ScheduleJob) -> None;
+    def _inject_jaclib_globals(walker_cls: type) -> None;
     def register_static_schedules(walkers: dict[str, type]) -> None;
 }
