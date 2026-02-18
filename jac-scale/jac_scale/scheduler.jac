@@ -1,6 +1,7 @@
 """Scheduler support for Jac Scale."""
 
 import logging;
+import time;
 import from enum { StrEnum }
 import from datetime { datetime, UTC }
 import from typing { Any }
@@ -125,7 +126,10 @@ obj SchedulerManager {
         _scheduler: Any | None = None,
         _execution_handler: Any | None = None,
         _walkers: dict[str, type] by postinit,
-        _is_running: bool = False;
+        _is_running: bool = False,
+        _execution_timeout: int = 300,
+        _max_retries: int = 3,
+        _retry_backoff_base: float = 2.0;
 
     def postinit -> None;
     def start -> None;

@@ -141,6 +141,10 @@ jobs:
       run: |
         pytest -x -vv -s jac-scale/jac_scale/tests/test_webhook.jac
 
+    - name: Run Scheduling tests (without and with MongoDB)
+      run: |
+        pytest -x -vv -s jac-scale/jac_scale/tests/test_scheduling.jac
+
     - name: Run Memory Hierarchy tests
       run: |
         pytest -x -vv -s jac-scale/jac_scale/tests/test_memory_hierarchy.jac

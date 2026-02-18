@@ -248,6 +248,10 @@ impl SchedulerManager.postinit -> None {
     self._scheduler = None;
     self._walkers = {};
     self._is_running = False;
+    scheduler_config = get_scale_config().get_scheduler_config();
+    self._execution_timeout = scheduler_config.get('execution_timeout', 300);
+    self._max_retries = scheduler_config.get('max_retries', 3);
+    self._retry_backoff_base = scheduler_config.get('retry_backoff_base', 2.0);
 }
 
 impl SchedulerManager.start -> None {
@@ -401,7 +405,7 @@ impl SchedulerManager._run_async(coro: Any) -> Any {
     }
     if loop and loop.is_running() {
         future = asyncio.run_coroutine_threadsafe(coro, loop);
-        return future.result(timeout=300);
+        return future.result(timeout=self._execution_timeout);
     } else {
         return asyncio.run(coro);
     }
@@ -409,26 +413,46 @@ impl SchedulerManager._run_async(coro: Any) -> Any {
 
 impl SchedulerManager._execute_walker(schedule_id: str) -> None {
     job = self._store.get(schedule_id);
-    if not job or not self._execution_handler {
+    if not job {
+        logger.warning(f"Schedule '{schedule_id}' not found, skipping execution.");
         return;
     }
-    try {
-        if job.username == "__system__" {
-            self._execute_system_walker(job);
-        } else {
-            self._run_async(
-                self._execution_handler.spawn_walker(
-                    name=job.walker_name,
-                    fields=job.walker_fields,
-                    username=job.username
-                )
-            );
-        }
-        self._store.update_run_stats(schedule_id, success=True);
-    } except Exception as e {
-        logger.error(f"Failed to execute walker {job.walker_name}: {e}");
-        self._store.update_run_stats(schedule_id, success=False, error=str(e));
+    if not self._execution_handler {
+        logger.warning(f"No execution handler configured, skipping walker '{job.walker_name}'.");
+        return;
     }
+    last_error: Exception | None = None;
+    for attempt in range(self._max_retries) {
+        try {
+            if job.username == "__system__" {
+                self._execute_system_walker(job);
+            } else {
+                self._run_async(
+                    self._execution_handler.spawn_walker(
+                        name=job.walker_name,
+                        fields=job.walker_fields,
+                        username=job.username
+                    )
+                );
+            }
+            self._store.update_run_stats(schedule_id, success=True);
+            return;
+        } except Exception as e {
+            last_error = e;
+            if attempt < self._max_retries - 1 {
+                backoff = self._retry_backoff_base ** attempt;
+                logger.warning(
+                    f"Walker '{job.walker_name}' failed (attempt {attempt + 1}/{self._max_retries}), "
+                    f"retrying in {backoff:.1f}s: {e}"
+                );
+                time.sleep(backoff);
+            }
+        }
+    }
+    logger.error(
+        f"Walker '{job.walker_name}' failed after {self._max_retries} attempts: {last_error}"
+    );
+    self._store.update_run_stats(schedule_id, success=False, error=str(last_error));
 }
 
 impl SchedulerManager._execute_system_walker(job: ScheduleJob) -> None {

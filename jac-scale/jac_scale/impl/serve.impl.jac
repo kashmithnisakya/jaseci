@@ -142,7 +142,13 @@ impl JacAPIServer.start(
     if on_ready {
         on_ready();
     }
-    self.server.run_server(port=self.port);
+    try {
+        self.server.run_server(port=self.port);
+    } finally {
+        if self._scheduler_manager is not None {
+            self._scheduler_manager.stop();
+        }
+    }
 }
 
 """Configure OpenAPI security scheme to only apply to walker endpoints that require auth."""

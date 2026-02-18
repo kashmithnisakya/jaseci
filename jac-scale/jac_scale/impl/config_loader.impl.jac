@@ -83,7 +83,12 @@ impl JacScaleConfig.get_default_config(self: JacScaleConfig) -> dict[str, Any] {
                 10.0
             ]
         },
-        'scheduler': {'enabled': True}
+        'scheduler': {
+            'enabled': True,
+            'execution_timeout': 300,
+            'max_retries': 3,
+            'retry_backoff_base': 2.0
+        }
     };
 }
 
@@ -229,7 +234,12 @@ impl JacScaleConfig.get_metrics_config(self: JacScaleConfig) -> dict[str, Any] {
 impl JacScaleConfig.get_scheduler_config(self: JacScaleConfig) -> dict[str, Any] {
     config = self.load();
     scheduler_config = config.get('scheduler', {});
-    return {'enabled': scheduler_config.get('enabled', True)};
+    return {
+        'enabled': scheduler_config.get('enabled', True),
+        'execution_timeout': scheduler_config.get('execution_timeout', 300),
+        'max_retries': scheduler_config.get('max_retries', 3),
+        'retry_backoff_base': scheduler_config.get('retry_backoff_base', 2.0)
+    };
 }
 
 """Get or create the global JacScaleConfig instance."""
