@@ -32,7 +32,7 @@ def get_free_port -> int {
 def _extract_data(
     json_response: dict[str, Any] | list[Any]
 ) -> dict[str, Any] | list[Any] {
-    if isinstance(json_response, list) and len(json_response) == 2 {
+    if isinstance(json_response, list) and len(cast(list, json_response)) == 2 {
         body: dict[str, Any] = json_response[1];
         json_response = body;
     }
