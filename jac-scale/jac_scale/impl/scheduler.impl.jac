@@ -92,23 +92,38 @@ impl ScheduleStore.postinit -> None {
 }
 
 impl ScheduleStore._init_mongodb -> bool {
-    try {
-        db_config = get_scale_config().get_database_config();
-        mongodb_uri = db_config.get('mongodb_uri');
-
-        if mongodb_uri {
+    db_config = get_scale_config().get_database_config();
+    mongodb_uri = db_config.get('mongodb_uri');
+    if not mongodb_uri {
+        return False;
+    }
+    scheduler_config = get_scale_config().get_scheduler_config();
+    max_retries = scheduler_config.get('mongodb_connect_retries', 5);
+    retry_delay = scheduler_config.get('mongodb_connect_retry_delay', 3);
+    for attempt in range(max_retries) {
+        try {
             import from jac_scale.db { get_mongo_client, Db }
             import from jac_scale.factories.database_factory { DatabaseType }
             client = get_mongo_client(mongodb_uri);
             self._db = Db(
                 client=client, db_name='jac_db', db_type=DatabaseType.MONGODB
             );
+            logger.info("MongoDB connected successfully for schedule storage.");
             return True;
+        } except Exception as e {
+            if attempt < max_retries - 1 {
+                logger.warning(
+                    f"MongoDB connection attempt {attempt + 1}/{max_retries} failed: {e}. "
+                    f"Retrying in {retry_delay}s..."
+                );
+                time.sleep(retry_delay);
+            } else {
+                logger.error(
+                    f"MongoDB connection failed after {max_retries} attempts: {e}. "
+                    f"Falling back to in-memory storage."
+                );
+            }
         }
-    } except Exception as e {
-        logger.warning(
-            f"MongoDB init failed for schedules: {e}. Using in-memory storage."
-        );
     }
     return False;
 }
@@ -460,10 +475,6 @@ impl SchedulerManager._execute_walker(schedule_id: str) -> None {
 impl SchedulerManager._execute_system_walker(job: ScheduleJob) -> None {
     if not self._execution_handler {
         raise Exception("No execution handler configured") ;
-    }
-    user_manager = self._execution_handler.execution_manager.user_manager;
-    if not user_manager.user_exists(job.username) {
-        user_manager.create_user(job.username, '__no_password__');
     }
     self._run_async(
         self._execution_handler.spawn_walker(

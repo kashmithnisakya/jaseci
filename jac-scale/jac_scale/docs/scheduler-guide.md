@@ -16,10 +16,12 @@ Enable or disable the scheduler in your `jac.toml`:
 
 ```toml
 [plugins.scale.scheduler]
-enabled = true              # default
-execution_timeout = 300     # default, in seconds (5 minutes)
-max_retries = 3             # default, retry failed walker executions
-retry_backoff_base = 2.0    # default, base for exponential backoff (2^attempt seconds)
+enabled = true                  # default
+execution_timeout = 300         # default, in seconds (5 minutes)
+max_retries = 3                 # default, retry failed walker executions
+retry_backoff_base = 2.0        # default, base for exponential backoff (2^attempt seconds)
+mongodb_connect_retries = 5     # default, retry MongoDB connection at startup
+mongodb_connect_retry_delay = 3 # default, seconds between MongoDB connection retries
 ```
 
 ### Options
@@ -30,6 +32,8 @@ retry_backoff_base = 2.0    # default, base for exponential backoff (2^attempt s
 | `execution_timeout` | int | `300` | Maximum time (in seconds) to wait for a scheduled walker to finish execution. If a walker exceeds this timeout, a `TimeoutError` is raised. |
 | `max_retries` | int | `3` | Number of times to retry a failed walker execution before giving up. Set to `1` to disable retries. |
 | `retry_backoff_base` | float | `2.0` | Base for exponential backoff between retries. Wait time = `base ^ attempt` seconds (e.g., 1s, 2s, 4s with base 2.0). |
+| `mongodb_connect_retries` | int | `5` | Number of times to retry connecting to MongoDB at startup before falling back to in-memory storage. |
+| `mongodb_connect_retry_delay` | int | `3` | Seconds to wait between MongoDB connection retry attempts. |
 
 When `enabled = false`:
 

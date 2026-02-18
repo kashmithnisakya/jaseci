@@ -148,6 +148,7 @@ impl JacAPIServer.start(
     self.register_root_asset_endpoint();
     self._configure_openapi_security();
     self.user_manager.create_user('__guest__', '__no_password__');
+    self.user_manager.create_user('__system__', '__no_password__');
     # Call the ready callback (e.g., to print startup banner)
     if on_ready {
         on_ready();
