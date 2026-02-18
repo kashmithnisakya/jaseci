@@ -418,7 +418,9 @@ impl SchedulerManager._execute_walker(schedule_id: str) -> None {
         return;
     }
     if not self._execution_handler {
-        logger.warning(f"No execution handler configured, skipping walker '{job.walker_name}'.");
+        logger.warning(
+            f"No execution handler configured, skipping walker '{job.walker_name}'."
+        );
         return;
     }
     last_error: Exception | None = None;
