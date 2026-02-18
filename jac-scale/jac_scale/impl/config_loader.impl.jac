@@ -89,7 +89,8 @@ impl JacScaleConfig.get_default_config(self: JacScaleConfig) -> dict[str, Any] {
             'max_retries': 3,
             'retry_backoff_base': 2.0,
             'mongodb_connect_retries': 5,
-            'mongodb_connect_retry_delay': 3
+            'mongodb_connect_retry_delay': 3,
+            'system_account_password': '__no_password__'
         }
     };
 }
@@ -244,6 +245,9 @@ impl JacScaleConfig.get_scheduler_config(self: JacScaleConfig) -> dict[str, Any]
         'mongodb_connect_retries': scheduler_config.get('mongodb_connect_retries', 5),
         'mongodb_connect_retry_delay': scheduler_config.get(
             'mongodb_connect_retry_delay', 3
+        ),
+        'system_account_password': scheduler_config.get(
+            'system_account_password', '__no_password__'
         )
     };
 }
