@@ -6,6 +6,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 - **Scheduled Walkers**: Added scheduled walker execution via `@restspec(schedule=...)` decorator (static) and REST API endpoints (`/schedule/create`, `/schedule/list`, `/schedule/{id}`, `PUT`, `DELETE`) for dynamic scheduling. Supports cron, interval, and one-time date triggers using APScheduler.
 - **support horizontal scaling**:  based on average cpu usage k8s pods are horizontally scaled
+- **Client Build Error Diagnostics**: Build errors now display formatted diagnostic output with error codes, source snippets, and quick fix suggestions instead of raw Vite/Rollup output. Uses the `jac-client` diagnostic engine for consistent error formatting across `jac start` and `jac build`.
 
 ## jac-scale 0.1.9 (Latest Release)
 
