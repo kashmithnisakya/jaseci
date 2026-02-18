@@ -261,6 +261,7 @@ test_restspec.jac
 test_sso.jac
 test_validate_md_files.jac
 test_webhook.jac
+test_scheduling.jac
 top_contributors.jac
 top_voices.jac
 validate_docs_code.jac
