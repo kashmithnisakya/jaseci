@@ -129,30 +129,31 @@ impl ScheduleStore._init_mongodb -> bool {
 }
 
 impl ScheduleStore.create(job: ScheduleJob) -> ScheduleJob {
-    if self._use_mongodb and self._db {
-        try {
-            self._db.insert_one(self._collection_name, job.to_dict());
-        } except Exception as e {
-            logger.error(f"Failed to save schedule to MongoDB: {e}");
-            self._schedules[job.id] = job;
-        }
-    } else {
+    if not (self._use_mongodb and self._db) {
+        self._schedules[job.id] = job;
+        return job;
+    }
+    try {
+        self._db.insert_one(self._collection_name, job.to_dict());
+    } except Exception as e {
+        logger.error(f"Failed to save schedule to MongoDB: {e}");
         self._schedules[job.id] = job;
     }
     return job;
 }
 
 impl ScheduleStore.get(schedule_id: str) -> ScheduleJob | None {
-    if self._use_mongodb and self._db {
-        try {
-            doc = self._db.find_one(self._collection_name, {'id': schedule_id});
-            if doc {
-                return ScheduleJob.from_dict(doc);
-            }
-            return None;
-        } except Exception as e {
-            logger.error(f"Failed to get schedule from MongoDB: {e}");
+    if not (self._use_mongodb and self._db) {
+        return self._schedules.get(schedule_id);
+    }
+    try {
+        doc = self._db.find_one(self._collection_name, {'id': schedule_id});
+        if doc {
+            return ScheduleJob.from_dict(doc);
         }
+        return None;
+    } except Exception as e {
+        logger.error(f"Failed to get schedule from MongoDB: {e}");
     }
     return self._schedules.get(schedule_id);
 }
@@ -160,7 +161,6 @@ impl ScheduleStore.get(schedule_id: str) -> ScheduleJob | None {
 impl ScheduleStore.list_all(
     username: str | None = None, include_static: bool = True
 ) -> list[ScheduleJob] {
-    jobs: list[ScheduleJob] = [];
     if self._use_mongodb and self._db {
         try {
             filter_query: dict[str, Any] = {};
@@ -171,14 +171,12 @@ impl ScheduleStore.list_all(
                 filter_query['is_static'] = False;
             }
             docs = self._db.find(self._collection_name, filter_query);
-            for doc in docs {
-                jobs.append(ScheduleJob.from_dict(doc));
-            }
-            return jobs;
+            return [ScheduleJob.from_dict(doc) for doc in docs];
         } except Exception as e {
             logger.error(f"Failed to list schedules from MongoDB: {e}");
         }
     }
+    jobs: list[ScheduleJob] = [];
     for job in self._schedules.values() {
         if username and job.username != username {
             continue;
@@ -204,16 +202,16 @@ impl ScheduleStore.update(
         }
     }
     job.updated_at = datetime.now(UTC);
-    if self._use_mongodb and self._db {
-        try {
-            self._db.update_one(
-                self._collection_name, {'id': schedule_id}, {'$set': job.to_dict()}
-            );
-        } except Exception as e {
-            logger.error(f"Failed to update schedule in MongoDB: {e}");
-        }
-    } else {
+    if not (self._use_mongodb and self._db) {
         self._schedules[schedule_id] = job;
+        return job;
+    }
+    try {
+        self._db.update_one(
+            self._collection_name, {'id': schedule_id}, {'$set': job.to_dict()}
+        );
+    } except Exception as e {
+        logger.error(f"Failed to update schedule in MongoDB: {e}");
     }
     return job;
 }
@@ -286,10 +284,11 @@ impl SchedulerManager.start -> None {
 }
 
 impl SchedulerManager.stop -> None {
-    if self._scheduler and self._is_running {
-        self._scheduler.shutdown(False);
-        self._is_running = False;
+    if not (self._scheduler and self._is_running) {
+        return;
     }
+    self._scheduler.shutdown(False);
+    self._is_running = False;
 }
 
 impl SchedulerManager.add_job(job: ScheduleJob) -> str {
@@ -303,18 +302,19 @@ impl SchedulerManager.add_job(job: ScheduleJob) -> str {
 impl SchedulerManager._add_job_to_scheduler(job: ScheduleJob) -> None {
     try {
         trigger = self._create_trigger(job.config);
-        if trigger {
-            self._scheduler.add_job(
-                func=self._execute_walker,
-                trigger=trigger,
-                args=[job.id],
-                id=job.id,
-                replace_existing=True
-            );
-            apscheduler_job = self._scheduler.get_job(job.id);
-            if apscheduler_job and apscheduler_job.next_run_time {
-                self._store.update(job.id, {'next_run': apscheduler_job.next_run_time});
-            }
+        if not trigger {
+            return;
+        }
+        self._scheduler.add_job(
+            func=self._execute_walker,
+            trigger=trigger,
+            args=[job.id],
+            id=job.id,
+            replace_existing=True
+        );
+        apscheduler_job = self._scheduler.get_job(job.id);
+        if apscheduler_job and apscheduler_job.next_run_time {
+            self._store.update(job.id, {'next_run': apscheduler_job.next_run_time});
         }
     } except Exception as e {
         logger.error(f"Failed to schedule job {job.id}: {e}");
@@ -331,39 +331,42 @@ impl SchedulerManager.remove_job(schedule_id: str) -> bool {
 }
 
 impl SchedulerManager.pause_job(schedule_id: str) -> bool {
-    if self._scheduler {
-        try {
-            self._scheduler.pause_job(schedule_id);
-            self._store.update(schedule_id, {'is_active': False});
-            return True;
-        } except Exception as e {
-            logger.error(f"Failed to pause job {schedule_id}: {e}");
-        }
+    if not self._scheduler {
+        return False;
+    }
+    try {
+        self._scheduler.pause_job(schedule_id);
+        self._store.update(schedule_id, {'is_active': False});
+        return True;
+    } except Exception as e {
+        logger.error(f"Failed to pause job {schedule_id}: {e}");
     }
     return False;
 }
 
 impl SchedulerManager.resume_job(schedule_id: str) -> bool {
-    if self._scheduler {
-        try {
-            self._scheduler.resume_job(schedule_id);
-            self._store.update(schedule_id, {'is_active': True});
-            return True;
-        } except Exception as e {
-            logger.error(f"Failed to resume job {schedule_id}: {e}");
-        }
+    if not self._scheduler {
+        return False;
+    }
+    try {
+        self._scheduler.resume_job(schedule_id);
+        self._store.update(schedule_id, {'is_active': True});
+        return True;
+    } except Exception as e {
+        logger.error(f"Failed to resume job {schedule_id}: {e}");
     }
     return False;
 }
 
 impl SchedulerManager.get_next_run_time(schedule_id: str) -> datetime | None {
-    if self._scheduler {
-        job = self._scheduler.get_job(schedule_id);
-        if job {
-            return job.next_run_time;
-        }
+    if not self._scheduler {
+        return None;
     }
-    return None;
+    job = self._scheduler.get_job(schedule_id);
+    if not job {
+        return None;
+    }
+    return job.next_run_time;
 }
 
 impl SchedulerManager._create_trigger(config: ScheduleConfig) -> Any {
@@ -372,47 +375,56 @@ impl SchedulerManager._create_trigger(config: ScheduleConfig) -> Any {
         trigger_type = ScheduleTrigger(trigger_type);
     }
     if trigger_type == ScheduleTrigger.CRON {
-        if config.cron {
-            parts = config.cron.split();
-            if len(parts) >= 5 {
-                return CronTrigger(
-                    minute=parts[0],
-                    hour=parts[1],
-                    day=parts[2],
-                    month=parts[3],
-                    day_of_week=parts[4],
-                    timezone=config.timezone
-                );
-            }
-        }
-    } elif trigger_type == ScheduleTrigger.INTERVAL {
-        kwargs: dict[str, Any] = {'timezone': config.timezone};
-        if config.seconds {
-            kwargs['seconds'] = config.seconds;
-        }
-        if config.minutes {
-            kwargs['minutes'] = config.minutes;
-        }
-        if config.hours {
-            kwargs['hours'] = config.hours;
-        }
-        if config.days {
-            kwargs['days'] = config.days;
-        }
-        if config.weeks {
-            kwargs['weeks'] = config.weeks;
-        }
-        return IntervalTrigger(**kwargs);
-    } elif trigger_type == ScheduleTrigger.DATE {
-        if config.run_date {
-            return DateTrigger(run_date=config.run_date, timezone=config.timezone);
-        }
+        return self._create_cron_trigger(config);
+    }
+    if trigger_type == ScheduleTrigger.INTERVAL {
+        return self._create_interval_trigger(config);
+    }
+    if trigger_type == ScheduleTrigger.DATE and config.run_date {
+        return DateTrigger(run_date=config.run_date, timezone=config.timezone);
     }
     return None;
 }
 
+impl SchedulerManager._create_cron_trigger(config: ScheduleConfig) -> Any {
+    if not config.cron {
+        return None;
+    }
+    parts = config.cron.split();
+    if len(parts) < 5 {
+        return None;
+    }
+    return CronTrigger(
+        minute=parts[0],
+        hour=parts[1],
+        day=parts[2],
+        month=parts[3],
+        day_of_week=parts[4],
+        timezone=config.timezone
+    );
+}
+
+impl SchedulerManager._create_interval_trigger(config: ScheduleConfig) -> IntervalTrigger {
+    kwargs: dict[str, Any] = {'timezone': config.timezone};
+    if config.seconds {
+        kwargs['seconds'] = config.seconds;
+    }
+    if config.minutes {
+        kwargs['minutes'] = config.minutes;
+    }
+    if config.hours {
+        kwargs['hours'] = config.hours;
+    }
+    if config.days {
+        kwargs['days'] = config.days;
+    }
+    if config.weeks {
+        kwargs['weeks'] = config.weeks;
+    }
+    return IntervalTrigger(**kwargs);
+}
+
 impl SchedulerManager._run_async(coro: Any) -> Any {
-    import asyncio;
     try {
         loop = asyncio.get_running_loop();
     } except RuntimeError {
@@ -421,9 +433,8 @@ impl SchedulerManager._run_async(coro: Any) -> Any {
     if loop and loop.is_running() {
         future = asyncio.run_coroutine_threadsafe(coro, loop);
         return future.result(timeout=self._execution_timeout);
-    } else {
-        return asyncio.run(coro);
     }
+    return asyncio.run(coro);
 }
 
 impl SchedulerManager._execute_walker(schedule_id: str) -> None {
@@ -441,17 +452,7 @@ impl SchedulerManager._execute_walker(schedule_id: str) -> None {
     last_error: Exception | None = None;
     for attempt in range(self._max_retries) {
         try {
-            if job.username == "__system__" {
-                self._execute_system_walker(job);
-            } else {
-                self._run_async(
-                    self._execution_handler.spawn_walker(
-                        name=job.walker_name,
-                        fields=job.walker_fields,
-                        username=job.username
-                    )
-                );
-            }
+            self._spawn_walker(job);
             self._store.update_run_stats(schedule_id, success=True);
             return;
         } except Exception as e {
@@ -472,10 +473,7 @@ impl SchedulerManager._execute_walker(schedule_id: str) -> None {
     self._store.update_run_stats(schedule_id, success=False, error=str(last_error));
 }
 
-impl SchedulerManager._execute_system_walker(job: ScheduleJob) -> None {
-    if not self._execution_handler {
-        raise Exception("No execution handler configured") ;
-    }
+impl SchedulerManager._spawn_walker(job: ScheduleJob) -> None {
     self._run_async(
         self._execution_handler.spawn_walker(
             job.walker_name, (job.walker_fields or {}), job.username
@@ -490,12 +488,13 @@ impl SchedulerManager._inject_jaclib_globals(walker_cls: type) -> None {
         getattr(walker_cls, '_jac_exit_funcs_', [])
     ] {
         for func in func_list {
-            if func?.func and func.func?.__globals__ {
-                func_globals = func.func.__globals__;
-                for name in dir(jaclib) {
-                    if not name.startswith('_') and name not in func_globals {
-                        func_globals[name] = getattr(jaclib, name);
-                    }
+            if not (func?.func and func.func?.__globals__) {
+                continue;
+            }
+            func_globals = func.func.__globals__;
+            for name in dir(jaclib) {
+                if not name.startswith('_') and name not in func_globals {
+                    func_globals[name] = getattr(jaclib, name);
                 }
             }
             try {

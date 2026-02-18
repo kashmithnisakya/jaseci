@@ -141,9 +141,11 @@ obj SchedulerManager {
     def resume_job(schedule_id: str) -> bool;
     def get_next_run_time(schedule_id: str) -> datetime | None;
     def _create_trigger(config: ScheduleConfig) -> Any;
+    def _create_cron_trigger(config: ScheduleConfig) -> Any;
+    def _create_interval_trigger(config: ScheduleConfig) -> IntervalTrigger;
     def _run_async(coro: Any) -> Any;
     def _execute_walker(schedule_id: str) -> None;
-    def _execute_system_walker(job: ScheduleJob) -> None;
+    def _spawn_walker(job: ScheduleJob) -> None;
     def _inject_jaclib_globals(walker_cls: type) -> None;
     def register_static_schedules(walkers: dict[str, type]) -> None;
 }
