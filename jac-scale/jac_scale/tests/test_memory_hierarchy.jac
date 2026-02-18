@@ -198,8 +198,8 @@ test "read and write" {
         post_request(base_url, "/walker/GetAllTasks", {}, token);
 
         redis_size_after_task_read = redis_client.dbsize();
-        assert redis_size_after_task_read == 7 , (
-            "Redis should have 7 entries (super root, guest user, user, 2 task nodes, 2 edges)"
+        assert redis_size_after_task_read == 8 , (
+            "Redis should have 8 entries (super root, guest user, system user, user, 2 task nodes, 2 edges)"
         );
     } finally {
         # Teardown
