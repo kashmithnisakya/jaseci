@@ -404,7 +404,9 @@ impl SchedulerManager._create_cron_trigger(config: ScheduleConfig) -> Any {
     );
 }
 
-impl SchedulerManager._create_interval_trigger(config: ScheduleConfig) -> IntervalTrigger {
+impl SchedulerManager._create_interval_trigger(
+    config: ScheduleConfig
+) -> IntervalTrigger {
     kwargs: dict[str, Any] = {'timezone': config.timezone};
     if config.seconds {
         kwargs['seconds'] = config.seconds;

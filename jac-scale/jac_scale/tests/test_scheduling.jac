@@ -180,7 +180,6 @@ def _stop_server(server_process: subprocess.Popen | None) -> None {
 # =========================================================================
 # Shared schedule test functions
 # =========================================================================
-
 """Register a user and return auth token."""
 def _get_auth_token(base_url: str) -> str {
     username = f"sched_{uuid.uuid4().hex[:8]}";
@@ -201,7 +200,7 @@ def run_schedule_list_test(base_url: str) -> None {
         headers={"Authorization": f"Bearer {token}"},
         timeout=10
     );
-    assert response.status_code == 200, (
+    assert response.status_code == 200 , (
         f"Expected 200, got {response.status_code}: {response.text}"
     );
     data = response.json();
@@ -214,15 +213,11 @@ def run_schedule_create_interval_test(base_url: str) -> None {
     token = _get_auth_token(base_url);
     response = requests.post(
         f"{base_url}/schedule/create",
-        json={
-            "walker_name": "regular_task",
-            "trigger": "interval",
-            "seconds": 60
-        },
+        json={"walker_name": "regular_task", "trigger": "interval", "seconds": 60},
         headers={"Authorization": f"Bearer {token}"},
         timeout=10
     );
-    assert response.status_code == 201, (
+    assert response.status_code == 201 , (
         f"Expected 201, got {response.status_code}: {response.text}"
     );
     data = response.json();
@@ -235,11 +230,7 @@ def run_schedule_create_cron_test(base_url: str) -> None {
     token = _get_auth_token(base_url);
     response = requests.post(
         f"{base_url}/schedule/create",
-        json={
-            "walker_name": "regular_task",
-            "trigger": "cron",
-            "cron": "0 * * * *"
-        },
+        json={"walker_name": "regular_task", "trigger": "cron", "cron": "0 * * * *"},
         headers={"Authorization": f"Bearer {token}"},
         timeout=10
     );
@@ -272,11 +263,7 @@ def run_schedule_get_by_id_test(base_url: str) -> None {
     token = _get_auth_token(base_url);
     create_response = requests.post(
         f"{base_url}/schedule/create",
-        json={
-            "walker_name": "regular_task",
-            "trigger": "interval",
-            "minutes": 10
-        },
+        json={"walker_name": "regular_task", "trigger": "interval", "minutes": 10},
         headers={"Authorization": f"Bearer {token}"},
         timeout=10
     );
@@ -298,11 +285,7 @@ def run_schedule_update_test(base_url: str) -> None {
     token = _get_auth_token(base_url);
     create_response = requests.post(
         f"{base_url}/schedule/create",
-        json={
-            "walker_name": "regular_task",
-            "trigger": "interval",
-            "seconds": 30
-        },
+        json={"walker_name": "regular_task", "trigger": "interval", "seconds": 30},
         headers={"Authorization": f"Bearer {token}"},
         timeout=10
     );
@@ -324,11 +307,7 @@ def run_schedule_delete_test(base_url: str) -> None {
     token = _get_auth_token(base_url);
     create_response = requests.post(
         f"{base_url}/schedule/create",
-        json={
-            "walker_name": "regular_task",
-            "trigger": "interval",
-            "seconds": 30
-        },
+        json={"walker_name": "regular_task", "trigger": "interval", "seconds": 30},
         headers={"Authorization": f"Bearer {token}"},
         timeout=10
     );
@@ -357,10 +336,7 @@ def run_schedule_get_nonexistent_test(base_url: str) -> None {
 
 """Test that schedule endpoints require authentication."""
 def run_schedule_requires_auth_test(base_url: str) -> None {
-    response = requests.get(
-        f"{base_url}/schedule/list",
-        timeout=10
-    );
+    response = requests.get(f"{base_url}/schedule/list", timeout=10);
     assert response.status_code in (401, 422);
 }
 
@@ -374,7 +350,6 @@ glob sched_fixtures_dir:
 # =========================================================================
 # Test class 1: Schedule tests WITHOUT MongoDB (file-based storage)
 # =========================================================================
-
 test "schedule without mongo - list endpoint" {
     port = get_free_port();
     base_url = f"http://localhost:{port}";
@@ -531,7 +506,6 @@ test "schedule without mongo - requires auth" {
 # =========================================================================
 # Test class 2: Schedule tests WITH MongoDB (via testcontainers)
 # =========================================================================
-
 test "schedule with mongo - list endpoint" {
     port = get_free_port();
     base_url = f"http://localhost:{port}";

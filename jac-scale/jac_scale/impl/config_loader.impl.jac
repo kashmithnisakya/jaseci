@@ -242,7 +242,9 @@ impl JacScaleConfig.get_scheduler_config(self: JacScaleConfig) -> dict[str, Any]
         'max_retries': scheduler_config.get('max_retries', 3),
         'retry_backoff_base': scheduler_config.get('retry_backoff_base', 2.0),
         'mongodb_connect_retries': scheduler_config.get('mongodb_connect_retries', 5),
-        'mongodb_connect_retry_delay': scheduler_config.get('mongodb_connect_retry_delay', 3)
+        'mongodb_connect_retry_delay': scheduler_config.get(
+            'mongodb_connect_retry_delay', 3
+        )
     };
 }
 
