@@ -69,6 +69,8 @@ def _jac_graph_json(file: (str | None) = None) -> str;
 
 def restspec(**specs: Any) -> Callable;
 
+def schedule(**kwargs: Any) -> Callable;
+
 glob __all__ = [
          'printgraph',
          'jid',
@@ -84,5 +86,6 @@ glob __all__ = [
          'ConnectPerm',
          'WritePerm',
          'restspec',
+         'schedule',
          'APIProtocol'
      ];

@@ -1081,6 +1081,7 @@ impl ExecutionHandler.spawn_walker(
 
 """Initialize the API server."""
 impl JacAPIServer.postinit -> None {
+    import from jaclang.runtimelib.scheduler { Scheduler }
     self.user_manager = Jac.get_user_manager(base_path=self.base_path);
     self.introspector = ModuleIntrospector(self.module_name, self.base_path);
     self.execution_manager = ExecutionManager(
@@ -1101,6 +1102,7 @@ impl JacAPIServer.postinit -> None {
         execution_manager=self.execution_manager,
         user_manager=self.user_manager
     );
+    self.scheduler = Scheduler.instance();
     # Only create real server if port > 0 (port=0 is test mode - no socket binding)
     if self.port > 0 {
         self.server = Jac.create_server(self, '0.0.0.0', self.port);
@@ -1615,6 +1617,18 @@ impl JacAPIServer.start(
 ) -> None {
     import from pathlib { Path }
     self.introspector.load();
+    # Register and start all scheduled walkers and functions
+    for (name, walker_cls) in self.introspector.get_walkers().items() {
+        if hasattr(walker_cls, 'schedule_spec') {
+            self.scheduler.register(name, walker_cls, walker_cls.schedule_spec, True);
+        }
+    }
+    for (name, func) in self.introspector.get_functions().items() {
+        if hasattr(func, 'schedule_spec') {
+            self.scheduler.register(name, func, func.schedule_spec, False);
+        }
+    }
+    self.scheduler.start();
     # Eagerly build client bundle if there are client exports (skip in dev mode or no_client mode)
     bundle_error = None;
     if not dev and not no_client {
@@ -1697,6 +1711,8 @@ impl JacAPIServer.start(
             httpd.serve_forever();
         } except KeyboardInterrupt {
             console.print('\nShutting down server...');
+        } finally {
+            self.scheduler.stop();
         }
     }
 }
