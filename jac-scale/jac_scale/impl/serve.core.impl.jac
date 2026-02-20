@@ -728,7 +728,9 @@ impl JacAPIServerCore.create_api_key(
 }
 
 """List all API keys for the authenticated user."""
-impl JacAPIServerCore.list_api_keys(Authorization: str | None = None) -> TransportResponse {
+impl JacAPIServerCore.list_api_keys(
+    Authorization: str | None = None
+) -> TransportResponse {
     # Validate JWT token to get username
     token: str | None = None;
     if Authorization and Authorization.startswith('Bearer ') {

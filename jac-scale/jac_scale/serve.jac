@@ -58,8 +58,8 @@ obj JacAPIServerCore {
         no_client: bool = False,
         on_ready: Callable[[], None] | None = None
     ) -> None;
-    def _configure_openapi_security -> None;
 
+    def _configure_openapi_security -> None;
     # User/Auth endpoints
     def login(username: str, password: str) -> TransportResponse;
     def register_login_endpoint -> None;
@@ -70,28 +70,30 @@ obj JacAPIServerCore {
     def update_username(
         current_username: str, new_username: str, Authorization: (str | None) = None
     ) -> TransportResponse;
+
     def update_password(
         username: str,
         current_password: str,
         new_password: str,
         Authorization: (str | None) = None
     ) -> TransportResponse;
+
     def register_update_username_endpoint -> None;
     def register_update_password_endpoint -> None;
     def register_sso_endpoints -> None;
-
     # HMR support
     def enable_hmr(hot_reloader: Any) -> None;
-
     # API key management
     def get_api_key_manager -> ApiKeyManager;
     def create_api_key(
         name: str, expiry_days: int | None = None, Authorization: str | None = None
     ) -> TransportResponse;
+
     def list_api_keys(Authorization: str | None = None) -> TransportResponse;
     def revoke_api_key(
         api_key_id: str, Authorization: str | None = None
     ) -> TransportResponse;
+
     def register_api_key_endpoints -> None;
 }
 
@@ -102,13 +104,16 @@ obj JacAPIServerEndpoints {
     def create_walker_callback(
         walker_name: str, has_node_param: bool = False
     ) -> Callable[..., (TransportResponse | StreamingResponse)];
+
     def create_walker_parameters(
         walker_name: str, invoke_on_root: bool, method: HTTPMethod = HTTPMethod.POST
     ) -> list[APIParameter];
 
     # Function endpoints
     def register_functions_endpoints -> None;
-    def create_function_callback(func_name: str) -> Callable[..., (TransportResponse | StreamingResponse)];
+    def create_function_callback(
+        func_name: str
+    ) -> Callable[..., (TransportResponse | StreamingResponse)];
     def create_function_parameters(
         func_name: str, method: HTTPMethod = HTTPMethod.POST
     ) -> list[APIParameter];
@@ -118,12 +123,10 @@ obj JacAPIServerEndpoints {
     def register_webhook_endpoints -> None;
     def create_webhook_callback(walker_name: str) -> Callable[..., TransportResponse];
     def create_webhook_parameters(walker_name: str) -> list[APIParameter];
-
     # WebSocket endpoints
     def get_ws_manager -> WebSocketConnectionManager;
     def create_websocket_handler(walker_name: str) -> Callable;
     def register_websocket_endpoints -> None;
-
     # Dynamic HMR endpoints
     def register_dynamic_walker_endpoint -> None;
     def register_dynamic_function_endpoint -> None;
@@ -139,16 +142,13 @@ obj JacAPIServerStatic {
     def register_static_file_endpoint -> None;
     def serve_client_js_callback -> Callable[..., Response];
     def register_client_js_endpoint -> None;
-
     # Page rendering
     def render_page_callback -> Callable[..., HTMLResponse];
     def render_base_route_callback(app_name: str) -> Callable[..., HTMLResponse];
     def register_page_endpoint -> None;
-
     # Root asset serving
     def serve_root_asset(file_path: str) -> Response;
     def register_root_asset_endpoint -> None;
-
     # Graph visualization
     def register_graph_endpoint -> None;
     def serve_graph_page -> HTMLResponse;

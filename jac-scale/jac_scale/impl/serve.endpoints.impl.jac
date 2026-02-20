@@ -215,7 +215,9 @@ impl JacAPIServerEndpoints.create_function_callback(
     import from jaclang.runtimelib.transport { TransportResponse, Meta }
     import from fastapi { Request }
     requires_auth = self.introspector.is_auth_required_for_function(func_name);
-    async def callback(request: Request, **kwargs: JsonValue) -> (TransportResponse | StreamingResponse) {
+    async def callback(
+        request: Request, **kwargs: JsonValue
+    ) -> (TransportResponse | StreamingResponse) {
         username: (str | None) = None;
         if requires_auth {
             authorization = request.headers.get('Authorization');
@@ -370,7 +372,9 @@ impl JacAPIServerEndpoints.create_webhook_callback(
 }
 
 """Create parameters for webhook endpoint."""
-impl JacAPIServerEndpoints.create_webhook_parameters(walker_name: str) -> list[APIParameter] {
+impl JacAPIServerEndpoints.create_webhook_parameters(
+    walker_name: str
+) -> list[APIParameter] {
     parameters: list[APIParameter] = [];
     # API key header (required for webhooks)
     # Use underscore naming for valid Python identifiers - FastAPI auto-converts to hyphenated headers
