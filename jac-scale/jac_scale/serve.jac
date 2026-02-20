@@ -49,21 +49,26 @@ enum Platforms ( StrEnum ) { GOOGLE = 'google' }
 
 enum Operations ( StrEnum ) { LOGIN = 'login', REGISTER = 'register' }
 
-obj JacAPIServer(JServer) {
-    # HMR (Hot Module Replacement) support fields
-    has _hmr_pending: bool = False,
-        _hot_reloader: Any | None = None,
-        _api_key_manager: ApiKeyManager | None = None,
-        _metrics: MetricsCollector | None = None,
-        _ws_manager: WebSocketConnectionManager | None = None;
-
+obj JacAPIServerCore {
     def postinit -> None;
+    def start(
+        dev: bool = False,
+        no_client: bool = False,
+        on_ready: Callable[[], None] | None = None
+    ) -> None;
+
+    def _configure_openapi_security -> None;
     def login(username: str, password: str) -> TransportResponse;
     def register_login_endpoint -> None;
+    def create_user(username: str, password: str) -> TransportResponse;
+    def register_create_user_endpoint -> None;
+    def refresh_token(token: (str | None) = None) -> TransportResponse;
+    def register_refresh_token_endpoint -> None;
     def update_username(
         current_username: str, new_username: str, Authorization: (str | None) = None
     ) -> TransportResponse;
 
+    def register_update_username_endpoint -> None;
     def update_password(
         username: str,
         current_password: str,
@@ -71,13 +76,22 @@ obj JacAPIServer(JServer) {
         Authorization: (str | None) = None
     ) -> TransportResponse;
 
-    def register_update_username_endpoint -> None;
     def register_update_password_endpoint -> None;
-    def create_user(username: str, password: str) -> TransportResponse;
-    def refresh_token(token: (str | None) = None) -> TransportResponse;
-    def register_create_user_endpoint -> None;
-    def register_refresh_token_endpoint -> None;
     def register_sso_endpoints -> None;
+    def get_api_key_manager -> ApiKeyManager;
+    def create_api_key(
+        name: str, expiry_days: int | None = None, Authorization: str | None = None
+    ) -> TransportResponse;
+
+    def list_api_keys(Authorization: str | None = None) -> TransportResponse;
+    def revoke_api_key(
+        api_key_id: str, Authorization: str | None = None
+    ) -> TransportResponse;
+
+    def register_api_key_endpoints -> None;
+}
+
+obj JacAPIServerEndpoints {
     def create_walker_callback(
         walker_name: str, has_node_param: bool = False
     ) -> Callable[..., TransportResponse];
@@ -93,52 +107,45 @@ obj JacAPIServer(JServer) {
     ) -> list[APIParameter];
 
     def register_functions_endpoints -> None;
+    def get_walker_protocol(walker_name: str) -> str;
+    def create_webhook_callback(walker_name: str) -> Callable[..., TransportResponse];
+    def create_webhook_parameters(walker_name: str) -> list[APIParameter];
+    def register_webhook_endpoints -> None;
+    def get_ws_manager -> WebSocketConnectionManager;
+    def create_websocket_handler(walker_name: str) -> Callable;
+    def register_websocket_endpoints -> None;
+    # HMR (Hot Module Replacement) dynamic routing methods
+    def enable_hmr(hot_reloader: Any) -> None;
+    def register_dynamic_walker_endpoint -> None;
+    def register_dynamic_function_endpoint -> None;
+    def register_dynamic_webhook_endpoint -> None;
+    def register_dynamic_websocket_endpoint -> None;
+    def register_dynamic_introspection_endpoints -> None;
+}
+
+obj JacAPIServerStatic {
     def render_page_callback -> Callable[..., HTMLResponse];
     def render_base_route_callback(app_name: str) -> Callable[..., HTMLResponse];
     def register_page_endpoint -> None;
     def serve_client_js_callback -> Callable[..., Response];
     def register_client_js_endpoint -> None;
-    def register_static_file_endpoint -> None;
     def serve_static_file(file_path: str) -> Response;
-    def register_root_asset_endpoint -> None;
+    def register_static_file_endpoint -> None;
     def serve_root_asset(file_path: str) -> Response;
-    def _configure_openapi_security -> None;
-    def start(
-        dev: bool = False,
-        no_client: bool = False,
-        on_ready: Callable[[], None] | None = None
-    ) -> None;
-    # HMR (Hot Module Replacement) dynamic routing methods
-    def enable_hmr(hot_reloader: Any) -> None;
-    def register_dynamic_walker_endpoint -> None;
-    def register_dynamic_function_endpoint -> None;
-    def register_dynamic_introspection_endpoints -> None;
-    # Webhook support methods
-    def get_api_key_manager -> ApiKeyManager;
-    def create_api_key(
-        name: str, expiry_days: int | None = None, Authorization: str | None = None
-    ) -> TransportResponse;
-
-    def list_api_keys(Authorization: str | None = None) -> TransportResponse;
-    def revoke_api_key(
-        api_key_id: str, Authorization: str | None = None
-    ) -> TransportResponse;
-
-    def register_api_key_endpoints -> None;
-    def register_webhook_endpoints -> None;
-    def create_webhook_callback(walker_name: str) -> Callable[..., TransportResponse];
-    def create_webhook_parameters(walker_name: str) -> list[APIParameter];
-    def register_dynamic_webhook_endpoint -> None;
-    def get_walker_protocol(walker_name: str) -> str;
-    # WebSocket support methods
-    def get_ws_manager -> WebSocketConnectionManager;
-    def create_websocket_handler(walker_name: str) -> Callable;
-    def register_websocket_endpoints -> None;
-    def register_dynamic_websocket_endpoint -> None;
+    def register_root_asset_endpoint -> None;
     # Graph visualization endpoint
     def register_graph_endpoint -> None;
     def serve_graph_page -> HTMLResponse;
     def graph_data(Authorization: (str | None) = None) -> JSONResponse;
+}
+
+obj JacAPIServer(JacAPIServerCore, JacAPIServerEndpoints, JacAPIServerStatic, JServer) {
+    # HMR (Hot Module Replacement) support fields
+    has _hmr_pending: bool = False,
+        _hot_reloader: Any | None = None,
+        _api_key_manager: ApiKeyManager | None = None,
+        _metrics: MetricsCollector | None = None,
+        _ws_manager: WebSocketConnectionManager | None = None;
 }
 
 class UpdateUsernameRequest(BaseModel) {
