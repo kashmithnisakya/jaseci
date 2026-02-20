@@ -114,6 +114,7 @@ obj JacAPIServerEndpoints {
     def create_function_callback(
         func_name: str
     ) -> Callable[..., (TransportResponse | StreamingResponse)];
+
     def create_function_parameters(
         func_name: str, method: HTTPMethod = HTTPMethod.POST
     ) -> list[APIParameter];
