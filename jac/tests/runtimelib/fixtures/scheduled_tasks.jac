@@ -12,6 +12,9 @@ glob execution_log:
      run_at: str = (datetime.datetime.now() + datetime.timedelta(seconds=5)).isoformat(),
      fn_run_at: str = (datetime.datetime.now() + datetime.timedelta(seconds=8)).isoformat();
 
+# ──────────────────────────────────────────────
+# 1. date — one-shot walker (runs once at a specific time)
+# ──────────────────────────────────────────────
 @schedule(date=run_at)
 walker DateWalker {
     can greet with Root entry {
@@ -62,6 +65,3 @@ def interval_function {
 def cron_function {
     execution_log.append("cron-function");
 }
-# ──────────────────────────────────────────────
-# 1. date — one-shot walker (runs once at a specific time)
-# ──────────────────────────────────────────────
