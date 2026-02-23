@@ -1,14 +1,11 @@
 """Return or create the module-level singleton Scheduler."""
 impl Scheduler.instance -> Scheduler {
     global _scheduler_instance;
-    result: Scheduler;
-    if _scheduler_instance is None {
-        result = Scheduler();
-        _scheduler_instance = result;
-    } else {
-        result = _scheduler_instance;
+    if _scheduler_instance is not None {
+        return _scheduler_instance;
     }
-    return result;
+    _scheduler_instance = Scheduler();
+    return _scheduler_instance;
 }
 
 """Register a task with the scheduler."""
@@ -20,15 +17,14 @@ impl Scheduler.register(
     if next_run is None {
         return;
     }
-    task = ScheduledTask(
+    self._tasks.append(ScheduledTask(
         name=name,
         target=target,
         spec=spec,
         is_walker=is_walker,
         next_run=next_run,
         last_run=None
-    );
-    self._tasks.append(task);
+    ));
 }
 
 """Start the background scheduler thread."""
@@ -46,18 +42,14 @@ impl Scheduler.start -> None {
 """Signal the scheduler to stop and wait for the thread to finish."""
 impl Scheduler.stop -> None {
     self._running = False;
-    if hasattr(self, '_stop_event') {
-        self._stop_event.set();
-    }
-    if self._done_event {
-        self._done_event.set();
-    }
-    if (self._thread and self._thread.is_alive()) {
+    self._stop_event.set();
+    self._done_event.set();
+    if self._thread and self._thread.is_alive() {
         self._thread.join(timeout=5);
     }
 }
 
-"""Block the calling thread until all tasks have completed or KeyboardInterrupt.
+"""Block the calling thread until all tasks complete or KeyboardInterrupt.
 
 For one-shot (date) tasks, returns when all have fired.
 For recurring (interval/cron) tasks, blocks until Ctrl+C.
@@ -78,105 +70,86 @@ impl Scheduler.wait -> None {
 
 """Check if any tasks still have a future run scheduled."""
 impl Scheduler.has_pending -> bool {
-    for task in self._tasks {
-        if task.next_run is not None {
-            return True;
-        }
-    }
-    return False;
+    return any(task.next_run is not None for task in self._tasks);
 }
 
 """Main scheduler loop using a heapq priority queue."""
 impl Scheduler._run_loop -> None {
-    # Build initial heap: (next_run_timestamp, task_index, task)
     heap: list = [];
     for (i, task) in enumerate(self._tasks) {
-        if task.next_run is not None {
-            heapq.heappush(heap, (task.next_run.timestamp(), i, task));
+        if task.next_run is None {
+            continue;
         }
+        heapq.heappush(heap, (task.next_run.timestamp(), i, task));
     }
     while self._running {
+        self._pick_up_new_tasks(heap);
         if not heap {
-            # No tasks, sleep briefly and check for new registrations
-            if hasattr(self, '_stop_event') {
-                self._stop_event.wait(timeout=1.0);
-            } else {
-                time.sleep(1.0);
-            }
-            # Pick up any newly registered tasks
-            for (i, task) in enumerate(self._tasks) {
-                if task.next_run is not None {
-                    already = any(t is task for (_, _, t) in heap);
-                    if not already {
-                        heapq.heappush(heap, (task.next_run.timestamp(), i, task));
-                    }
-                }
-            }
+            self._stop_event.wait(timeout=1.0);
             continue;
         }
         (next_ts, idx, task) = heap[0];
-        now = datetime.datetime.now();
-        delay = next_ts - now.timestamp();
+        delay = next_ts - datetime.datetime.now().timestamp();
         if delay > 0 {
-            # Sleep until the task is due (or until stop is signalled)
-            if hasattr(self, '_stop_event') {
-                self._stop_event.wait(timeout=delay);
-            } else {
-                time.sleep(delay);
-            }
-            if not self._running {
-                break;
-            }
+            self._stop_event.wait(timeout=delay);
         }
-        # Pop and fire the task
+        if not self._running {
+            break;
+        }
         heapq.heappop(heap);
         now = datetime.datetime.now();
         task.last_run = now;
-        fire_thread = threading.Thread(
-            target=self._execute, args=(task, ), daemon=True
-        );
-        fire_thread.start();
-        # Recompute next_run
+        threading.Thread(target=self._execute, args=(task, ), daemon=True).start();
         new_next = self._compute_next_run(task.spec, now);
+        task.next_run = new_next;
         if new_next is not None {
-            task.next_run = new_next;
             heapq.heappush(heap, (new_next.timestamp(), id(task), task));
-        } else {
-            task.next_run = None;
         }
-        # If no tasks remain in the heap, signal done
         if not heap and not self.has_pending() {
-            if self._done_event {
-                self._done_event.set();
-            }
+            self._done_event.set();
         }
     }
-    # Loop exited — signal done so wait() unblocks
-    if self._done_event {
-        self._done_event.set();
+    self._done_event.set();
+}
+
+"""Pick up any newly registered tasks not yet in the heap."""
+impl Scheduler._pick_up_new_tasks(heap: list) -> None {
+    heap_tasks = {id(t) for (_, _, t) in heap};
+    for (i, task) in enumerate(self._tasks) {
+        if task.next_run is None {
+            continue;
+        }
+        if id(task) in heap_tasks {
+            continue;
+        }
+        heapq.heappush(heap, (task.next_run.timestamp(), i, task));
     }
 }
 
 """Compute the next run datetime for a given spec."""
 impl Scheduler._compute_next_run(spec: ScheduleSpec, now: Any) -> (Any | None) {
     if spec.date is not None {
-        try {
-            run_at = datetime.datetime.fromisoformat(spec.date);
-            if run_at > now {
-                return run_at;
-            }
-            return None;
-        } except (ValueError, TypeError) {
-            print(f"[scheduler] Invalid date format: {spec.date}");
-            return None;
-        }
+        return self._compute_date(spec.date, now);
     }
     if spec.interval is not None {
         return now + datetime.timedelta(seconds=spec.interval);
     }
     if spec.cron is not None {
-        cron_val: str = str(spec.cron);
-        return self._parse_cron_next(cron_val, now);
+        return self._parse_cron_next(str(spec.cron), now);
+    }
+    return None;
+}
+
+"""Compute next run for a date-based spec."""
+impl Scheduler._compute_date(date_str: str, now: Any) -> (Any | None) {
+    try {
+        run_at = datetime.datetime.fromisoformat(date_str);
+    } except (ValueError, TypeError) {
+        print(f"[scheduler] Invalid date format: {date_str}");
+        return None;
+    }
+    if run_at > now {
+        return run_at;
     }
     return None;
 }
@@ -188,7 +161,6 @@ impl Scheduler._parse_cron_next(cron: str, now: Any) -> Any {
         raise ValueError(f"Cron must have 5 fields, got: {cron}") ;
     }
     (f_min, f_hour, f_day, f_month, f_weekday) = fields;
-    # Start from next minute
     candidate = now.replace(second=0, microsecond=0) + datetime.timedelta(minutes=1);
     limit = now + datetime.timedelta(days=366);
     while candidate <= limit {
@@ -215,38 +187,54 @@ impl Scheduler._cron_field_matches(
 ) -> bool {
     for part in field.split(',') {
         part = part.strip();
-        if part == '*' {
+        if self._cron_part_matches(part, value, min_val) {
             return True;
-        }
-        if part.startswith('*/') {
-            try {
-                step = int(part[2:]);
-                if (step > 0 and (value - min_val) % step == 0) {
-                    return True;
-                }
-            } except ValueError {
-                continue;
-            }
-        } elif '-' in part {
-            try {
-                (lo, hi) = part.split('-', 1);
-                if (int(lo) <= value <= int(hi)) {
-                    return True;
-                }
-            } except ValueError {
-                continue;
-            }
-        } else {
-            try {
-                if int(part) == value {
-                    return True;
-                }
-            } except ValueError {
-                continue;
-            }
         }
     }
     return False;
+}
+
+"""Check if a single cron sub-part matches the value."""
+impl Scheduler._cron_part_matches(part: str, value: int, min_val: int) -> bool {
+    if part == '*' {
+        return True;
+    }
+    if part.startswith('*/') {
+        return self._cron_step_matches(part, value, min_val);
+    }
+    if '-' in part {
+        return self._cron_range_matches(part, value);
+    }
+    return self._cron_exact_matches(part, value);
+}
+
+"""Check */n step match."""
+impl Scheduler._cron_step_matches(part: str, value: int, min_val: int) -> bool {
+    try {
+        step = int(part[2:]);
+        return step > 0 and (value - min_val) % step == 0;
+    } except ValueError {
+        return False;
+    }
+}
+
+"""Check n-m range match."""
+impl Scheduler._cron_range_matches(part: str, value: int) -> bool {
+    try {
+        (lo, hi) = part.split('-', 1);
+        return int(lo) <= value <= int(hi);
+    } except ValueError {
+        return False;
+    }
+}
+
+"""Check exact integer match."""
+impl Scheduler._cron_exact_matches(part: str, value: int) -> bool {
+    try {
+        return int(part) == value;
+    } except ValueError {
+        return False;
+    }
 }
 
 """Execute a single scheduled task."""
@@ -255,8 +243,7 @@ impl Scheduler._execute(task: ScheduledTask) -> None {
         if task.is_walker {
             import from jaclang { JacRuntimeInterface as Jac }
             walker_instance = task.target();
-            root_node = Jac.root();
-            Jac.spawn(walker_instance, root_node);
+            Jac.spawn(walker_instance, Jac.root());
         } else {
             task.target();
         }
