@@ -1781,6 +1781,7 @@ impl JacAPIServer.start(
         }
     }
     if self.scheduler.has_pending() {
+        console.print("Scheduler started");
         self.scheduler.start();
     }
     # Eagerly build client bundle if there are client exports (skip in dev mode or no_client mode)

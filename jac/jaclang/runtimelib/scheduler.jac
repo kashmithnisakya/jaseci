@@ -3,10 +3,12 @@ import threading;
 import time;
 import heapq;
 import datetime;
+import logging;
 import from collections.abc { Callable }
 import from typing { Any }
 
-glob _scheduler_instance: (Scheduler | None) = None;
+glob _scheduler_instance: (Scheduler | None) = None,
+     logger = logging.getLogger(__name__);
 
 """Holds the configuration for a scheduled task."""
 obj ScheduleSpec {

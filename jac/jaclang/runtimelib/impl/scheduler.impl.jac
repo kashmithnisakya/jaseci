@@ -17,14 +17,16 @@ impl Scheduler.register(
     if next_run is None {
         return;
     }
-    self._tasks.append(ScheduledTask(
-        name=name,
-        target=target,
-        spec=spec,
-        is_walker=is_walker,
-        next_run=next_run,
-        last_run=None
-    ));
+    self._tasks.append(
+        ScheduledTask(
+            name=name,
+            target=target,
+            spec=spec,
+            is_walker=is_walker,
+            next_run=next_run,
+            last_run=None
+        )
+    );
 }
 
 """Start the background scheduler thread."""
@@ -63,7 +65,7 @@ impl Scheduler.wait -> None {
             pass;
         }
     } except KeyboardInterrupt {
-        print("\n[scheduler] Interrupted, shutting down...");
+        logger.info("Scheduler interrupted, shutting down...");
     }
     self.stop();
 }
@@ -145,7 +147,7 @@ impl Scheduler._compute_date(date_str: str, now: Any) -> (Any | None) {
     try {
         run_at = datetime.datetime.fromisoformat(date_str);
     } except (ValueError, TypeError) {
-        print(f"[scheduler] Invalid date format: {date_str}");
+        logger.warning(f"Invalid date format: {date_str}");
         return None;
     }
     if run_at > now {
@@ -248,6 +250,6 @@ impl Scheduler._execute(task: ScheduledTask) -> None {
             task.target();
         }
     } except Exception as e {
-        print(f"[scheduler] Error executing task '{task.name}': {e}");
+        logger.error(f"Error executing task '{task.name}': {e}");
     }
 }
