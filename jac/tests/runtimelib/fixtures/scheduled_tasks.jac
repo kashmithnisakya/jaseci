@@ -1,4 +1,13 @@
+"""Fixture: scheduled walkers and functions for scheduler tests.
+
+Each walker/function appends to a module-level `execution_log` list
+so tests can verify actual execution occurred.
+"""
+
 import datetime;
+
+# Shared mutable state — tests inspect this after scheduler fires tasks.
+glob execution_log: list = [];
 
 # ──────────────────────────────────────────────
 # 1. date — one-shot walker (runs once at a specific time)
@@ -10,7 +19,7 @@ glob run_at: str = (
 @schedule(date=run_at)
 walker DateWalker {
     can greet with Root entry {
-        print("[date-walker] Fired once at scheduled time.");
+        execution_log.append("date-walker");
     }
 }
 
@@ -20,7 +29,7 @@ walker DateWalker {
 @schedule(interval=10)
 walker IntervalWalker {
     can tick with Root entry {
-        print("[interval-walker] Tick every 10 seconds.");
+        execution_log.append("interval-walker");
     }
 }
 
@@ -30,7 +39,7 @@ walker IntervalWalker {
 @schedule(cron="* * * * *")
 walker CronWalker {
     can check with Root entry {
-        print("[cron-walker] Runs every minute.");
+        execution_log.append("cron-walker");
     }
 }
 
@@ -43,7 +52,7 @@ glob fn_run_at: str = (
 
 @schedule(date=fn_run_at)
 def date_function {
-    print("[date-function] Fired once at scheduled time.");
+    execution_log.append("date-function");
 }
 
 # ──────────────────────────────────────────────
@@ -51,7 +60,7 @@ def date_function {
 # ──────────────────────────────────────────────
 @schedule(interval=15)
 def interval_function {
-    print("[interval-function] Tick every 15 seconds.");
+    execution_log.append("interval-function");
 }
 
 # ──────────────────────────────────────────────
@@ -59,5 +68,5 @@ def interval_function {
 # ──────────────────────────────────────────────
 @schedule(cron="*/2 * * * *")
 def cron_function {
-    print("[cron-function] Runs every 2 minutes.");
+    execution_log.append("cron-function");
 }
