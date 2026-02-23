@@ -1769,7 +1769,7 @@ impl JacAPIServer.start(
 ) -> None {
     import from pathlib { Path }
     self.introspector.load();
-    # Register and start all scheduled walkers and functions
+    # Register scheduled walkers and functions, start scheduler only if needed
     for (name, walker_cls) in self.introspector.get_walkers().items() {
         if hasattr(walker_cls, 'schedule_spec') {
             self.scheduler.register(name, walker_cls, walker_cls.schedule_spec, True);
@@ -1780,7 +1780,9 @@ impl JacAPIServer.start(
             self.scheduler.register(name, func, func.schedule_spec, False);
         }
     }
-    self.scheduler.start();
+    if self.scheduler.has_pending() {
+        self.scheduler.start();
+    }
     # Eagerly build client bundle if there are client exports (skip in dev mode or no_client mode)
     bundle_error = None;
     if not dev and not no_client {

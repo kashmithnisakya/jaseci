@@ -29,7 +29,8 @@ obj ScheduledTask {
 obj Scheduler {
     has _tasks: list[ScheduledTask] = [],
         _thread: Any = None,
-        _running: bool = False;
+        _running: bool = False,
+        _done_event: Any = None;
 
     static def instance -> Scheduler;
     def register(
@@ -38,6 +39,8 @@ obj Scheduler {
 
     def start -> None;
     def stop -> None;
+    def wait -> None;
+    def has_pending -> bool;
     def _run_loop -> None;
     def _compute_next_run(spec: ScheduleSpec, now: Any) -> (Any | None);
     def _parse_cron_next(cron: str, now: Any) -> Any;

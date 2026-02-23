@@ -1,7 +1,6 @@
 """Return or create the module-level singleton Scheduler."""
 impl Scheduler.instance -> Scheduler {
-    glob
-    _scheduler_instance;
+    global _scheduler_instance;
     result: Scheduler;
     if _scheduler_instance is None {
         result = Scheduler();
@@ -39,6 +38,7 @@ impl Scheduler.start -> None {
     }
     self._running = True;
     self._stop_event = threading.Event();
+    self._done_event = threading.Event();
     self._thread = threading.Thread(target=self._run_loop, daemon=True);
     self._thread.start();
 }
@@ -49,9 +49,41 @@ impl Scheduler.stop -> None {
     if hasattr(self, '_stop_event') {
         self._stop_event.set();
     }
+    if self._done_event {
+        self._done_event.set();
+    }
     if (self._thread and self._thread.is_alive()) {
         self._thread.join(timeout=5);
     }
+}
+
+"""Block the calling thread until all tasks have completed or KeyboardInterrupt.
+
+For one-shot (date) tasks, returns when all have fired.
+For recurring (interval/cron) tasks, blocks until Ctrl+C.
+"""
+impl Scheduler.wait -> None {
+    if not self._running {
+        return;
+    }
+    try {
+        while not self._done_event.wait(timeout=0.5) {
+            pass;
+        }
+    } except KeyboardInterrupt {
+        print("\n[scheduler] Interrupted, shutting down...");
+    }
+    self.stop();
+}
+
+"""Check if any tasks still have a future run scheduled."""
+impl Scheduler.has_pending -> bool {
+    for task in self._tasks {
+        if task.next_run is not None {
+            return True;
+        }
+    }
+    return False;
 }
 
 """Main scheduler loop using a heapq priority queue."""
@@ -112,6 +144,16 @@ impl Scheduler._run_loop -> None {
         } else {
             task.next_run = None;
         }
+        # If no tasks remain in the heap, signal done
+        if not heap and not self.has_pending() {
+            if self._done_event {
+                self._done_event.set();
+            }
+        }
+    }
+    # Loop exited — signal done so wait() unblocks
+    if self._done_event {
+        self._done_event.set();
     }
 }
 
