@@ -61,9 +61,7 @@ impl Scheduler.wait -> None {
         return;
     }
     try {
-        while not self._done_event.wait(timeout=0.5) {
-            pass;
-        }
+        while not self._done_event.wait(timeout=0.5) { }
     } except KeyboardInterrupt {
         logger.info("Scheduler interrupted, shutting down...");
     }

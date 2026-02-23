@@ -7,14 +7,10 @@ so tests can verify actual execution occurred.
 import datetime;
 
 # Shared mutable state — tests inspect this after scheduler fires tasks.
-glob execution_log: list = [];
-
-# ──────────────────────────────────────────────
-# 1. date — one-shot walker (runs once at a specific time)
-# ──────────────────────────────────────────────
-glob run_at: str = (
-         datetime.datetime.now() + datetime.timedelta(seconds=5)
-     ).isoformat();
+glob execution_log:
+         list = [],
+     run_at: str = (datetime.datetime.now() + datetime.timedelta(seconds=5)).isoformat(),
+     fn_run_at: str = (datetime.datetime.now() + datetime.timedelta(seconds=8)).isoformat();
 
 @schedule(date=run_at)
 walker DateWalker {
@@ -46,10 +42,6 @@ walker CronWalker {
 # ──────────────────────────────────────────────
 # 4. date — one-shot function (runs once at a specific time)
 # ──────────────────────────────────────────────
-glob fn_run_at: str = (
-         datetime.datetime.now() + datetime.timedelta(seconds=8)
-     ).isoformat();
-
 @schedule(date=fn_run_at)
 def date_function {
     execution_log.append("date-function");
@@ -70,3 +62,6 @@ def interval_function {
 def cron_function {
     execution_log.append("cron-function");
 }
+# ──────────────────────────────────────────────
+# 1. date — one-shot walker (runs once at a specific time)
+# ──────────────────────────────────────────────
