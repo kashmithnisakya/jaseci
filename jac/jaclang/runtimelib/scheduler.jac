@@ -48,9 +48,11 @@ obj Scheduler {
     def _compute_next_run(
         spec: ScheduleSpec, now: datetime.datetime
     ) -> (datetime.datetime | None);
+
     def _compute_date(
         date_str: str, now: datetime.datetime
     ) -> (datetime.datetime | None);
+
     def _parse_cron_next(cron: str, now: datetime.datetime) -> datetime.datetime;
     def _cron_field_matches(field: str, value: int, min_val: int, max_val: int) -> bool;
     def _cron_part_matches(part: str, value: int, min_val: int) -> bool;
