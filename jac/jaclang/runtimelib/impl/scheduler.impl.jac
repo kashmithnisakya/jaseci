@@ -10,7 +10,7 @@ impl Scheduler.instance -> Scheduler {
 
 """Register a task with the scheduler."""
 impl Scheduler.register(
-    name: str, target: Callable[(..., Any)], spec: ScheduleSpec, is_walker: bool
+    name: str, target: Callable, spec: ScheduleSpec, is_walker: bool
 ) -> None {
     now = datetime.datetime.now();
     next_run = self._compute_next_run(spec, now);
@@ -127,7 +127,7 @@ impl Scheduler._pick_up_new_tasks(heap: list) -> None {
 }
 
 """Compute the next run datetime for a given spec."""
-impl Scheduler._compute_next_run(spec: ScheduleSpec, now: Any) -> (Any | None) {
+impl Scheduler._compute_next_run(spec: ScheduleSpec, now: datetime.datetime) -> (datetime.datetime | None) {
     if spec.date is not None {
         return self._compute_date(spec.date, now);
     }
@@ -141,7 +141,7 @@ impl Scheduler._compute_next_run(spec: ScheduleSpec, now: Any) -> (Any | None) {
 }
 
 """Compute next run for a date-based spec."""
-impl Scheduler._compute_date(date_str: str, now: Any) -> (Any | None) {
+impl Scheduler._compute_date(date_str: str, now: datetime.datetime) -> (datetime.datetime | None) {
     try {
         run_at = datetime.datetime.fromisoformat(date_str);
     } except (ValueError, TypeError) {
@@ -155,7 +155,7 @@ impl Scheduler._compute_date(date_str: str, now: Any) -> (Any | None) {
 }
 
 """Parse a 5-field cron string and return the next matching datetime."""
-impl Scheduler._parse_cron_next(cron: str, now: Any) -> Any {
+impl Scheduler._parse_cron_next(cron: str, now: datetime.datetime) -> datetime.datetime {
     fields = cron.strip().split();
     if len(fields) != 5 {
         raise ValueError(f"Cron must have 5 fields, got: {cron}") ;

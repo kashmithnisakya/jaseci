@@ -689,7 +689,7 @@ impl ModuleIntrospector.get_functions -> dict[str, Callable[(..., Any)]] {
     return {
         k: v
         for (k, v) in self._functions.items()
-        if not hasattr(v, 'schedule_spec')
+        if not v?.schedule_spec
     };
 }
 
@@ -703,7 +703,7 @@ impl ModuleIntrospector.get_walkers -> dict[str, type[WalkerArchetype]] {
     return {
         k: v
         for (k, v) in self._walkers.items()
-        if not hasattr(v, 'schedule_spec')
+        if not v?.schedule_spec
     };
 }
 
@@ -1728,12 +1728,12 @@ impl JacAPIServer.start(
     self.introspector.load();
     # Register scheduled walkers and functions, start scheduler only if needed
     for (name, walker_cls) in self.introspector._walkers.items() {
-        if hasattr(walker_cls, 'schedule_spec') {
+        if walker_cls?.schedule_spec {
             self.scheduler.register(name, walker_cls, walker_cls.schedule_spec, True);
         }
     }
     for (name, func) in self.introspector._functions.items() {
-        if hasattr(func, 'schedule_spec') {
+        if func?.schedule_spec {
             self.scheduler.register(name, func, func.schedule_spec, False);
         }
     }

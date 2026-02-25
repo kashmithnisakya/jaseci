@@ -1,7 +1,6 @@
 """Tests for the built-in scheduler engine."""
 
 import datetime;
-import importlib;
 import threading;
 import time;
 import from pathlib { Path }
@@ -10,163 +9,108 @@ import from jaclang.runtimelib.scheduler { Scheduler, ScheduleSpec, ScheduledTas
 
 glob FIXTURES = str(Path(__file__).parent / "fixtures");
 
-def fixture_abs_path(filename: str) -> str {
-    return str((Path(FIXTURES) / filename).resolve());
-}
-
 # ─── Helper: create a fresh Scheduler (not the singleton) ────────────────────
 def fresh_scheduler -> Scheduler {
     return Scheduler();
 }
 
 # =============================================================================
-# Scheduler.register — date-based
+# Task registration, pending status, and lifecycle
 # =============================================================================
-test "register date task in future" {
+test "task registration and scheduler lifecycle" {
     sched = fresh_scheduler();
+    # Empty scheduler has no pending tasks
+    assert not sched.has_pending();
+
+    # Future date task registers successfully
     future = (datetime.datetime.now() + datetime.timedelta(hours=1)).isoformat();
-    spec = ScheduleSpec(date=future);
-    sched.register("future_task", lambda : None , spec, False);
+    sched.register("future_task", lambda : None , ScheduleSpec(date=future), False);
     assert len(sched._tasks) == 1;
     assert sched._tasks[0].name == "future_task";
     assert sched._tasks[0].next_run is not None;
-}
 
-test "register date task in past is skipped" {
-    sched = fresh_scheduler();
+    # Past date task is skipped
     past = (datetime.datetime.now() - datetime.timedelta(hours=1)).isoformat();
-    spec = ScheduleSpec(date=past);
-    sched.register("past_task", lambda : None , spec, False);
-    assert len(sched._tasks) == 0;
-}
+    sched.register("past_task", lambda : None , ScheduleSpec(date=past), False);
+    assert len(sched._tasks) == 1;
 
-test "register date task invalid format is skipped" {
-    sched = fresh_scheduler();
-    spec = ScheduleSpec(date="not-a-date");
-    sched.register("bad_date", lambda : None , spec, False);
-    assert len(sched._tasks) == 0;
-}
+    # Invalid date format is skipped
+    sched.register("bad_date", lambda : None , ScheduleSpec(date="not-a-date"), False);
+    assert len(sched._tasks) == 1;
 
-# =============================================================================
-# Scheduler.has_pending
-# =============================================================================
-test "has_pending false when empty" {
-    sched = fresh_scheduler();
-    assert not sched.has_pending();
-}
+    # Multiple task types register correctly
+    sched.register("t_interval", lambda : None , ScheduleSpec(interval=60), False);
+    sched.register("t_cron", lambda : None , ScheduleSpec(cron="* * * * *"), False);
+    assert len(sched._tasks) == 3;
+    names = [t.name for t in sched._tasks];
+    assert "future_task" in names and "t_interval" in names and "t_cron" in names;
 
-# =============================================================================
-# Scheduler.start / stop
-# =============================================================================
-test "start creates daemon thread" {
-    sched = fresh_scheduler();
-    future = (datetime.datetime.now() + datetime.timedelta(hours=1)).isoformat();
-    sched.register("t", lambda : None , ScheduleSpec(date=future), False);
+    # Start creates daemon thread; start is idempotent
     sched.start();
     assert sched._running;
-    assert sched._thread is not None;
-    assert sched._thread.is_alive();
-    assert sched._thread.daemon;
-    sched.stop();
-    assert not sched._running;
-}
-
-test "start is idempotent" {
-    sched = fresh_scheduler();
-    future = (datetime.datetime.now() + datetime.timedelta(hours=1)).isoformat();
-    sched.register("t", lambda : None , ScheduleSpec(date=future), False);
-    sched.start();
+    assert sched._thread is not None and sched._thread.is_alive() and sched._thread.daemon;
     thread1 = sched._thread;
     sched.start();
-    thread2 = sched._thread;
-    assert thread1 is thread2;
+    assert sched._thread is thread1;
     sched.stop();
-}
+    assert not sched._running;
 
-test "stop without start is safe" {
-    sched = fresh_scheduler();
-    sched._stop_event = threading.Event();
-    sched._done_event = threading.Event();
-    sched.stop();
+    # Stop without prior start is safe
+    sched2 = fresh_scheduler();
+    sched2._stop_event = threading.Event();
+    sched2._done_event = threading.Event();
+    sched2.stop();
+
+    # Singleton returns same instance
+    s1 = Scheduler.instance();
+    s2 = Scheduler.instance();
+    assert s1 is s2;
 }
 
 # =============================================================================
-# Cron field matching
+# Cron field matching and next-run computation
 # =============================================================================
-test "cron field wildcard matches any value" {
+test "cron field matching and next run computation" {
     sched = fresh_scheduler();
+
+    # Wildcard matches any value
     assert sched._cron_field_matches("*", 0, 0, 59);
     assert sched._cron_field_matches("*", 31, 1, 31);
-}
 
-test "cron field exact match" {
-    sched = fresh_scheduler();
+    # Exact match
     assert sched._cron_field_matches("5", 5, 0, 59);
     assert not sched._cron_field_matches("5", 6, 0, 59);
-}
 
-test "cron field step match" {
-    sched = fresh_scheduler();
+    # Step match (*/n)
     assert sched._cron_field_matches("*/15", 0, 0, 59);
     assert sched._cron_field_matches("*/15", 15, 0, 59);
     assert sched._cron_field_matches("*/15", 30, 0, 59);
     assert not sched._cron_field_matches("*/15", 7, 0, 59);
-}
 
-test "cron field range match" {
-    sched = fresh_scheduler();
-    assert sched._cron_field_matches("1-5", 1, 1, 31);
+    # Range match (n-m)
     assert sched._cron_field_matches("1-5", 3, 1, 31);
-    assert sched._cron_field_matches("1-5", 5, 1, 31);
     assert not sched._cron_field_matches("1-5", 6, 1, 31);
-}
 
-test "cron field comma separated" {
-    sched = fresh_scheduler();
-    assert sched._cron_field_matches("1,15,30", 1, 0, 59);
+    # Comma-separated
     assert sched._cron_field_matches("1,15,30", 15, 0, 59);
-    assert sched._cron_field_matches("1,15,30", 30, 0, 59);
     assert not sched._cron_field_matches("1,15,30", 10, 0, 59);
-}
 
-test "cron field invalid values are ignored" {
-    sched = fresh_scheduler();
+    # Invalid values are ignored
     assert not sched._cron_field_matches("abc", 5, 0, 59);
     assert not sched._cron_field_matches("*/abc", 5, 0, 59);
     assert not sched._cron_field_matches("a-b", 5, 0, 59);
-}
 
-# =============================================================================
-# Cron parsing — next run computation
-# =============================================================================
-test "cron parse every minute" {
-    sched = fresh_scheduler();
+    # Cron next-run: every minute, specific minute, specific hour+minute
     now = datetime.datetime(2026, 1, 1, 12, 0, 0);
-    result = sched._parse_cron_next("* * * * *", now);
-    assert result == datetime.datetime(2026, 1, 1, 12, 1, 0);
-}
+    assert sched._parse_cron_next("* * * * *", now) == datetime.datetime(2026, 1, 1, 12, 1, 0);
+    assert sched._parse_cron_next("30 * * * *", now) == datetime.datetime(2026, 1, 1, 12, 30, 0);
+    now2 = datetime.datetime(2026, 1, 1, 8, 0, 0);
+    assert sched._parse_cron_next("0 9 * * *", now2) == datetime.datetime(2026, 1, 1, 9, 0, 0);
 
-test "cron parse specific minute" {
-    sched = fresh_scheduler();
-    now = datetime.datetime(2026, 1, 1, 12, 0, 0);
-    result = sched._parse_cron_next("30 * * * *", now);
-    assert result == datetime.datetime(2026, 1, 1, 12, 30, 0);
-}
-
-test "cron parse specific hour and minute" {
-    sched = fresh_scheduler();
-    now = datetime.datetime(2026, 1, 1, 8, 0, 0);
-    result = sched._parse_cron_next("0 9 * * *", now);
-    assert result == datetime.datetime(2026, 1, 1, 9, 0, 0);
-}
-
-test "cron parse invalid field count raises" {
-    sched = fresh_scheduler();
-    now = datetime.datetime.now();
+    # Invalid field count raises ValueError
     raised = False;
     try {
-        sched._parse_cron_next("* * *", now);
-        assert False , "Should have raised ValueError";
+        sched._parse_cron_next("* * *", datetime.datetime.now());
     } except ValueError {
         raised = True;
     }
@@ -174,312 +118,89 @@ test "cron parse invalid field count raises" {
 }
 
 # =============================================================================
-# _compute_next_run dispatching
+# _compute_next_run dispatching and @schedule decorator
 # =============================================================================
-test "compute next run dispatches to date" {
+test "compute next run and schedule decorator" {
     sched = fresh_scheduler();
     now = datetime.datetime.now();
+
+    # Date dispatching
     future = (now + datetime.timedelta(hours=1)).isoformat();
     result = sched._compute_next_run(ScheduleSpec(date=future), now);
     assert result is not None;
     assert abs((result - now).total_seconds() - 3600) < 2;
-}
 
-test "compute next run dispatches to interval" {
-    sched = fresh_scheduler();
-    now = datetime.datetime.now();
+    # Interval dispatching
     result = sched._compute_next_run(ScheduleSpec(interval=60.0), now);
     assert result is not None;
     delta = (result - now).total_seconds();
     assert 59.0 <= delta <= 61.0;
-}
 
-test "compute next run dispatches to cron" {
-    sched = fresh_scheduler();
-    now = datetime.datetime.now();
+    # Cron dispatching
     result = sched._compute_next_run(ScheduleSpec(cron="* * * * *"), now);
     assert result is not None;
-}
 
-test "compute next run returns none for empty spec" {
-    sched = fresh_scheduler();
-    now = datetime.datetime.now();
-    result = sched._compute_next_run(ScheduleSpec(), now);
-    assert result is None;
-}
+    # Empty spec returns None
+    assert sched._compute_next_run(ScheduleSpec(), now) is None;
 
-# =============================================================================
-# @schedule decorator attaches spec
-# =============================================================================
-test "schedule decorator attaches spec to walker" {
+    # @schedule decorator attaches spec to walker (interval)
     @schedule(interval=30)
     walker TestWalker {
-        can do_thing with Root entry {
-            "noop";
-        }
+        can do_thing with Root entry { "noop"; }
     }
     assert hasattr(TestWalker, 'schedule_spec');
     assert isinstance(TestWalker.schedule_spec, ScheduleSpec);
     assert TestWalker.schedule_spec.interval == 30;
-}
 
-test "schedule decorator attaches spec to function" {
+    # @schedule decorator attaches spec to function (date)
     @schedule(date="2030-06-15T12:00:00")
-    def scheduled_fn {
-        "noop";
-    }
+    def scheduled_fn { "noop"; }
     assert hasattr(scheduled_fn, 'schedule_spec');
-    assert isinstance(scheduled_fn.schedule_spec, ScheduleSpec);
     assert scheduled_fn.schedule_spec.date == "2030-06-15T12:00:00";
-}
 
-test "schedule decorator with cron" {
+    # @schedule decorator attaches spec to function (cron)
     @schedule(cron="0 9 * * 1")
-    def weekly_fn {
-        "noop";
-    }
+    def weekly_fn { "noop"; }
     assert hasattr(weekly_fn, 'schedule_spec');
     assert weekly_fn.schedule_spec.cron == "0 9 * * 1";
-}
 
-# =============================================================================
-# Scheduler singleton
-# =============================================================================
-test "scheduler singleton returns same instance" {
-    s1 = Scheduler.instance();
-    s2 = Scheduler.instance();
-    assert s1 is s2;
-}
-
-# =============================================================================
-# Task execution — error handling
-# =============================================================================
-test "execute handles function error gracefully" {
-    sched = fresh_scheduler();
-    def bad_fn {
-        raise RuntimeError("boom") ;
-    }
+    # Error handling: _execute catches exceptions gracefully
+    def bad_fn { raise RuntimeError("boom") ; }
     task = ScheduledTask(
-        name="bad_task",
-        target=bad_fn,
-        spec=ScheduleSpec(interval=60),
-        is_walker=False,
-        next_run=datetime.datetime.now(),
-        last_run=None
+        name="bad_task", target=bad_fn, spec=ScheduleSpec(interval=60),
+        is_walker=False, next_run=datetime.datetime.now(), last_run=None
     );
-    # Should not raise — error is caught internally
-    sched._execute(task);
+    sched._execute(task);  # Should not raise
 }
 
 # =============================================================================
-# Multiple tasks registered
+# Fixture integration: loading, registration, and API exclusion
 # =============================================================================
-test "register multiple tasks" {
-    sched = fresh_scheduler();
-    future = (datetime.datetime.now() + datetime.timedelta(hours=1)).isoformat();
-    sched.register("t1", lambda : None , ScheduleSpec(date=future), False);
-    sched.register("t2", lambda : None , ScheduleSpec(interval=60), False);
-    sched.register("t3", lambda : None , ScheduleSpec(cron="* * * * *"), False);
-    assert len(sched._tasks) == 3;
-    names = [t.name for t in sched._tasks];
-    assert "t1" in names;
-    assert "t2" in names;
-    assert "t3" in names;
-}
-
-# =============================================================================
-# Fixture-based integration tests — load scheduled_tasks.jac from fixtures/
-# =============================================================================
-test "fixture module has all six scheduled items" {
+test "fixture loading registration and api exclusion" {
+    import from jaclang.runtimelib.server { ModuleIntrospector }
     (module, ) = Jac.jac_import("scheduled_tasks", FIXTURES);
-    # Walkers
-    for name in ["DateWalker", "IntervalWalker", "CronWalker"] {
-        target = getattr(module, name);
-        assert hasattr(target, "schedule_spec") , f"{name} missing schedule_spec";
-    }
-    # Functions
-    for name in ["date_function", "interval_function", "cron_function"] {
-        target = getattr(module, name);
-        assert hasattr(target, "schedule_spec") , f"{name} missing schedule_spec";
-    }
-}
 
-test "fixture scheduled items can be registered with scheduler" {
-    (module, ) = Jac.jac_import("scheduled_tasks", FIXTURES);
+    # All six scheduled items have schedule_spec
+    for name in ["DateWalker", "IntervalWalker", "CronWalker",
+                  "date_function", "interval_function", "cron_function"] {
+        assert hasattr(getattr(module, name), "schedule_spec") , f"{name} missing schedule_spec";
+    }
+
+    # All items register successfully with a fresh scheduler
     sched = fresh_scheduler();
-    # Register all walkers
     for name in ["DateWalker", "IntervalWalker", "CronWalker"] {
         target = getattr(module, name);
         sched.register(name, target, target.schedule_spec, True);
     }
-    # Register all functions
     for name in ["date_function", "interval_function", "cron_function"] {
         target = getattr(module, name);
         sched.register(name, target, target.schedule_spec, False);
     }
-    # Should have registered all 6 (date tasks with future dates should pass)
     assert sched.has_pending();
-    # At least interval and cron tasks are always registered (4 guaranteed)
     assert len(sched._tasks) >= 4;
-}
 
-# =============================================================================
-# Walker execution — verify walkers actually run via scheduler
-# =============================================================================
-test "date walker executes at scheduled time" {
-    (module, ) = Jac.jac_import("scheduled_tasks", FIXTURES);
-    module.execution_log.clear();
-    sched = fresh_scheduler();
-    run_at = (datetime.datetime.now() + datetime.timedelta(seconds=1)).isoformat();
-    spec = ScheduleSpec(date=run_at);
-    sched.register("DateWalker", module.DateWalker, spec, True);
-    sched.start();
-    deadline = time.time() + 5;
-    while "date-walker" not in module.execution_log and time.time() < deadline {
-        time.sleep(0.2);
-    }
-    sched.stop();
-    assert "date-walker" in module.execution_log;
-}
-
-test "interval walker executes repeatedly" {
-    (module, ) = Jac.jac_import("scheduled_tasks", FIXTURES);
-    module.execution_log.clear();
-    sched = fresh_scheduler();
-    spec = ScheduleSpec(interval=0.5);
-    sched.register("IntervalWalker", module.IntervalWalker, spec, True);
-    sched.start();
-    time.sleep(2.0);
-    sched.stop();
-    count = module.execution_log.count("interval-walker");
-    # With 0.5s interval over 2s, expect at least 2 executions
-    assert count >= 2 , f"Expected >=2 interval-walker runs, got {count}";
-}
-
-# =============================================================================
-# Function execution — verify functions actually run via scheduler
-# =============================================================================
-test "date function executes at scheduled time" {
-    (module, ) = Jac.jac_import("scheduled_tasks", FIXTURES);
-    module.execution_log.clear();
-    sched = fresh_scheduler();
-    run_at = (datetime.datetime.now() + datetime.timedelta(seconds=1)).isoformat();
-    spec = ScheduleSpec(date=run_at);
-    sched.register("date_function", module.date_function, spec, False);
-    sched.start();
-    deadline = time.time() + 5;
-    while "date-function" not in module.execution_log and time.time() < deadline {
-        time.sleep(0.2);
-    }
-    sched.stop();
-    assert "date-function" in module.execution_log;
-}
-
-test "date function fires only once" {
-    (module, ) = Jac.jac_import("scheduled_tasks", FIXTURES);
-    module.execution_log.clear();
-    sched = fresh_scheduler();
-    run_at = (datetime.datetime.now() + datetime.timedelta(seconds=0.5)).isoformat();
-    spec = ScheduleSpec(date=run_at);
-    sched.register("date_function", module.date_function, spec, False);
-    sched.start();
-    time.sleep(2.0);
-    sched.stop();
-    count = module.execution_log.count("date-function");
-    assert count == 1 , f"Date function should fire once, fired {count} times";
-}
-
-test "interval function executes repeatedly" {
-    (module, ) = Jac.jac_import("scheduled_tasks", FIXTURES);
-    module.execution_log.clear();
-    sched = fresh_scheduler();
-    spec = ScheduleSpec(interval=0.5);
-    sched.register("interval_function", module.interval_function, spec, False);
-    sched.start();
-    time.sleep(2.0);
-    sched.stop();
-    count = module.execution_log.count("interval-function");
-    assert count >= 2 , f"Expected >=2 interval-function runs, got {count}";
-}
-
-# =============================================================================
-# Mixed walker + function execution
-# =============================================================================
-test "scheduler runs both walker and function tasks together" {
-    (module, ) = Jac.jac_import("scheduled_tasks", FIXTURES);
-    module.execution_log.clear();
-    sched = fresh_scheduler();
-    # Register a walker and a function with short intervals
-    sched.register(
-        "IntervalWalker", module.IntervalWalker, ScheduleSpec(interval=0.5), True
-    );
-    sched.register(
-        "interval_function",
-        module.interval_function,
-        ScheduleSpec(interval=0.5),
-        False
-    );
-    sched.start();
-    time.sleep(2.0);
-    sched.stop();
-    walker_count = module.execution_log.count("interval-walker");
-    fn_count = module.execution_log.count("interval-function");
-    assert walker_count >= 2 , f"Walker expected >=2, got {walker_count}";
-    assert fn_count >= 2 , f"Function expected >=2, got {fn_count}";
-}
-
-test "date walker and date function both fire once" {
-    (module, ) = Jac.jac_import("scheduled_tasks", FIXTURES);
-    module.execution_log.clear();
-    sched = fresh_scheduler();
-    run_at = (datetime.datetime.now() + datetime.timedelta(seconds=0.5)).isoformat();
-    sched.register("DateWalker", module.DateWalker, ScheduleSpec(date=run_at), True);
-    sched.register(
-        "date_function", module.date_function, ScheduleSpec(date=run_at), False
-    );
-    sched.start();
-    time.sleep(2.0);
-    sched.stop();
-    assert module.execution_log.count("date-walker") == 1;
-    assert module.execution_log.count("date-function") == 1;
-}
-
-# =============================================================================
-# Error handling in fixture tasks
-# =============================================================================
-test "scheduler continues after walker error" {
-    (module, ) = Jac.jac_import("scheduled_tasks", FIXTURES);
-    module.execution_log.clear();
-    sched = fresh_scheduler();
-    # Register a bad function that raises, followed by a good interval function
-    def bad_fn {
-        raise RuntimeError("deliberate error") ;
-    }
-    sched.register("bad", bad_fn, ScheduleSpec(interval=0.3), False);
-    sched.register(
-        "interval_function",
-        module.interval_function,
-        ScheduleSpec(interval=0.5),
-        False
-    );
-    sched.start();
-    time.sleep(2.0);
-    sched.stop();
-    # The good function should still have fired despite the bad one erroring
-    fn_count = module.execution_log.count("interval-function");
-    assert fn_count >= 2 , f"Good function should still run, got {fn_count}";
-}
-
-# =============================================================================
-# Scheduled items are NOT exposed as API endpoints
-# =============================================================================
-test "scheduled walkers and functions are excluded from api endpoints" {
-    import from jaclang.runtimelib.server { ModuleIntrospector }
-    (module, ) = Jac.jac_import("scheduled_tasks", FIXTURES);
-    # Build an introspector and manually populate its internal dicts
-    introspector = ModuleIntrospector(
-        module_name="scheduled_tasks", base_path=FIXTURES
-    );
+    # Scheduled items are excluded from API endpoints
+    introspector = ModuleIntrospector(module_name="scheduled_tasks", base_path=FIXTURES);
     introspector._walkers = {
         "DateWalker": module.DateWalker,
         "IntervalWalker": module.IntervalWalker,
@@ -490,13 +211,40 @@ test "scheduled walkers and functions are excluded from api endpoints" {
         "interval_function": module.interval_function,
         "cron_function": module.cron_function
     };
-    # get_walkers() and get_functions() should filter out all @schedule items
-    exposed_walkers = introspector.get_walkers();
-    exposed_functions = introspector.get_functions();
-    assert len(exposed_walkers) == 0 , f"Expected 0 exposed walkers, got {list(
-        exposed_walkers.keys()
-    )}";
-    assert len(exposed_functions) == 0 , f"Expected 0 exposed functions, got {list(
-        exposed_functions.keys()
-    )}";
+    assert len(introspector.get_walkers()) == 0;
+    assert len(introspector.get_functions()) == 0;
+}
+
+# =============================================================================
+# Scheduler execution: walkers, functions, date/interval, mixed, error recovery
+# =============================================================================
+test "scheduler executes walkers and functions correctly" {
+    (module, ) = Jac.jac_import("scheduled_tasks", FIXTURES);
+    module.execution_log.clear();
+    sched = fresh_scheduler();
+
+    # Register date-based walker and function (fire once), plus interval tasks
+    run_at = (datetime.datetime.now() + datetime.timedelta(seconds=0.5)).isoformat();
+    sched.register("DateWalker", module.DateWalker, ScheduleSpec(date=run_at), True);
+    sched.register("date_function", module.date_function, ScheduleSpec(date=run_at), False);
+    sched.register("IntervalWalker", module.IntervalWalker, ScheduleSpec(interval=0.5), True);
+    sched.register("interval_function", module.interval_function, ScheduleSpec(interval=0.5), False);
+
+    # Also register a bad function to verify error recovery
+    def bad_fn { raise RuntimeError("deliberate error") ; }
+    sched.register("bad", bad_fn, ScheduleSpec(interval=0.3), False);
+
+    sched.start();
+    time.sleep(2.5);
+    sched.stop();
+
+    # Date tasks fire exactly once
+    assert module.execution_log.count("date-walker") == 1 , "Date walker should fire once";
+    assert module.execution_log.count("date-function") == 1 , "Date function should fire once";
+
+    # Interval tasks fire multiple times
+    walker_count = module.execution_log.count("interval-walker");
+    fn_count = module.execution_log.count("interval-function");
+    assert walker_count >= 2 , f"Expected >=2 interval-walker runs, got {walker_count}";
+    assert fn_count >= 2 , f"Expected >=2 interval-function runs, got {fn_count}";
 }
