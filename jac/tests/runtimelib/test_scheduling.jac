@@ -48,7 +48,9 @@ test "task registration and scheduler lifecycle" {
     # Start creates daemon thread; start is idempotent
     sched.start();
     assert sched._running;
-    assert sched._thread is not None and sched._thread.is_alive() and sched._thread.daemon;
+    assert sched._thread is not None
+    and sched._thread.is_alive()
+    and sched._thread.daemon;
     thread1 = sched._thread;
     sched.start();
     assert sched._thread is thread1;
@@ -102,10 +104,16 @@ test "cron field matching and next run computation" {
 
     # Cron next-run: every minute, specific minute, specific hour+minute
     now = datetime.datetime(2026, 1, 1, 12, 0, 0);
-    assert sched._parse_cron_next("* * * * *", now) == datetime.datetime(2026, 1, 1, 12, 1, 0);
-    assert sched._parse_cron_next("30 * * * *", now) == datetime.datetime(2026, 1, 1, 12, 30, 0);
+    assert sched._parse_cron_next("* * * * *", now) == datetime.datetime(
+        2026, 1, 1, 12, 1, 0
+    );
+    assert sched._parse_cron_next("30 * * * *", now) == datetime.datetime(
+        2026, 1, 1, 12, 30, 0
+    );
     now2 = datetime.datetime(2026, 1, 1, 8, 0, 0);
-    assert sched._parse_cron_next("0 9 * * *", now2) == datetime.datetime(2026, 1, 1, 9, 0, 0);
+    assert sched._parse_cron_next("0 9 * * *", now2) == datetime.datetime(
+        2026, 1, 1, 9, 0, 0
+    );
 
     # Invalid field count raises ValueError
     raised = False;
@@ -146,7 +154,9 @@ test "compute next run and schedule decorator" {
     # @schedule decorator attaches spec to walker (interval)
     @schedule(interval=30)
     walker TestWalker {
-        can do_thing with Root entry { "noop"; }
+        can do_thing with Root entry {
+            "noop";
+        }
     }
     assert hasattr(TestWalker, 'schedule_spec');
     assert isinstance(TestWalker.schedule_spec, ScheduleSpec);
@@ -154,21 +164,31 @@ test "compute next run and schedule decorator" {
 
     # @schedule decorator attaches spec to function (date)
     @schedule(date="2030-06-15T12:00:00")
-    def scheduled_fn { "noop"; }
+    def scheduled_fn {
+        "noop";
+    }
     assert hasattr(scheduled_fn, 'schedule_spec');
     assert scheduled_fn.schedule_spec.date == "2030-06-15T12:00:00";
 
     # @schedule decorator attaches spec to function (cron)
     @schedule(cron="0 9 * * 1")
-    def weekly_fn { "noop"; }
+    def weekly_fn {
+        "noop";
+    }
     assert hasattr(weekly_fn, 'schedule_spec');
     assert weekly_fn.schedule_spec.cron == "0 9 * * 1";
 
     # Error handling: _execute catches exceptions gracefully
-    def bad_fn { raise RuntimeError("boom") ; }
+    def bad_fn {
+        raise RuntimeError("boom") ;
+    }
     task = ScheduledTask(
-        name="bad_task", target=bad_fn, spec=ScheduleSpec(interval=60),
-        is_walker=False, next_run=datetime.datetime.now(), last_run=None
+        name="bad_task",
+        target=bad_fn,
+        spec=ScheduleSpec(interval=60),
+        is_walker=False,
+        next_run=datetime.datetime.now(),
+        last_run=None
     );
     sched._execute(task);  # Should not raise
 }
@@ -181,8 +201,14 @@ test "fixture loading registration and api exclusion" {
     (module, ) = Jac.jac_import("scheduled_tasks", FIXTURES);
 
     # All six scheduled items have schedule_spec
-    for name in ["DateWalker", "IntervalWalker", "CronWalker",
-                  "date_function", "interval_function", "cron_function"] {
+    for name in [
+        "DateWalker",
+        "IntervalWalker",
+        "CronWalker",
+        "date_function",
+        "interval_function",
+        "cron_function"
+    ] {
         assert hasattr(getattr(module, name), "schedule_spec") , f"{name} missing schedule_spec";
     }
 
@@ -200,7 +226,9 @@ test "fixture loading registration and api exclusion" {
     assert len(sched._tasks) >= 4;
 
     # Scheduled items are excluded from API endpoints
-    introspector = ModuleIntrospector(module_name="scheduled_tasks", base_path=FIXTURES);
+    introspector = ModuleIntrospector(
+        module_name="scheduled_tasks", base_path=FIXTURES
+    );
     introspector._walkers = {
         "DateWalker": module.DateWalker,
         "IntervalWalker": module.IntervalWalker,
@@ -226,12 +254,23 @@ test "scheduler executes walkers and functions correctly" {
     # Register date-based walker and function (fire once), plus interval tasks
     run_at = (datetime.datetime.now() + datetime.timedelta(seconds=0.5)).isoformat();
     sched.register("DateWalker", module.DateWalker, ScheduleSpec(date=run_at), True);
-    sched.register("date_function", module.date_function, ScheduleSpec(date=run_at), False);
-    sched.register("IntervalWalker", module.IntervalWalker, ScheduleSpec(interval=0.5), True);
-    sched.register("interval_function", module.interval_function, ScheduleSpec(interval=0.5), False);
+    sched.register(
+        "date_function", module.date_function, ScheduleSpec(date=run_at), False
+    );
+    sched.register(
+        "IntervalWalker", module.IntervalWalker, ScheduleSpec(interval=0.5), True
+    );
+    sched.register(
+        "interval_function",
+        module.interval_function,
+        ScheduleSpec(interval=0.5),
+        False
+    );
 
     # Also register a bad function to verify error recovery
-    def bad_fn { raise RuntimeError("deliberate error") ; }
+    def bad_fn {
+        raise RuntimeError("deliberate error") ;
+    }
     sched.register("bad", bad_fn, ScheduleSpec(interval=0.3), False);
 
     sched.start();

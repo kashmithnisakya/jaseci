@@ -127,7 +127,9 @@ impl Scheduler._pick_up_new_tasks(heap: list) -> None {
 }
 
 """Compute the next run datetime for a given spec."""
-impl Scheduler._compute_next_run(spec: ScheduleSpec, now: datetime.datetime) -> (datetime.datetime | None) {
+impl Scheduler._compute_next_run(
+    spec: ScheduleSpec, now: datetime.datetime
+) -> (datetime.datetime | None) {
     if spec.date is not None {
         return self._compute_date(spec.date, now);
     }
@@ -141,7 +143,9 @@ impl Scheduler._compute_next_run(spec: ScheduleSpec, now: datetime.datetime) -> 
 }
 
 """Compute next run for a date-based spec."""
-impl Scheduler._compute_date(date_str: str, now: datetime.datetime) -> (datetime.datetime | None) {
+impl Scheduler._compute_date(
+    date_str: str, now: datetime.datetime
+) -> (datetime.datetime | None) {
     try {
         run_at = datetime.datetime.fromisoformat(date_str);
     } except (ValueError, TypeError) {
