@@ -184,63 +184,37 @@ impl Scheduler._parse_cron_next(
     raise ValueError(f"No matching time found for cron: {cron}") ;
 }
 
-"""Check if a single cron field matches a given integer value.
-
-Supports: *, */n, n, n-m, and comma-separated combinations.
-"""
+"""Check if a cron field matches a value."""
 impl Scheduler._cron_field_matches(
     field: str, value: int, min_val: int, max_val: int
 ) -> bool {
     for part in field.split(',') {
         part = part.strip();
-        if self._cron_part_matches(part, value, min_val) {
+        if part == '*' {
             return True;
+        } elif part.startswith('*/') {
+            try {
+                step = int(part[2:]);
+                if step > 0 and (value - min_val) % step == 0 {
+                    return True;
+                }
+            } except ValueError { }
+        } elif '-' in part {
+            try {
+                (lo, hi) = part.split('-', 1);
+                if int(lo) <= value <= int(hi) {
+                    return True;
+                }
+            } except ValueError { }
+        } else {
+            try {
+                if int(part) == value {
+                    return True;
+                }
+            } except ValueError { }
         }
     }
     return False;
-}
-
-"""Check if a single cron sub-part matches the value."""
-impl Scheduler._cron_part_matches(part: str, value: int, min_val: int) -> bool {
-    if part == '*' {
-        return True;
-    }
-    if part.startswith('*/') {
-        return self._cron_step_matches(part, value, min_val);
-    }
-    if '-' in part {
-        return self._cron_range_matches(part, value);
-    }
-    return self._cron_exact_matches(part, value);
-}
-
-"""Check */n step match."""
-impl Scheduler._cron_step_matches(part: str, value: int, min_val: int) -> bool {
-    try {
-        step = int(part[2:]);
-        return step > 0 and (value - min_val) % step == 0;
-    } except ValueError {
-        return False;
-    }
-}
-
-"""Check n-m range match."""
-impl Scheduler._cron_range_matches(part: str, value: int) -> bool {
-    try {
-        (lo, hi) = part.split('-', 1);
-        return int(lo) <= value <= int(hi);
-    } except ValueError {
-        return False;
-    }
-}
-
-"""Check exact integer match."""
-impl Scheduler._cron_exact_matches(part: str, value: int) -> bool {
-    try {
-        return int(part) == value;
-    } except ValueError {
-        return False;
-    }
 }
 
 """Execute a single scheduled task."""
