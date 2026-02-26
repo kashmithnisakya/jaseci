@@ -1,20 +1,14 @@
-"""Fixture: scheduled walkers and functions for scheduler tests.
-
-Each walker/function appends to a module-level `execution_log` list
-so tests can verify actual execution occurred.
-"""
+"""Fixture: scheduled walkers and functions for scheduler tests."""
 
 import datetime;
 
-# Shared mutable state — tests inspect this after scheduler fires tasks.
-glob execution_log:
-         list = [],
-     run_at: str = (datetime.datetime.now() + datetime.timedelta(seconds=5)).isoformat(),
-     fn_run_at: str = (datetime.datetime.now() + datetime.timedelta(seconds=8)).isoformat();
+glob execution_log: list = [],
+     run_at: str = (datetime.datetime.now() + datetime.timedelta(seconds=1)).isoformat(),
+     fn_run_at: str = (
+         datetime.datetime.now() + datetime.timedelta(seconds=1)
+     ).isoformat();
 
-# ──────────────────────────────────────────────
-# 1. date — one-shot walker (runs once at a specific time)
-# ──────────────────────────────────────────────
+# 1. Date walker
 @schedule(date=run_at)
 walker DateWalker {
     can greet with Root entry {
@@ -22,19 +16,15 @@ walker DateWalker {
     }
 }
 
-# ──────────────────────────────────────────────
-# 2. interval — recurring walker (runs every N seconds)
-# ──────────────────────────────────────────────
-@schedule(interval=10)
+# 2. Interval walker
+@schedule(interval=0.3)
 walker IntervalWalker {
     can tick with Root entry {
         execution_log.append("interval-walker");
     }
 }
 
-# ──────────────────────────────────────────────
-# 3. cron — cron-based walker (runs on a cron schedule)
-# ──────────────────────────────────────────────
+# 3. Cron walker
 @schedule(cron="* * * * *")
 walker CronWalker {
     can check with Root entry {
@@ -42,26 +32,34 @@ walker CronWalker {
     }
 }
 
-# ──────────────────────────────────────────────
-# 4. date — one-shot function (runs once at a specific time)
-# ──────────────────────────────────────────────
+# 4. Date function
 @schedule(date=fn_run_at)
 def date_function {
     execution_log.append("date-function");
 }
 
-# ──────────────────────────────────────────────
-# 5. interval — recurring function (runs every N seconds)
-# ──────────────────────────────────────────────
-@schedule(interval=15)
+# 5. Interval function
+@schedule(interval=0.3)
 def interval_function {
     execution_log.append("interval-function");
 }
 
-# ──────────────────────────────────────────────
-# 6. cron — cron-based function (runs on a cron schedule)
-# ──────────────────────────────────────────────
-@schedule(cron="*/2 * * * *")
+# 6. Cron function
+@schedule(cron="* * * * *")
 def cron_function {
     execution_log.append("cron-function");
 }
+
+# 7. Default trigger (static) walker
+@schedule(interval=1)
+walker StaticWalker {
+    can act with Root entry { }
+}
+
+# 8. Explicit ScheduleTrigger.STATIC function
+@schedule(interval=1, trigger=ScheduleTrigger.STATIC)
+def static_fn { }
+
+# 9. String trigger="static" function
+@schedule(interval=1, trigger="static")
+def str_trigger_fn { }

@@ -11,6 +11,12 @@ enum APIProtocol ( StrEnum ) {
     WEBSOCKET = 'websocket'
 }
 
+"""Trigger mode for a scheduled task."""
+enum ScheduleTrigger ( StrEnum ) {
+    STATIC = 'static',
+    DYNAMIC = 'dynamic'
+}
+
 with entry {
     if TYPE_CHECKING {
         import from enum { IntEnum }
@@ -90,5 +96,6 @@ glob __all__ = [
          'WritePerm',
          'restspec',
          'schedule',
+         'ScheduleTrigger',
          'APIProtocol'
      ];

@@ -5,6 +5,7 @@ import heapq;
 import datetime;
 import logging;
 import from collections.abc { Callable }
+import from jaclang.runtimelib.builtin { ScheduleTrigger }
 
 glob _scheduler_instance: (Scheduler | None) = None,
      logger = logging.getLogger(__name__);
@@ -13,7 +14,8 @@ glob _scheduler_instance: (Scheduler | None) = None,
 obj ScheduleSpec {
     has date: (str | None) = None,
         interval: (float | None) = None,
-        cron: (str | None) = None;
+        cron: (str | None) = None,
+        trigger: ScheduleTrigger = ScheduleTrigger.STATIC;
 }
 
 """One registered scheduled task."""
