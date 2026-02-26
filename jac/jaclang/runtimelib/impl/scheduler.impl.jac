@@ -159,7 +159,9 @@ impl Scheduler._compute_date(
 }
 
 """Parse a 5-field cron string and return the next matching datetime."""
-impl Scheduler._parse_cron_next(cron: str, now: datetime.datetime) -> datetime.datetime {
+impl Scheduler._parse_cron_next(
+    cron: str, now: datetime.datetime
+) -> datetime.datetime {
     fields = cron.strip().split();
     if len(fields) != 5 {
         raise ValueError(f"Cron must have 5 fields, got: {cron}") ;

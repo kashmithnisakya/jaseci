@@ -226,9 +226,7 @@ test "fixture loading registration and api exclusion" {
     assert len(sched._tasks) >= 4;
 
     # Scheduled items are excluded from API endpoints
-    introspector = ModuleIntrospector(
-        module_name="scheduled_tasks", base_path=FIXTURES
-    );
+    introspector = ModuleIntrospector(module_name="scheduled_tasks", base_path=FIXTURES);
     introspector._walkers = {
         "DateWalker": module.DateWalker,
         "IntervalWalker": module.IntervalWalker,
