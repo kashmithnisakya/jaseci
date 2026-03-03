@@ -3,9 +3,7 @@
 # ============================================================================
 # Test Functions
 # ============================================================================
-def add_numbers(
-    a: int, b: int
-) -> int {
+def add_numbers(a: int, b: int) -> int {
     return a + b;
 }
 
@@ -39,14 +37,14 @@ walker CreateTask {
 
     can create with Root entry {
         new_task = here ++> Task(title=self.title, priority=self.priority);
-        report new_task ;
+        report new_task;
     }
 }
 
 walker ListTasks {
     can list with Root entry {
         tasks = [-->];
-        report tasks ;
+        report tasks;
     }
 }
 
@@ -63,34 +61,34 @@ walker CompleteTask {
 
     can mark_done with Task entry {
         here.completed = True;
-        report here ;
+        report here;
     }
 }
 
 walker GetTask {
     can get with Task entry {
-        report here ;
+        report here;
     }
 }
 
-walker : priv PrivateCreateTask {
+walker:priv PrivateCreateTask {
     has title: str;
     has priority: int = 1;
 
     can create with Root entry {
         new_task = here ++> Task(title=self.title, priority=self.priority);
-        report {"message": "Private task created", "task": new_task} ;
+        report {"message": "Private task created", "task": new_task};
     }
 }
 
-walker : pub PublicInfo {
+walker:pub PublicInfo {
     can get_info with Root entry {
-        report {"message": "This is a public endpoint", "auth_required": False} ;
+        report {"message": "This is a public endpoint", "auth_required": False};
     }
 }
 
 # Streaming Walker Test
-walker : pub WalkerStream {
+walker:pub WalkerStream {
     has count: int = 3;
 
     can stream_reports with Root entry {
@@ -107,7 +105,7 @@ walker : pub WalkerStream {
 
 import from typing { Generator }
 # Streaming function test
-def : pub FunctionStream(count: int = 3) -> Generator {
+def:pub FunctionStream(count: int = 3) -> Generator {
     import time;
     def stream -> Generator {
         for i in range(count) {
@@ -174,7 +172,7 @@ walker SecureFileUpload {
 }
 
 """Public walker with file upload (no auth required)."""
-walker : pub PublicFileUpload {
+walker:pub PublicFileUpload {
     has attachment: UploadFile;
 
     can process with Root entry {
@@ -250,11 +248,10 @@ walker MinimalWebhook {
 # ============================================================================
 # WebSocket Walkers
 # ============================================================================
-
 """Test 1: Async WebSocket walker with fields using @restspec(protocol=APIProtocol.WEBSOCKET).
 This walker should be accessible ONLY via ws://host/ws/EchoMessage endpoint."""
-@restspec(protocol=APIProtocol.WEBSOCKET)
-async walker : pub EchoMessage {
+async @restspec(protocol=APIProtocol.WEBSOCKET)
+walker:pub EchoMessage {
     has message: str;
     has client_id: str = "anonymous";
 
@@ -270,8 +267,8 @@ async walker : pub EchoMessage {
 
 """Test 2: Minimal async WebSocket walker with ONLY @restspec(protocol=APIProtocol.WEBSOCKET).
 This walker should be accessible ONLY via ws://host/ws/MinimalWebSocket endpoint."""
-@restspec(protocol=APIProtocol.WEBSOCKET)
-async walker : pub MinimalWebSocket {
+async @restspec(protocol=APIProtocol.WEBSOCKET)
+walker:pub MinimalWebSocket {
     async can process with Root entry {
         report {
             "status": "connected",
@@ -283,8 +280,8 @@ async walker : pub MinimalWebSocket {
 
 """Test 3: Private WebSocket walker (requires JWT auth).
 This walker requires token authentication - no `: pub` modifier."""
-@restspec(protocol=APIProtocol.WEBSOCKET)
-async walker PrivateWebSocket {
+async @restspec(protocol=APIProtocol.WEBSOCKET)
+walker PrivateWebSocket {
     has message: str = "";
 
     async can process with Root entry {
@@ -299,8 +296,8 @@ async walker PrivateWebSocket {
 
 """Test 4: Public WebSocket walker with broadcasting enabled.
 All connected clients receive every message."""
-@restspec(protocol=APIProtocol.WEBSOCKET, broadcast=True)
-async walker : pub BroadcastChat {
+async @restspec(protocol=APIProtocol.WEBSOCKET, broadcast=True)
+walker:pub BroadcastChat {
     has message: str;
     has sender: str = "anonymous";
 
@@ -316,8 +313,8 @@ async walker : pub BroadcastChat {
 
 """Test 5: Private WebSocket walker with broadcasting (auth + broadcast).
 Authenticated chat room where all messages are broadcast to authenticated users."""
-@restspec(protocol=APIProtocol.WEBSOCKET, broadcast=True)
-async walker PrivateBroadcastChat {
+async @restspec(protocol=APIProtocol.WEBSOCKET, broadcast=True)
+walker PrivateBroadcastChat {
     has message: str;
     has room: str = "general";
 
@@ -330,4 +327,48 @@ async walker PrivateBroadcastChat {
             "broadcast": True
         };
     }
+}
+
+# ============================================================================
+# Scheduling Walkers and Functions
+# ============================================================================
+"""Static interval walker: registered with base Scheduler at startup.
+Small interval so execution can be verified in tests."""
+@schedule(trigger="static", interval=0.3)
+walker StaticScheduledWalker {
+    can run with Root entry {
+        report {"message": "static walker executed", "trigger": "static"};
+    }
+}
+
+"""Dynamic scheduled walker: eligible to be scheduled via POST /jobs."""
+@schedule(trigger="dynamic")
+walker DynamicScheduledWalker {
+    can run with Root entry {
+        report {"message": "dynamic walker executed", "trigger": "dynamic"};
+    }
+}
+
+"""Static interval function: registered with base Scheduler at startup."""
+@schedule(trigger="static", interval=0.3)
+def static_scheduled_func -> dict {
+    return {"message": "static function executed", "trigger": "static"};
+}
+
+"""Dynamic scheduled function: eligible to be scheduled via POST /jobs."""
+@schedule(trigger="dynamic")
+def dynamic_scheduled_func -> dict {
+    return {"message": "dynamic function executed", "trigger": "dynamic"};
+}
+
+"""Public walker with no schedule spec — must appear as an HTTP endpoint."""
+walker:pub NormalWalker {
+    can run with Root entry {
+        report {"message": "normal walker endpoint"};
+    }
+}
+
+"""Function with no schedule spec — must appear as an HTTP endpoint."""
+def normal_func -> dict {
+    return {"message": "normal function endpoint"};
 }

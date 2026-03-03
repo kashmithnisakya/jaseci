@@ -37,6 +37,7 @@ import from jaclang.cli.banners { JAC_DISCORD_URL }
 import from fastapi { WebSocket, WebSocketDisconnect }
 import from jac_scale.admin.admin_portal { JacAPIServerAdmin }
 import from jac_scale.enums { Platforms, Operations }
+import from jac_scale.scheduler { JacScaleScheduler }
 
 # Load configuration from jac.toml with env var overrides
 glob _jwt_config = get_scale_config().get_jwt_config(),
@@ -81,6 +82,7 @@ obj JacAPIServerCore {
     def _create_sso_callback_wrapper -> Callable[..., (Response | TransportResponse)];
     # HMR support
     def enable_hmr(hot_reloader: Any) -> None;
+    def _setup_scheduler -> None;
     # API key management
     def get_api_key_manager -> ApiKeyManager;
     def create_api_key(
@@ -134,6 +136,16 @@ obj JacAPIServerEndpoints {
     def register_dynamic_websocket_endpoint -> None;
 }
 
+"""Scheduler job management REST API endpoints."""
+obj JacAPIServerScheduler {
+    def register_scheduler_endpoints -> None;
+    def create_job_callback -> Callable[..., TransportResponse];
+    def list_jobs_callback -> Callable[..., TransportResponse];
+    def get_job_callback -> Callable[..., TransportResponse];
+    def update_job_callback -> Callable[..., TransportResponse];
+    def delete_job_callback -> Callable[..., TransportResponse];
+}
+
 """Static files, pages, client JS, graph visualization."""
 obj JacAPIServerStatic {
     # Static file serving
@@ -155,7 +167,7 @@ obj JacAPIServerStatic {
 }
 
 """Composed JacAPIServer class combining all mixins with JServer base."""
-obj JacAPIServer(JacAPIServerCore, JacAPIServerEndpoints, JacAPIServerStatic, JacAPIServerAdmin, JServer) {
+obj JacAPIServer(JacAPIServerCore, JacAPIServerEndpoints, JacAPIServerStatic, JacAPIServerAdmin, JacAPIServerScheduler, JServer) {
     # HMR (Hot Module Replacement) support fields
     has _hmr_pending: bool = False,
         _hot_reloader: Any | None = None,

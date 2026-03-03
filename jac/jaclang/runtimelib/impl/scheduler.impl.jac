@@ -1,3 +1,9 @@
+"""Register the plugin hook called when a DYNAMIC-trigger task fires."""
+impl set_dynamic_handler(handler: Callable) -> None {
+    global _dynamic_schedule_handler;
+    _dynamic_schedule_handler = handler;
+}
+
 """Return or create the module-level singleton Scheduler."""
 impl Scheduler.instance -> Scheduler {
     global _scheduler_instance;
@@ -220,6 +226,14 @@ impl Scheduler._cron_field_matches(
 """Execute a single scheduled task."""
 impl Scheduler._execute(task: ScheduledTask) -> None {
     try {
+        if task.spec.trigger == ScheduleTrigger.DYNAMIC {
+            global _dynamic_schedule_handler;
+            if _dynamic_schedule_handler is None {
+                raise NotImplementedError("Dynamic scheduling requires jac-scale. ") ;
+            }
+            _dynamic_schedule_handler(task);
+            return;
+        }
         if task.is_walker {
             import from jaclang { JacRuntimeInterface as Jac }
             walker_instance = task.target();
