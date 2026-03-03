@@ -88,6 +88,12 @@ impl NaIRGenPass.init(
         ir.IntType(64), ir.IntType(64), ir.IntType(64)
     );  # {i64 start, i64 stop, i64 step}
     self.var_range: set[str] = set();  # variable names known to be range
+    # Slice object support (same layout as JacRange)
+    self.slice_struct_type = self.llvm_module.context.get_identified_type("JacSlice");
+    self.slice_struct_type.set_body(
+        ir.IntType(64), ir.IntType(64), ir.IntType(64)
+    );  # {i64 start, i64 stop, i64 step}
+    self.var_slice: set[str] = set();  # variable names known to be slice
     # Global variable support (Phase 11)
     self.global_vars: dict[(str, ir.GlobalVariable)] = {};  # name → global variable
     self.global_var_types: dict[(str, ir.Type)] = {};  # name → LLVM type
