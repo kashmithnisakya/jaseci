@@ -176,17 +176,9 @@ impl JacAPIServerScheduler.create_job_callback -> Callable[..., TransportRespons
         }
 
         # Verify the walker/function exists and has @schedule(trigger=DYNAMIC)
-        # We use the raw introspector dicts (not get_walkers/get_functions) because
-        # those filter out scheduled walkers/functions.
         introspector = self.introspector;
-        all_walkers = introspector._walkers
-            if introspector._walkers
-            else introspector.get_walkers();
-        all_functions = introspector._functions
-            if introspector._functions
-            else introspector.get_functions();
-        target_obj = all_walkers.get(walker_or_function)
-        or all_functions.get(walker_or_function);
+        target_obj = (introspector._walkers or {}).get(walker_or_function)
+        or (introspector._functions or {}).get(walker_or_function);
 
         if target_obj is None {
             return TransportResponse.fail(

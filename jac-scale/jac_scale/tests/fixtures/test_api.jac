@@ -250,8 +250,8 @@ walker MinimalWebhook {
 # ============================================================================
 """Test 1: Async WebSocket walker with fields using @restspec(protocol=APIProtocol.WEBSOCKET).
 This walker should be accessible ONLY via ws://host/ws/EchoMessage endpoint."""
-async @restspec(protocol=APIProtocol.WEBSOCKET)
-walker:pub EchoMessage {
+@restspec(protocol=APIProtocol.WEBSOCKET)
+async walker:pub EchoMessage {
     has message: str;
     has client_id: str = "anonymous";
 
@@ -267,8 +267,8 @@ walker:pub EchoMessage {
 
 """Test 2: Minimal async WebSocket walker with ONLY @restspec(protocol=APIProtocol.WEBSOCKET).
 This walker should be accessible ONLY via ws://host/ws/MinimalWebSocket endpoint."""
-async @restspec(protocol=APIProtocol.WEBSOCKET)
-walker:pub MinimalWebSocket {
+@restspec(protocol=APIProtocol.WEBSOCKET)
+async walker:pub MinimalWebSocket {
     async can process with Root entry {
         report {
             "status": "connected",
@@ -280,8 +280,8 @@ walker:pub MinimalWebSocket {
 
 """Test 3: Private WebSocket walker (requires JWT auth).
 This walker requires token authentication - no `: pub` modifier."""
-async @restspec(protocol=APIProtocol.WEBSOCKET)
-walker PrivateWebSocket {
+@restspec(protocol=APIProtocol.WEBSOCKET)
+async walker PrivateWebSocket {
     has message: str = "";
 
     async can process with Root entry {
@@ -296,8 +296,8 @@ walker PrivateWebSocket {
 
 """Test 4: Public WebSocket walker with broadcasting enabled.
 All connected clients receive every message."""
-async @restspec(protocol=APIProtocol.WEBSOCKET, broadcast=True)
-walker:pub BroadcastChat {
+@restspec(protocol=APIProtocol.WEBSOCKET, broadcast=True)
+async walker:pub BroadcastChat {
     has message: str;
     has sender: str = "anonymous";
 
@@ -313,8 +313,8 @@ walker:pub BroadcastChat {
 
 """Test 5: Private WebSocket walker with broadcasting (auth + broadcast).
 Authenticated chat room where all messages are broadcast to authenticated users."""
-async @restspec(protocol=APIProtocol.WEBSOCKET, broadcast=True)
-walker PrivateBroadcastChat {
+@restspec(protocol=APIProtocol.WEBSOCKET, broadcast=True)
+async walker PrivateBroadcastChat {
     has message: str;
     has room: str = "general";
 

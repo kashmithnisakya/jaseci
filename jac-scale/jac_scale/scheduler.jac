@@ -52,6 +52,7 @@ obj JacScaleScheduler {
         cron: (str | None) = None,
         date: (str | None) = None
     ) -> (dict | None);
+
     def delete_job(job_id: str) -> bool;
     # Internal execution helpers
     def _execute_task(name: str, username: str, is_walker: bool) -> None;

@@ -297,13 +297,9 @@ impl JacScaleScheduler._execute_task(
         }
         introspector = self._server.introspector;
         if is_walker {
-            registry = introspector._walkers
-                if introspector._walkers
-                else introspector.get_walkers();
+            registry = introspector._walkers or introspector.get_walkers();
         } else {
-            registry = introspector._functions
-                if introspector._functions
-                else introspector.get_functions();
+            registry = introspector._functions or introspector.get_functions();
         }
         if name not in registry {
             _scheduler_logger.error(
@@ -360,16 +356,10 @@ impl JacScaleScheduler._schedule_apscheduler_job(
         raise RuntimeError("APScheduler is not initialized") ;
     }
 
-    # Determine whether it's a walker or function for execution routing
-    is_walker = False;
-    if self._server is not None {
-        # Use raw _walkers to include scheduled walkers (get_walkers() filters them out)
-        introspector = self._server.introspector;
-        all_walkers = introspector._walkers
-            if introspector._walkers
-            else introspector.get_walkers();
-        is_walker = name in all_walkers;
-    }
+    # Determine whether it's a walker or function for execution routing.
+    # Use raw _walkers — get_walkers() filters out scheduled items.
+    introspector = self._server.introspector if self._server else None;
+    is_walker = name in (introspector._walkers or {}) if introspector else False;
 
     def job_func -> None {
         self._execute_task(name, username, is_walker);
