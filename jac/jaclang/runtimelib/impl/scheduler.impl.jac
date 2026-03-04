@@ -229,7 +229,7 @@ impl Scheduler._execute(task: ScheduledTask) -> None {
         if task.spec.trigger == ScheduleTrigger.DYNAMIC {
             global _dynamic_schedule_handler;
             if _dynamic_schedule_handler is None {
-                raise NotImplementedError("Dynamic scheduling requires jac-scale.");
+                raise NotImplementedError("Dynamic scheduling requires jac-scale.") ;
             }
             _dynamic_schedule_handler(task);
             return;
