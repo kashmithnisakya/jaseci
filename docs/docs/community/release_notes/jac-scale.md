@@ -6,6 +6,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 - [fix]Fix for internet facing aws load balancer
 - 1 Minor refactor/change.
+- **Scheduling Support**: Added static and dynamic task scheduling for walkers and functions via `@schedule(trigger=...)`. Static schedules (INTERVAL/CRON/DATE) start automatically at server startup; dynamic schedules (DYNAMIC) are managed via a new `/jobs` REST API (create, list, get, update, delete) with MongoDB persistence. Scheduled items are excluded from standard walker/function endpoints. A `__system__` user executes all scheduled tasks; configure via `[plugins.scale.scheduler]` in `jac.toml`.
 
 - **Redis Cache Configuration with TTL Support**: Added configurable eviction policies and TTL support for Kubernetes Redis deployments via `jac.toml` (`redis_max_memory`, `redis_eviction_policy`, `redis_eviction_samples`, `redis_default_ttl`, `redis_enable_keyspace_notifications`); ConfigMap-based with automatic pod restart on change. Anchors stored in Redis L2 cache now respect the `redis_default_ttl` setting and will automatically expire after the configured duration (default: 0 = no expiration).
 - 1 small refactor/change.

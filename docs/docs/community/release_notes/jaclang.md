@@ -4,6 +4,8 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 ## jaclang 0.11.4 (Unreleased)
 
+- **Scheduling: DYNAMIC Trigger Support**: `@schedule(trigger=DYNAMIC)` now attaches a spec and delegates execution to a registered `_dynamic_schedule_handler` (e.g. jac-scale) instead of raising `NotImplementedError`.
+
 - 9 small refactors/changes.
 - 11 small refactors/changes.
 - 13 small refactors/changes.
