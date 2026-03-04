@@ -43,12 +43,16 @@ def _err(resp: dict[str, Any]) -> dict[str, Any] | None {
 def _cleanup -> None {
     for pattern in ["*.db", "*.db-wal", "*.db-shm"] {
         for f in glob.glob(str(FIXTURES_DIR / pattern)) {
-            with contextlib.suppress(Exception) { Path(f).unlink(); }
+            with contextlib.suppress(Exception) {
+                Path(f).unlink();
+            }
         }
     }
     jac_dir = FIXTURES_DIR / ".jac";
     if jac_dir.exists() {
-        with contextlib.suppress(Exception) { shutil.rmtree(jac_dir); }
+        with contextlib.suppress(Exception) {
+            shutil.rmtree(jac_dir);
+        }
     }
 }
 
@@ -57,8 +61,10 @@ def _start_server(port: int) -> subprocess.Popen {
     jac_exe = Path(sys.executable).parent / "jac";
     proc = subprocess.Popen(
         [str(jac_exe), "start", "test_api.jac", "--port", str(port)],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, cwd=str(FIXTURES_DIR)
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=str(FIXTURES_DIR)
     );
     for _ in range(60) {
         if proc.poll() is not None {
@@ -95,13 +101,21 @@ def _stop_server(proc: subprocess.Popen | None) -> None {
 }
 
 def _get_token(base_url: str, user: str = "testuser", pwd: str = "pass123") -> str {
-    requests.post(f"{base_url}/user/register", json={"username": user, "password": pwd}, timeout=5);
-    resp = requests.post(f"{base_url}/user/login", json={"username": user, "password": pwd}, timeout=5).json();
+    requests.post(
+        f"{base_url}/user/register",
+        json={"username": user, "password": pwd},
+        timeout=5
+    );
+    resp = requests.post(
+        f"{base_url}/user/login", json={"username": user, "password": pwd}, timeout=5
+    ).json();
     return _data(resp)["token"];
 }
 
 def _post_job(base_url: str, headers: dict, payload: dict) -> dict[str, Any] {
-    return requests.post(f"{base_url}/jobs", json=payload, headers=headers, timeout=5).json();
+    return requests.post(
+        f"{base_url}/jobs", json=payload, headers=headers, timeout=5
+    ).json();
 }
 
 # =============================================================================
@@ -113,11 +127,15 @@ test "endpoint filtering and startup" {
     _cleanup();
     sp = _start_server(port);
     try {
-        paths = requests.get(f"{base_url}/openapi.json", timeout=5).json().get("paths", {});
+        paths = requests.get(f"{base_url}/openapi.json", timeout=5).json().get(
+            "paths", {}
+        );
 
         # All static + dynamic scheduled walkers absent from /walker/*
         for name in [
-            "StaticIntervalWalker", "StaticCronWalker", "StaticDateWalker",
+            "StaticIntervalWalker",
+            "StaticCronWalker",
+            "StaticDateWalker",
             "DynamicScheduledWalker"
         ] {
             assert f"/walker/{name}" not in paths , f"{name} must not be a /walker endpoint";
@@ -125,7 +143,9 @@ test "endpoint filtering and startup" {
 
         # All static + dynamic scheduled functions absent from /function/*
         for name in [
-            "static_interval_func", "static_cron_func", "static_date_func",
+            "static_interval_func",
+            "static_cron_func",
+            "static_date_func",
             "dynamic_scheduled_func"
         ] {
             assert f"/function/{name}" not in paths , f"{name} must not be a /function endpoint";
@@ -144,7 +164,8 @@ test "endpoint filtering and startup" {
         # __system__ user created at startup
         resp = requests.post(
             f"{base_url}/user/login",
-            json={"username": "__system__", "password": "system_secret"}, timeout=5
+            json={"username": "__system__", "password": "system_secret"},
+            timeout=5
         ).json();
         assert resp.get("ok") , "__system__ user must exist and authenticate";
         assert _data(resp).get("token");
@@ -165,9 +186,9 @@ test "dynamic jobs - all trigger types for walker and function" {
     try {
         token = _get_token(base_url, "job_user", "pass123");
         h = {"Authorization": f"Bearer {token}"};
-        run_date = (
-            datetime.datetime.now() + datetime.timedelta(hours=1)
-        ).strftime("%Y-%m-%d %H:%M:%S");
+        run_date = (datetime.datetime.now() + datetime.timedelta(hours=1)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        );
 
         cases = [
             # (name, trigger_payload)
@@ -177,11 +198,12 @@ test "dynamic jobs - all trigger types for walker and function" {
             ("dynamic_scheduled_func", {"trigger": "interval", "interval": 3600}),
             ("dynamic_scheduled_func", {"trigger": "cron", "cron": "0 * * * *"}),
             ("dynamic_scheduled_func", {"trigger": "date", "date": run_date}),
+
         ];
 
         created_ids = [];
         for (name, tpayload) in cases {
-            payload = {**{"walker_or_function": name}, **tpayload};
+            payload = {** {"walker_or_function": name}, ** tpayload};
             body = _post_job(base_url, h, payload);
             assert body.get("ok") , f"POST /jobs failed for {name}/{tpayload['trigger']}: {body}";
             job = _data(body);
@@ -215,10 +237,15 @@ test "jobs crud lifecycle" {
         h = {"Authorization": f"Bearer {token}"};
 
         # Create
-        body = _post_job(base_url, h, {
-            "walker_or_function": "DynamicScheduledWalker",
-            "trigger": "interval", "interval": 60
-        });
+        body = _post_job(
+            base_url,
+            h,
+            {
+                "walker_or_function": "DynamicScheduledWalker",
+                "trigger": "interval",
+                "interval": 60
+            }
+        );
         assert body.get("ok") , f"Create failed: {body}";
         job = _data(body);
         job_id = job["_id"];
@@ -235,7 +262,9 @@ test "jobs crud lifecycle" {
         # Update
         body = requests.put(
             f"{base_url}/jobs/{job_id}",
-            json={"trigger": "interval", "interval": 120}, headers=h, timeout=5
+            json={"trigger": "interval", "interval": 120},
+            headers=h,
+            timeout=5
         ).json();
         assert body.get("ok") and _data(body)["interval"] == 120;
 
@@ -251,7 +280,9 @@ test "jobs crud lifecycle" {
         for method in ["put", "delete"] {
             resp = getattr(requests, method)(
                 f"{base_url}/jobs/nonexistent-id",
-                json={"trigger": "interval", "interval": 60}, headers=h, timeout=5
+                json={"trigger": "interval", "interval": 60},
+                headers=h,
+                timeout=5
             ).json();
             assert not resp.get("ok") and _err(resp)["code"] == "NOT_FOUND";
         }
@@ -275,10 +306,11 @@ test "jobs validation and auth errors" {
 
         # Unauthenticated requests → ok=false / 401
         for req in [
-            lambda: requests.get(f"{base_url}/jobs", timeout=5),
-            lambda: requests.post(f"{base_url}/jobs", json={}, timeout=5),
-            lambda: requests.put(f"{base_url}/jobs/x", json={}, timeout=5),
-            lambda: requests.delete(f"{base_url}/jobs/x", timeout=5),
+            lambda : requests.get(f"{base_url}/jobs", timeout=5),
+            lambda : requests.post(f"{base_url}/jobs", json={}, timeout=5),
+            lambda : requests.put(f"{base_url}/jobs/x", json={}, timeout=5),
+            lambda : requests.delete(f"{base_url}/jobs/x", timeout=5),
+
         ] {
             body = req().json();
             assert not body.get("ok") , "Unauthenticated request must fail";
@@ -286,23 +318,64 @@ test "jobs validation and auth errors" {
 
         invalid_request_cases = [
             # Non-existent walker → NOT_FOUND
-            ({"walker_or_function": "NoSuchWalker", "trigger": "interval", "interval": 60}, "NOT_FOUND"),
+            (
+                {
+                    "walker_or_function": "NoSuchWalker",
+                    "trigger": "interval",
+                    "interval": 60
+                },
+                "NOT_FOUND"
+            ),
             # Walker without @schedule → INVALID_REQUEST
-            ({"walker_or_function": "NormalWalker", "trigger": "interval", "interval": 60}, "INVALID_REQUEST"),
+            (
+                {
+                    "walker_or_function": "NormalWalker",
+                    "trigger": "interval",
+                    "interval": 60
+                },
+                "INVALID_REQUEST"
+            ),
             # Static walker via /jobs → INVALID_REQUEST
-            ({"walker_or_function": "StaticIntervalWalker", "trigger": "interval", "interval": 60}, "INVALID_REQUEST"),
+            (
+                {
+                    "walker_or_function": "StaticIntervalWalker",
+                    "trigger": "interval",
+                    "interval": 60
+                },
+                "INVALID_REQUEST"
+            ),
             # Static function via /jobs → INVALID_REQUEST
-            ({"walker_or_function": "static_interval_func", "trigger": "interval", "interval": 60}, "INVALID_REQUEST"),
+            (
+                {
+                    "walker_or_function": "static_interval_func",
+                    "trigger": "interval",
+                    "interval": 60
+                },
+                "INVALID_REQUEST"
+            ),
             # Missing trigger → INVALID_REQUEST
             ({"walker_or_function": "DynamicScheduledWalker"}, "INVALID_REQUEST"),
             # interval trigger, no interval value → INVALID_REQUEST
-            ({"walker_or_function": "DynamicScheduledWalker", "trigger": "interval"}, "INVALID_REQUEST"),
+            (
+                {"walker_or_function": "DynamicScheduledWalker", "trigger": "interval"},
+                "INVALID_REQUEST"
+            ),
             # cron trigger, no cron expression → INVALID_REQUEST
-            ({"walker_or_function": "DynamicScheduledWalker", "trigger": "cron"}, "INVALID_REQUEST"),
+            (
+                {"walker_or_function": "DynamicScheduledWalker", "trigger": "cron"},
+                "INVALID_REQUEST"
+            ),
             # date trigger, no date value → INVALID_REQUEST
-            ({"walker_or_function": "DynamicScheduledWalker", "trigger": "date"}, "INVALID_REQUEST"),
+            (
+                {"walker_or_function": "DynamicScheduledWalker", "trigger": "date"},
+                "INVALID_REQUEST"
+            ),
             # Unknown trigger type → INVALID_REQUEST
-            ({"walker_or_function": "DynamicScheduledWalker", "trigger": "weekly"}, "INVALID_REQUEST"),
+            (
+                {"walker_or_function": "DynamicScheduledWalker", "trigger": "weekly"},
+                "INVALID_REQUEST"
+            ),
+
         ];
 
         for (payload, expected_code) in invalid_request_cases {

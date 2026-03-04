@@ -1,3 +1,8 @@
+"""Silence APScheduler's verbose logs on instantiation."""
+impl JacScaleScheduler.postinit -> None {
+    logging.getLogger('apscheduler').setLevel(logging.ERROR);
+}
+
 """Return or create the module-level singleton JacScaleScheduler."""
 impl JacScaleScheduler.instance -> JacScaleScheduler {
     global _jac_scale_scheduler;
@@ -26,15 +31,12 @@ impl JacScaleScheduler.setup(system_token: str, server: Any | None = None) -> No
     if db_cfg.get('mongodb_uri') {
         try {
             self._db = Db(client=get_mongo_client(), db_name='jac_scale');
-            _scheduler_logger.info("MongoDB configured — jobs will be persisted");
+            logger.debug("MongoDB configured — jobs will be persisted");
         } except Exception as e {
-            _scheduler_logger.warning(
-                f"MongoDB connection failed, using in-memory: {e}"
-            );
+            logger.warning(f"MongoDB connection failed, using in-memory: {e}");
             self._db = None;
         }
     }
-
     # APScheduler uses in-memory job store — MongoDB persistence is handled manually
     # via _persist_job / _load_jobs_from_db, avoiding serialisation issues with closures.
     executors = {'default': ThreadPoolExecutor(10)};
@@ -42,7 +44,7 @@ impl JacScaleScheduler.setup(system_token: str, server: Any | None = None) -> No
     self._apscheduler = BackgroundScheduler(
         executors=executors, job_defaults=job_defaults
     );
-    _scheduler_logger.info("APScheduler initialized with in-memory job store");
+    logger.debug("APScheduler initialized with in-memory job store");
 }
 
 """Start the APScheduler background scheduler."""
@@ -50,9 +52,9 @@ impl JacScaleScheduler.start -> None {
     if self._apscheduler is not None {
         try {
             self._apscheduler.start();
-            _scheduler_logger.info("JacScaleScheduler (APScheduler) started");
+            logger.debug("Scheduler started");
         } except Exception as e {
-            _scheduler_logger.error(f"Failed to start APScheduler: {e}");
+            logger.error(f"Failed to start APScheduler: {e}");
         }
     }
 }
@@ -62,9 +64,9 @@ impl JacScaleScheduler.stop -> None {
     if self._apscheduler is not None and self._apscheduler.running {
         try {
             self._apscheduler.shutdown(wait=False);
-            _scheduler_logger.info("JacScaleScheduler (APScheduler) stopped");
+            logger.info("Scheduler stopped");
         } except Exception as e {
-            _scheduler_logger.error(f"Error stopping APScheduler: {e}");
+            logger.error(f"Error stopping APScheduler: {e}");
         }
     }
 }
@@ -92,12 +94,12 @@ impl JacScaleScheduler.register_static_tasks(
                 continue;
             }
             if spec.trigger != ScheduleTrigger.STATIC {
-                _scheduler_logger.info(
+                logger.debug(
                     f"'{item_name}' has DYNAMIC trigger — managed by APScheduler"
                 );
                 continue;
             }
-            _scheduler_logger.info(f"Registering static {label} task: {item_name}");
+            logger.debug(f"Registering static {label} task: {item_name}");
             base_scheduler.register(
                 name=item_name,
                 target=_make_target(item_name, is_walker),
@@ -109,7 +111,7 @@ impl JacScaleScheduler.register_static_tasks(
 
     if base_scheduler._tasks {
         base_scheduler.start();
-        _scheduler_logger.info(
+        logger.debug(
             f"Base Scheduler started with {len(base_scheduler._tasks)} static task(s)"
         );
     }
@@ -140,9 +142,9 @@ impl JacScaleScheduler.register_dynamic_tasks_from_db -> None {
                     date=date,
                     username=username
                 );
-                _scheduler_logger.info(f"Restored dynamic job: {name} (id={job_id})");
+                logger.debug(f"Restored dynamic job: {name} (id={job_id})");
             } except Exception as e {
-                _scheduler_logger.error(f"Failed to restore job '{name}': {e}");
+                logger.error(f"Failed to restore job '{name}': {e}");
             }
         }
     }
@@ -194,7 +196,7 @@ impl JacScaleScheduler.create_job(
     persisted_id = self._persist_job(job_data);
     job_data['_id'] = persisted_id;
 
-    _scheduler_logger.info(f"Created dynamic job: {name} (id={persisted_id})");
+    logger.debug(f"Created dynamic job: {name} (id={persisted_id})");
     return job_data;
 }
 
@@ -257,7 +259,7 @@ impl JacScaleScheduler.update_job(
 
     updated = dict(existing);
     updated.update(updates);
-    _scheduler_logger.info(f"Updated dynamic job: {name} (id={job_id})");
+    logger.debug(f"Updated dynamic job: {name} (id={job_id})");
     return updated;
 }
 
@@ -270,7 +272,7 @@ impl JacScaleScheduler.delete_job(job_id: str) -> bool {
     }
     result = self._delete_job_from_db(job_id);
     if result {
-        _scheduler_logger.info(f"Deleted dynamic job id={job_id}");
+        logger.debug(f"Deleted dynamic job id={job_id}");
     }
     return result;
 }
@@ -283,9 +285,7 @@ impl JacScaleScheduler._execute_task(
     label = 'walker' if is_walker else 'function';
     try {
         if self._server is None {
-            _scheduler_logger.error(
-                f"Cannot execute {label} '{name}': server reference not set"
-            );
+            logger.error(f"Cannot execute {label} '{name}': server reference not set");
             return;
         }
         introspector = self._server.introspector;
@@ -295,13 +295,11 @@ impl JacScaleScheduler._execute_task(
             registry = introspector._functions or introspector.get_functions();
         }
         if name not in registry {
-            _scheduler_logger.error(
-                f"{label.capitalize()} '{name}' not found in server registry"
-            );
+            logger.error(f"{label.capitalize()} '{name}' not found in server registry");
             return;
         }
         target = registry[name];
-        _scheduler_logger.info(f"Executing scheduled {label} '{name}' as '{username}'");
+        logger.debug(f"Executing scheduled {label} '{name}' as '{username}'");
 
         async def _run -> None {
             if is_walker {
@@ -314,7 +312,7 @@ impl JacScaleScheduler._execute_task(
                 );
             }
             if isinstance(result, dict) and 'error' in result {
-                _scheduler_logger.error(
+                logger.error(
                     f"Scheduled {label} '{name}' error: {result.get('error')}"
                 );
             }
@@ -331,7 +329,7 @@ impl JacScaleScheduler._execute_task(
             asyncio.run(_run());
         }
     } except Exception as e {
-        _scheduler_logger.error(f"Error executing {label} '{name}': {e}");
+        logger.error(f"Error executing {label} '{name}': {e}");
     }
 }
 
@@ -403,7 +401,7 @@ impl JacScaleScheduler._persist_job(job_data: dict) -> str {
             result = self._db.insert_one(self._collection, dict(job_data));
             return str(result.inserted_id);
         } except Exception as e {
-            _scheduler_logger.warning(f"MongoDB persist failed, using in-memory: {e}");
+            logger.warning(f"MongoDB persist failed, using in-memory: {e}");
         }
     }
     job_id = str(job_data.get('_id', str(uuid4())));
@@ -422,7 +420,7 @@ impl JacScaleScheduler._load_jobs_from_db -> list[dict] {
             }
             return jobs;
         } except Exception as e {
-            _scheduler_logger.warning(f"MongoDB load failed, using in-memory: {e}");
+            logger.warning(f"MongoDB load failed, using in-memory: {e}");
         }
     }
     return list(self._in_memory_jobs.values());
@@ -435,7 +433,7 @@ impl JacScaleScheduler._delete_job_from_db(job_id: str) -> bool {
             result = self._db.delete_one(self._collection, {'_id': job_id});
             return result.deleted_count > 0;
         } except Exception as e {
-            _scheduler_logger.warning(f"MongoDB delete failed, using in-memory: {e}");
+            logger.warning(f"MongoDB delete failed, using in-memory: {e}");
         }
     }
     if job_id in self._in_memory_jobs {
@@ -454,7 +452,7 @@ impl JacScaleScheduler._update_job_in_db(job_id: str, updates: dict) -> bool {
             );
             return result.modified_count > 0;
         } except Exception as e {
-            _scheduler_logger.warning(f"MongoDB update failed, using in-memory: {e}");
+            logger.warning(f"MongoDB update failed, using in-memory: {e}");
         }
     }
     if job_id in self._in_memory_jobs {

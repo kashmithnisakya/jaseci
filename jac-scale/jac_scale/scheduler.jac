@@ -13,7 +13,7 @@ import from jaclang.runtimelib.scheduler {
 import from jac_scale.db { Db, get_mongo_client }
 
 glob _jac_scale_scheduler: (JacScaleScheduler | None) = None,
-     _scheduler_logger = logging.getLogger(__name__);
+     logger = logging.getLogger(__name__);
 
 """Jac-Scale scheduler that bridges APScheduler and the jaclang base Scheduler."""
 obj JacScaleScheduler {
@@ -25,6 +25,7 @@ obj JacScaleScheduler {
         _in_memory_jobs: dict[str, Any] = {},
         _server: Any | None = None;
 
+    def postinit -> None;
     static def instance -> JacScaleScheduler;
     def setup(system_token: str, server: Any | None = None) -> None;
     def start -> None;

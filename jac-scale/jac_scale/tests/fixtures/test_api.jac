@@ -339,7 +339,7 @@ glob execution_log: list = [],
          datetime.datetime.now() + datetime.timedelta(seconds=5)
      ).strftime("%Y-%m-%d %H:%M:%S");
 
-@schedule(trigger="static", interval=0.3)
+@schedule(trigger=ScheduleTrigger.STATIC, interval=0.3)
 walker StaticIntervalWalker {
     can run with Root entry {
         execution_log.append("static-interval-walker");
