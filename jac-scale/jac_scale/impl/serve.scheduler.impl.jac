@@ -1,16 +1,5 @@
-"""JacAPIServerScheduler implementation — /jobs REST endpoint registration and callbacks."""
-import from typing { Any }
-
 """Register all /jobs REST endpoints on the server."""
 impl JacAPIServerScheduler.register_scheduler_endpoints -> None {
-    import from jac_scale.jserver.jserver {
-        APIParameter,
-        HTTPMethod,
-        JEndPoint,
-        ParameterType
-    }
-    import from pydantic { BaseModel, Field }
-
     # POST /jobs — create a new dynamic scheduled job
     self.server.add_endpoint(
         JEndPoint(
@@ -115,11 +104,6 @@ impl JacAPIServerScheduler.register_scheduler_endpoints -> None {
 
 """Build POST /jobs callback — creates a new dynamic scheduled job."""
 impl JacAPIServerScheduler.create_job_callback -> Callable[..., TransportResponse] {
-    import from fastapi { Request }
-    import from jaclang.runtimelib.transport { TransportResponse, Meta }
-    import from jaclang.runtimelib.builtin { ScheduleTrigger }
-    import from jac_scale.scheduler { JacScaleScheduler }
-
     async def callback(request: Request) -> TransportResponse {
         # Require authentication
         authorization = request.headers.get('Authorization');
@@ -263,10 +247,6 @@ impl JacAPIServerScheduler.create_job_callback -> Callable[..., TransportRespons
 
 """Build GET /jobs callback — lists all dynamic scheduled jobs."""
 impl JacAPIServerScheduler.list_jobs_callback -> Callable[..., TransportResponse] {
-    import from fastapi { Request }
-    import from jaclang.runtimelib.transport { TransportResponse, Meta }
-    import from jac_scale.scheduler { JacScaleScheduler }
-
     async def callback(request: Request) -> TransportResponse {
         # Require authentication
         authorization = request.headers.get('Authorization');
@@ -307,10 +287,6 @@ impl JacAPIServerScheduler.list_jobs_callback -> Callable[..., TransportResponse
 
 """Build GET /jobs/{job_id} callback — retrieves a single dynamic job."""
 impl JacAPIServerScheduler.get_job_callback -> Callable[..., TransportResponse] {
-    import from fastapi { Request }
-    import from jaclang.runtimelib.transport { TransportResponse, Meta }
-    import from jac_scale.scheduler { JacScaleScheduler }
-
     async def callback(request: Request, job_id: str) -> TransportResponse {
         # Require authentication
         authorization = request.headers.get('Authorization');
@@ -357,10 +333,6 @@ impl JacAPIServerScheduler.get_job_callback -> Callable[..., TransportResponse] 
 
 """Build PUT /jobs/{job_id} callback — updates an existing dynamic job's schedule."""
 impl JacAPIServerScheduler.update_job_callback -> Callable[..., TransportResponse] {
-    import from fastapi { Request }
-    import from jaclang.runtimelib.transport { TransportResponse, Meta }
-    import from jac_scale.scheduler { JacScaleScheduler }
-
     async def callback(request: Request, job_id: str) -> TransportResponse {
         # Require authentication
         authorization = request.headers.get('Authorization');
@@ -445,10 +417,6 @@ impl JacAPIServerScheduler.update_job_callback -> Callable[..., TransportRespons
 
 """Build DELETE /jobs/{job_id} callback — deletes a dynamic scheduled job."""
 impl JacAPIServerScheduler.delete_job_callback -> Callable[..., TransportResponse] {
-    import from fastapi { Request }
-    import from jaclang.runtimelib.transport { TransportResponse, Meta }
-    import from jac_scale.scheduler { JacScaleScheduler }
-
     async def callback(request: Request, job_id: str) -> TransportResponse {
         # Require authentication
         authorization = request.headers.get('Authorization');

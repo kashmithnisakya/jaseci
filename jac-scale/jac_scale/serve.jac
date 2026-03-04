@@ -38,6 +38,7 @@ import from fastapi { WebSocket, WebSocketDisconnect }
 import from jac_scale.admin.admin_portal { JacAPIServerAdmin }
 import from jac_scale.enums { Platforms, Operations }
 import from jac_scale.scheduler { JacScaleScheduler }
+import from jaclang.runtimelib.builtin { ScheduleTrigger }
 
 # Load configuration from jac.toml with env var overrides
 glob _jwt_config = get_scale_config().get_jwt_config(),
