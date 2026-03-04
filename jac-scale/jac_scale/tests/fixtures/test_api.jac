@@ -332,43 +332,67 @@ async walker PrivateBroadcastChat {
 # ============================================================================
 # Scheduling Walkers and Functions
 # ============================================================================
-"""Static interval walker: registered with base Scheduler at startup.
-Small interval so execution can be verified in tests."""
+import datetime;
+
+glob execution_log: list = [],
+     _future_date: str = (
+         datetime.datetime.now() + datetime.timedelta(seconds=5)
+     ).strftime("%Y-%m-%d %H:%M:%S");
+
 @schedule(trigger="static", interval=0.3)
-walker StaticScheduledWalker {
+walker StaticIntervalWalker {
     can run with Root entry {
-        report {"message": "static walker executed", "trigger": "static"};
+        execution_log.append("static-interval-walker");
     }
 }
 
-"""Dynamic scheduled walker: eligible to be scheduled via POST /jobs."""
-@schedule(trigger="dynamic")
+@schedule(trigger=ScheduleTrigger.STATIC, cron="* * * * *")
+walker StaticCronWalker {
+    can run with Root entry {
+        execution_log.append("static-cron-walker");
+    }
+}
+
+@schedule(trigger=ScheduleTrigger.STATIC, date=_future_date)
+walker StaticDateWalker {
+    can run with Root entry {
+        execution_log.append("static-date-walker");
+    }
+}
+
+@schedule(trigger=ScheduleTrigger.STATIC, interval=0.3)
+def static_interval_func -> None {
+    execution_log.append("static-interval-func");
+}
+
+@schedule(trigger=ScheduleTrigger.STATIC, cron="* * * * *")
+def static_cron_func -> None {
+    execution_log.append("static-cron-func");
+}
+
+@schedule(trigger=ScheduleTrigger.STATIC, date=_future_date)
+def static_date_func -> None {
+    execution_log.append("static-date-func");
+}
+
+@schedule(trigger=ScheduleTrigger.DYNAMIC)
 walker DynamicScheduledWalker {
     can run with Root entry {
-        report {"message": "dynamic walker executed", "trigger": "dynamic"};
+        execution_log.append("dynamic-walker");
     }
 }
 
-"""Static interval function: registered with base Scheduler at startup."""
-@schedule(trigger="static", interval=0.3)
-def static_scheduled_func -> dict {
-    return {"message": "static function executed", "trigger": "static"};
+@schedule(trigger=ScheduleTrigger.DYNAMIC)
+def dynamic_scheduled_func -> None {
+    execution_log.append("dynamic-func");
 }
 
-"""Dynamic scheduled function: eligible to be scheduled via POST /jobs."""
-@schedule(trigger="dynamic")
-def dynamic_scheduled_func -> dict {
-    return {"message": "dynamic function executed", "trigger": "dynamic"};
-}
-
-"""Public walker with no schedule spec — must appear as an HTTP endpoint."""
 walker:pub NormalWalker {
     can run with Root entry {
         report {"message": "normal walker endpoint"};
     }
 }
 
-"""Function with no schedule spec — must appear as an HTTP endpoint."""
 def normal_func -> dict {
     return {"message": "normal function endpoint"};
 }
