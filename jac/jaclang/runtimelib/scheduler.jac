@@ -8,11 +8,7 @@ import from collections.abc { Callable }
 import from jaclang.runtimelib.builtin { ScheduleTrigger }
 
 glob _scheduler_instance: (Scheduler | None) = None,
-     _dynamic_schedule_handler = None,
      logger = logging.getLogger(__name__);
-
-"""Register the plugin hook called when a DYNAMIC-trigger task fires."""
-def set_dynamic_handler(handler: Callable) -> None;
 
 """Holds the configuration for a scheduled task."""
 obj ScheduleSpec {
@@ -38,7 +34,8 @@ obj Scheduler {
         _thread: (threading.Thread | None) = None,
         _running: bool = False,
         _stop_event: (threading.Event | None) = None,
-        _done_event: (threading.Event | None) = None;
+        _done_event: (threading.Event | None) = None,
+        dynamic_handler: (Callable | None) = None;
 
     static def instance -> Scheduler;
     def register(

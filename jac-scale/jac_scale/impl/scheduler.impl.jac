@@ -22,7 +22,7 @@ impl JacScaleScheduler.setup(system_token: str, server: Any | None = None) -> No
     def _dynamic_handler(task: Any) -> None {
         self._execute_task(task.name, self._system_username, task.is_walker);
     }
-    set_dynamic_handler(_dynamic_handler);
+    Scheduler.instance().dynamic_handler = _dynamic_handler;
 
     # Configure scheduler settings and initialize DB connection once.
     scheduler_cfg = get_scale_config().get_scheduler_config();

@@ -5,11 +5,7 @@ import from uuid { uuid4 }
 import from apscheduler.schedulers.background { BackgroundScheduler }
 import from apscheduler.executors.pool { ThreadPoolExecutor }
 import from jac_scale.config_loader { get_scale_config }
-import from jaclang.runtimelib.scheduler {
-    set_dynamic_handler,
-    Scheduler,
-    ScheduleTrigger
-}
+import from jaclang.runtimelib.scheduler { Scheduler, ScheduleTrigger }
 import from jac_scale.db { Db, get_mongo_client }
 
 glob _jac_scale_scheduler: (JacScaleScheduler | None) = None,

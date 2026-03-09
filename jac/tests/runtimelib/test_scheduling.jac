@@ -8,8 +8,7 @@ import from jaclang { JacRuntime as Jac }
 import from jaclang.runtimelib.scheduler {
     Scheduler,
     ScheduleSpec,
-    ScheduledTask,
-    _dynamic_schedule_handler
+    ScheduledTask
 }
 
 glob FIXTURES = str(Path(__file__).parent / "fixtures");
@@ -168,13 +167,13 @@ test "compute next run and schedule decorator" {
     def dynamic_fn { }
     assert hasattr(dynamic_fn, 'schedule_spec');
     assert dynamic_fn.schedule_spec.trigger == ScheduleTrigger.DYNAMIC;
-    assert _dynamic_schedule_handler is None , (
+    assert Scheduler.instance().dynamic_handler is None , (
         "No dynamic handler should be registered without jac-scale"
     );
 
     # Verify that the missing handler raises NotImplementedError with the right message
     try {
-        if _dynamic_schedule_handler is None {
+        if Scheduler.instance().dynamic_handler is None {
             raise NotImplementedError("Dynamic scheduling requires jac-scale.");
         }
         assert False , "Expected NotImplementedError";
