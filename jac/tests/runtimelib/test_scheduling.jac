@@ -175,7 +175,7 @@ test "compute next run and schedule decorator" {
     # Verify that the missing handler raises NotImplementedError with the right message
     try {
         if _dynamic_schedule_handler is None {
-            raise NotImplementedError("Dynamic scheduling requires jac-scale.") ;
+            raise NotImplementedError("Dynamic scheduling requires jac-scale.");
         }
         assert False , "Expected NotImplementedError";
     } except NotImplementedError as e {

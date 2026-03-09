@@ -69,7 +69,7 @@ def _start_server(port: int) -> subprocess.Popen {
     for _ in range(60) {
         if proc.poll() is not None {
             (out, err) = proc.communicate();
-            raise RuntimeError(f"Server died.\nSTDOUT: {out}\nSTDERR: {err}") ;
+            raise RuntimeError(f"Server died.\nSTDOUT: {out}\nSTDERR: {err}");
         }
         try {
             r = requests.get(f"{base_url}/docs", timeout=2);
@@ -82,7 +82,7 @@ def _start_server(port: int) -> subprocess.Popen {
     }
     proc.terminate();
     proc.wait();
-    raise RuntimeError("Server failed to start within 30s") ;
+    raise RuntimeError("Server failed to start within 30s");
 }
 
 def _stop_server(proc: subprocess.Popen | None) -> None {

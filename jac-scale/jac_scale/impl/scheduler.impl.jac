@@ -163,7 +163,7 @@ impl JacScaleScheduler.create_job(
     if self._apscheduler is None {
         raise RuntimeError(
             "APScheduler is not available. Install apscheduler>=3.0.0,<4.0.0."
-        ) ;
+        );
     }
 
     job_id = str(uuid4());
@@ -344,7 +344,7 @@ impl JacScaleScheduler._schedule_apscheduler_job(
     username: str
 ) -> None {
     if self._apscheduler is None {
-        raise RuntimeError("APScheduler is not initialized") ;
+        raise RuntimeError("APScheduler is not initialized");
     }
 
     # Determine whether it's a walker or function for execution routing.
@@ -358,18 +358,18 @@ impl JacScaleScheduler._schedule_apscheduler_job(
 
     if trigger == 'interval' {
         if interval is None {
-            raise ValueError("interval (seconds) required for trigger='interval'") ;
+            raise ValueError("interval (seconds) required for trigger='interval'");
         }
         trigger_kwargs = {'seconds': float(interval)};
     } elif trigger == 'cron' {
         if not cron {
-            raise ValueError("cron expression required for trigger='cron'") ;
+            raise ValueError("cron expression required for trigger='cron'");
         }
         fields = cron.strip().split();
         if len(fields) != 5 {
             raise ValueError(
                 f"Cron must have 5 fields (min hour day month weekday), got: {cron}"
-            ) ;
+            );
         }
         (f_min, f_hour, f_day, f_month, f_weekday) = fields;
         trigger_kwargs = {
@@ -381,13 +381,13 @@ impl JacScaleScheduler._schedule_apscheduler_job(
         };
     } elif trigger == 'date' {
         if not date {
-            raise ValueError("date (ISO datetime string) required for trigger='date'") ;
+            raise ValueError("date (ISO datetime string) required for trigger='date'");
         }
         trigger_kwargs = {'run_date': date};
     } else {
         raise ValueError(
             f"Unknown trigger '{trigger}'. Valid values: interval, cron, date"
-        ) ;
+        );
     }
     self._apscheduler.add_job(
         job_func, trigger, id=job_id, replace_existing=True, **trigger_kwargs
