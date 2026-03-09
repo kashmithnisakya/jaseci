@@ -47,6 +47,7 @@ obj PrefetchedTypes {
         int_class: TypeBase | None = None,
         float_class: TypeBase | None = None,
         str_class: TypeBase | None = None,
+        bytes_class: TypeBase | None = None,
         dict_class: TypeBase | None = None,
         list_class: TypeBase | None = None,
         module_type_class: TypeBase | None = None,
@@ -69,7 +70,8 @@ obj PrefetchedTypes {
         walker_class: TypeBase | None = None,
         jsx_element_class: TypeBase | None = None,
         # Prefetched enum base class
-        enum_class: TypeBase | None = None;
+        enum_class: TypeBase | None = None,
+        set_class: TypeBase | None = None;
 }
 
 """Represents a single entry in the symbol resolution stack."""
@@ -115,6 +117,7 @@ obj TypeEvaluator {
     def _import_module_from_path(path: str) -> uni.Module;
     def _try_read_jir_cache(resolved_path: str) -> (uni.Module | None);
     def _resolve_from_path(from_mod: uni.ModulePath) -> Path;
+    def _is_fstring_all_literal(fstring: uni.FString) -> bool;
     def get_type_of_module(node_: uni.ModulePath) -> types.TypeBase;
     def get_type_of_module_item(node_: uni.ModuleItem) -> types.TypeBase;
     def _extract_type_params(node_: uni.Archetype) -> list[types.TypeVarType];
@@ -182,6 +185,8 @@ obj TypeEvaluator {
     def _get_type_of_super(node_: uni.SpecialVarRef) -> TypeBase;
     def _get_type_of_root(node_: uni.SpecialVarRef) -> TypeBase;
     def _convert_to_instance(jtype: TypeBase) -> TypeBase;
+    def _type_in_list(ty: TypeBase, type_list: list[TypeBase]) -> bool;
+    def _collect_unique_types(ty: TypeBase, result: list[TypeBase]) -> None;
     # --- Special form handling (Callable, Union, etc.) ---
     # Returns the prefetched special form type if the name AND type match.
     # Verifies both name and that type is _SpecialForm to avoid conflicts
@@ -217,11 +222,26 @@ obj TypeEvaluator {
         args: MatchArgsToParamsResult, checking_overload: bool = False
     ) -> None;
 
+    def _build_field_params(
+        class_type: types.ClassType, skip_deferred: bool = True
+    ) -> dict[str, types.Parameter];
+
     def _create_dataclass_init_method(
         class_type: types.ClassType
     ) -> types.FunctionType;
 
+    def _create_namedtuple_new_method(
+        class_type: types.ClassType
+    ) -> types.FunctionType;
+
+    def _create_special_builtin_type(
+        name: str, base_class: types.ClassType
+    ) -> types.ClassType;
+
     def _validate_constructor_method(expr: uni.FuncCall, method_type: TypeBase) -> bool;
+    def _get_method_with_overloads(
+        method_member: Any, caller_type: types.ClassType
+    ) -> TypeBase;
     # -------------------------------------------------------------------------
     # Type narrowing support
     #

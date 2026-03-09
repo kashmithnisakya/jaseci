@@ -1,5 +1,4 @@
 """Kubernetes deployment target implementation."""
-import os;
 import from typing { Any }
 import from jac_scale.abstractions.deployment_target { DeploymentTarget }
 import from jac_scale.abstractions.config.app_config { AppConfig }
@@ -11,6 +10,7 @@ import from jac_scale.abstractions.models.resource_status {
 import from jac_scale.abstractions.logger { Logger }
 import from jac_scale.targets.kubernetes.kubernetes_config { KubernetesConfig }
 import from jac_scale.targets.kubernetes.utils.kubernetes_utils {
+    COMPANION_DEFS,
     check_deployment_status,
     check_node_ports_available,
     cluster_type,
@@ -430,7 +430,7 @@ obj KubernetesTarget(DeploymentTarget) {
                     );
                 }
             } else {
-                raise ;
+                raise;
             }
         }
     }
@@ -447,8 +447,30 @@ obj KubernetesTarget(DeploymentTarget) {
             );
             mongo_result = mongo_provider.deploy({});
             self.env_list.append(
-                {'name': 'MONGODB_URI', 'value': mongo_result['connection_string']}
+                {
+                    'name': 'MONGODB_URI',
+                    'valueFrom': {
+                        'secretKeyRef': {
+                            'name': mongo_result['secret_name'],
+                            'key': 'connection-string'
+                        }
+                    }
+                }
             );
+            try {
+                core_v1.read_namespaced_secret(
+                    name=mongo_result['secret']['metadata']['name'],
+                    namespace=namespace
+                );
+            } except ApiException as e {
+                if e.status == 404 {
+                    core_v1.create_namespaced_secret(
+                        namespace=namespace, body=mongo_result['secret']
+                    );
+                } else {
+                    raise;
+                }
+            }
             try {
                 apps_v1.read_namespaced_stateful_set(
                     name=mongodb_name, namespace=namespace
@@ -459,7 +481,7 @@ obj KubernetesTarget(DeploymentTarget) {
                         namespace=namespace, body=mongo_result['deployment']
                     );
                 } else {
-                    raise ;
+                    raise;
                 }
             }
             try {
@@ -472,7 +494,7 @@ obj KubernetesTarget(DeploymentTarget) {
                         namespace=namespace, body=mongo_result['service']
                     );
                 } else {
-                    raise ;
+                    raise;
                 }
             }
             if self.k8s_config.mongodb_dashboard {
@@ -492,7 +514,7 @@ obj KubernetesTarget(DeploymentTarget) {
                             namespace=namespace, body=express_result['deployment']
                         );
                     } else {
-                        raise ;
+                        raise;
                     }
                 }
                 try {
@@ -505,7 +527,7 @@ obj KubernetesTarget(DeploymentTarget) {
                             namespace=namespace, body=express_result['service']
                         );
                     } else {
-                        raise ;
+                        raise;
                     }
                 }
                 if self.logger {
@@ -531,8 +553,30 @@ obj KubernetesTarget(DeploymentTarget) {
             );
             redis_result = redis_provider.deploy({});
             self.env_list.append(
-                {'name': 'REDIS_URL', 'value': redis_result['connection_string']}
+                {
+                    'name': 'REDIS_URL',
+                    'valueFrom': {
+                        'secretKeyRef': {
+                            'name': redis_result['secret_name'],
+                            'key': 'connection-string'
+                        }
+                    }
+                }
             );
+            try {
+                core_v1.read_namespaced_secret(
+                    name=redis_result['secret']['metadata']['name'],
+                    namespace=namespace
+                );
+            } except ApiException as e {
+                if e.status == 404 {
+                    core_v1.create_namespaced_secret(
+                        namespace=namespace, body=redis_result['secret']
+                    );
+                } else {
+                    raise;
+                }
+            }
             config_updated = False;
             try {
                 existing_cm = core_v1.read_namespaced_config_map(
@@ -581,7 +625,7 @@ obj KubernetesTarget(DeploymentTarget) {
                     if self.logger {
                         self.logger.error(f"Failed to manage Redis ConfigMap: {e}");
                     }
-                    raise ;
+                    raise;
                 }
             }
             # Deploy Deployment (or update if config changed)
@@ -591,9 +635,12 @@ obj KubernetesTarget(DeploymentTarget) {
                 );
 
                 # Check if deployment needs update (config hash changed)
-                existing_hash = existing_deploy.spec.template.metadata.annotations.get(
+                annotations = existing_deploy.spec.template.metadata.annotations;
+                existing_hash = annotations.get(
                     'redis-config-hash', ''
-                );
+                )
+                    if annotations
+                    else '';
                 new_hash = redis_result['config_hash'];
 
                 if existing_hash != new_hash or config_updated {
@@ -636,7 +683,7 @@ obj KubernetesTarget(DeploymentTarget) {
                     if self.logger {
                         self.logger.error(f"Failed to manage Redis deployment: {e}");
                     }
-                    raise ;
+                    raise;
                 }
             }
             # Deploy Service
@@ -650,7 +697,7 @@ obj KubernetesTarget(DeploymentTarget) {
                         namespace=namespace, body=redis_result['service']
                     );
                 } else {
-                    raise ;
+                    raise;
                 }
             }
             if self.k8s_config.redis_dashboard {
@@ -673,7 +720,7 @@ obj KubernetesTarget(DeploymentTarget) {
                                 body=insight_result['auth_configmap']
                             );
                         } else {
-                            raise ;
+                            raise;
                         }
                     }
                     try {
@@ -687,7 +734,7 @@ obj KubernetesTarget(DeploymentTarget) {
                                 namespace=namespace, body=insight_result['auth_secret']
                             );
                         } else {
-                            raise ;
+                            raise;
                         }
                     }
                 }
@@ -701,7 +748,7 @@ obj KubernetesTarget(DeploymentTarget) {
                             namespace=namespace, body=insight_result['deployment']
                         );
                     } else {
-                        raise ;
+                        raise;
                     }
                 }
                 try {
@@ -714,7 +761,7 @@ obj KubernetesTarget(DeploymentTarget) {
                             namespace=namespace, body=insight_result['service']
                         );
                     } else {
-                        raise ;
+                        raise;
                     }
                 }
                 if self.logger {
@@ -776,9 +823,7 @@ obj KubernetesTarget(DeploymentTarget) {
                     app_name=app_name
                 );
                 if not (deployment_status) {
-                    raise Exception(
-                        "Deployment failed: Application failed to deploy."
-                    ) ;
+                    raise Exception("Deployment failed: Application failed to deploy.");
                 }
             }
         } else {
@@ -786,7 +831,7 @@ obj KubernetesTarget(DeploymentTarget) {
                 self.k8s_config.node_port, path, namespace=namespace, app_name=app_name
             );
             if deployment_status is False {
-                raise Exception("Deployment failed: Application failed to deploy.") ;
+                raise Exception("Deployment failed: Application failed to deploy.");
             }
         }
         return deployment_details;
@@ -824,7 +869,7 @@ obj KubernetesTarget(DeploymentTarget) {
     def deploy(app_config: AppConfig) -> DeploymentResult {
         # 1. Initialize and validate
         app_name = app_config.app_name or self.k8s_config.app_name;
-        namespace = os.getenv('K8s_NAMESPACE') or self.k8s_config.namespace;
+        namespace = self.k8s_config.namespace;
         success_status = False;
         details = {};
 
@@ -1017,7 +1062,7 @@ obj KubernetesTarget(DeploymentTarget) {
                         namespace=namespace, body=service
                     );
                 } else {
-                    raise ;
+                    raise;
                 }
             }
             details["create_jaseci_application_service"] = "Successful";
@@ -1080,7 +1125,7 @@ obj KubernetesTarget(DeploymentTarget) {
                 resources_exist = True;
             } except ApiException as e {
                 if e.status != 404 {
-                    raise ;
+                    raise;
                 }
             }
 
@@ -1092,7 +1137,7 @@ obj KubernetesTarget(DeploymentTarget) {
                 resources_exist = True;
             } except ApiException as e {
                 if e.status != 404 {
-                    raise ;
+                    raise;
                 }
             }
 
@@ -1105,7 +1150,7 @@ obj KubernetesTarget(DeploymentTarget) {
                 resources_exist = True;
             } except ApiException as e {
                 if e.status != 404 {
-                    raise ;
+                    raise;
                 }
             }
 
@@ -1117,7 +1162,7 @@ obj KubernetesTarget(DeploymentTarget) {
                 resources_exist = True;
             } except ApiException as e {
                 if e.status != 404 {
-                    raise ;
+                    raise;
                 }
             }
 
@@ -1131,7 +1176,7 @@ obj KubernetesTarget(DeploymentTarget) {
                     resources_exist = True;
                 } except ApiException as e {
                     if e.status != 404 {
-                        raise ;
+                        raise;
                     }
                 }
                 try {
@@ -1141,7 +1186,7 @@ obj KubernetesTarget(DeploymentTarget) {
                     resources_exist = True;
                 } except ApiException as e {
                     if e.status != 404 {
-                        raise ;
+                        raise;
                     }
                 }
             }
@@ -1156,7 +1201,7 @@ obj KubernetesTarget(DeploymentTarget) {
                     resources_exist = True;
                 } except ApiException as e {
                     if e.status != 404 {
-                        raise ;
+                        raise;
                     }
                 }
                 try {
@@ -1166,7 +1211,7 @@ obj KubernetesTarget(DeploymentTarget) {
                     resources_exist = True;
                 } except ApiException as e {
                     if e.status != 404 {
-                        raise ;
+                        raise;
                     }
                 }
             }
@@ -1181,7 +1226,7 @@ obj KubernetesTarget(DeploymentTarget) {
                     resources_exist = True;
                 } except ApiException as e {
                     if e.status != 404 {
-                        raise ;
+                        raise;
                     }
                 }
                 try {
@@ -1191,7 +1236,7 @@ obj KubernetesTarget(DeploymentTarget) {
                     resources_exist = True;
                 } except ApiException as e {
                     if e.status != 404 {
-                        raise ;
+                        raise;
                     }
                 }
                 grafana_name = f"{app_name}-grafana";
@@ -1202,7 +1247,7 @@ obj KubernetesTarget(DeploymentTarget) {
                     resources_exist = True;
                 } except ApiException as e {
                     if e.status != 404 {
-                        raise ;
+                        raise;
                     }
                 }
                 try {
@@ -1212,7 +1257,7 @@ obj KubernetesTarget(DeploymentTarget) {
                     resources_exist = True;
                 } except ApiException as e {
                     if e.status != 404 {
-                        raise ;
+                        raise;
                     }
                 }
             }
@@ -1236,7 +1281,7 @@ obj KubernetesTarget(DeploymentTarget) {
                 resources_exist = True;
             } except ApiException as e {
                 if e.status != 404 {
-                    raise ;
+                    raise;
                 }
             }
 
@@ -1278,6 +1323,12 @@ obj KubernetesTarget(DeploymentTarget) {
                 namespace,
                 'Service'
             );
+            delete_if_exists(
+                core_v1.delete_namespaced_secret,
+                f"{mongodb_name}-secret",
+                namespace,
+                'Secret'
+            );
             express_name = f"{app_name}-mongo-express";
             delete_if_exists(
                 apps_v1.delete_namespaced_deployment,
@@ -1306,6 +1357,18 @@ obj KubernetesTarget(DeploymentTarget) {
                 f"{redis_name}-service",
                 namespace,
                 'Service'
+            );
+            delete_if_exists(
+                core_v1.delete_namespaced_config_map,
+                f"{redis_name}-config",
+                namespace,
+                'ConfigMap'
+            );
+            delete_if_exists(
+                core_v1.delete_namespaced_secret,
+                f"{redis_name}-secret",
+                namespace,
+                'Secret'
             );
             insight_name = f"{app_name}-redis-insight";
             delete_if_exists(
@@ -1445,7 +1508,7 @@ obj KubernetesTarget(DeploymentTarget) {
                             ns_deleted = True;
                             break;
                         }
-                        raise ;
+                        raise;
                     }
                 }
                 if self.logger {
@@ -1466,7 +1529,7 @@ obj KubernetesTarget(DeploymentTarget) {
             if self.logger {
                 self.logger.error(f"Error destroying application '{app_name}': {e}");
             }
-            raise ;
+            raise;
         }
     }
 
@@ -1541,7 +1604,7 @@ obj KubernetesTarget(DeploymentTarget) {
             if self.logger {
                 self.logger.error(f"Failed to scale '{app_name}': {e}");
             }
-            raise ;
+            raise;
         }
     }
 
@@ -1648,28 +1711,11 @@ obj KubernetesTarget(DeploymentTarget) {
             }
         } except Exception { }
 
-        # Resolve status for each component from the cached maps
+        # Resolve status for each component from the cached maps.
+        # Derived from COMPANION_DEFS — add new companions there, not here.
         component_defs = [
-            {'k8s_name': app_name, 'display': 'Jaseci App', 'is_sts': False},
-            {'k8s_name': f"{app_name}-redis", 'display': 'Redis', 'is_sts': False},
-            {'k8s_name': f"{app_name}-mongodb", 'display': 'MongoDB', 'is_sts': True},
-            {
-                'k8s_name': f"{app_name}-prometheus",
-                'display': 'Prometheus',
-                'is_sts': False
-            },
-            {'k8s_name': f"{app_name}-grafana", 'display': 'Grafana', 'is_sts': False},
-            {
-                'k8s_name': f"{app_name}-redis-insight",
-                'display': 'RedisInsight',
-                'is_sts': False
-            },
-            {
-                'k8s_name': f"{app_name}-mongo-express",
-                'display': 'Mongo Express',
-                'is_sts': False
-            },
-
+            {'k8s_name': app_name + d[0], 'display': d[1], 'is_sts': d[2]}
+            for d in COMPANION_DEFS
         ];
 
         grafana_running = False;

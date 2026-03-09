@@ -1673,8 +1673,9 @@ impl EsastGenPass.exit_binary_expr(nd: uni.BinaryExpr) -> None {
             walker_name = spawn_parts.walker.walker_name;
             effect_key = f"walker:{walker_name}";
             if effect_key not in self.client_manifest.endpoint_effects {
-                walker_sym = self._resolve_expr_symbol(
-                    spawn_parts.walker.call_node.target
+                import from jaclang.compiler.symbol_utils { resolve_expr_symbol }
+                walker_sym = resolve_expr_symbol(
+                    spawn_parts.walker.call_node.target, self.get_main_mod()
                 );
                 # If the symbol is an imported variable (sv import),
                 # search the main module for the original walker arch.
@@ -2321,9 +2322,7 @@ impl EsastGenPass._inject_runtime_import(name: str, nd: uni.UniNode) -> None {
 """Transform an EventSignature ability (can with entry/exit) to useEffect call."""
 impl EsastGenPass._transform_to_useeffect(nd: uni.Ability) -> None {
     # Get the body statements
-    inner = (
-        nd.body.body if isinstance(nd.body, uni.ImplDef) else self._get_body_inner(nd)
-    );
+    inner = self.unwrap_body(nd);
     body_stmts = self._collect_stmt_body(inner);
     # Determine if this is entry or exit
     is_entry = nd.signature.event.name == Tok.KW_ENTRY;
@@ -2588,9 +2587,7 @@ impl EsastGenPass.exit_ability(nd: uni.Ability) -> None {
             }
         }
     }
-    inner = (
-        nd.body.body if isinstance(nd.body, uni.ImplDef) else self._get_body_inner(nd)
-    );
+    inner = self.unwrap_body(nd);
     body_stmts = self._collect_stmt_body(inner);
     body_stmts = self._prepend_hoisted(nd, body_stmts);
     block = self.sync_loc(
@@ -2644,9 +2641,7 @@ impl EsastGenPass.exit_enum(nd: uni.Enum) -> None {
         }
     }
     properties: list[(es.Property | es.SpreadElement)] = [];
-    inner = (
-        nd.body.body if isinstance(nd.body, uni.ImplDef) else self._get_body_inner(nd)
-    );
+    inner = self.unwrap_body(nd);
     if inner {
         for stmt in inner {
             if isinstance(stmt, uni.Assignment) {
@@ -2710,9 +2705,7 @@ impl EsastGenPass.exit_archetype(nd: uni.Archetype) -> None {
     }
     body_stmts: list[es.MethodDefinition | es.PropertyDefinition | es.StaticBlock] = [];
     has_members: list[uni.ArchHas] = [];
-    inner = (
-        nd.body.body if isinstance(nd.body, uni.ImplDef) else self._get_body_inner(nd)
-    );
+    inner = self.unwrap_body(nd);
     if inner {
         for stmt in inner {
             if isinstance(stmt, uni.ArchHas) {
@@ -3308,7 +3301,7 @@ impl EsastGenPass._analyze_body_effects(body_nodes: Sequence[uni.UniNode]) -> di
     touches: set[str] = set();
     """Recursively scan a node and its descendants for effects.""";
     def _scan(nd: uni.UniNode) -> None {
-        nonlocal is_writer ;
+        nonlocal is_writer;
 
         # Edge creation: BinaryExpr with ConnectOp operator (++>, <++, <++>)
         if isinstance(nd, uni.BinaryExpr) and isinstance(nd.op, uni.ConnectOp) {
@@ -3360,7 +3353,8 @@ impl EsastGenPass._analyze_body_effects(body_nodes: Sequence[uni.UniNode]) -> di
 
         # Node type touched: FuncCall targeting a node/edge archetype
         if isinstance(nd, uni.FuncCall) {
-            target_sym = self._resolve_expr_symbol(nd.target);
+            import from jaclang.compiler.symbol_utils { resolve_expr_symbol }
+            target_sym = resolve_expr_symbol(nd.target, self.get_main_mod());
             if target_sym {
                 if target_sym.sym_type in [
                     SymbolType.NODE_ARCH,
@@ -3480,7 +3474,8 @@ impl EsastGenPass._resolve_spawn_walker(
     if not isinstance(stripped_node, uni.FuncCall) {
         return None;
     }
-    target_symbol = self._resolve_expr_symbol(stripped_node.target);
+    import from jaclang.compiler.symbol_utils { resolve_expr_symbol }
+    target_symbol = resolve_expr_symbol(stripped_node.target, self.get_main_mod());
     # If symbol is found and is a walker, use it
     if target_symbol and (target_symbol.sym_type == SymbolType.WALKER_ARCH) {
         walker_name = target_symbol.sym_name;
@@ -3505,7 +3500,8 @@ impl EsastGenPass._resolve_spawn_walker(
 impl EsastGenPass._build_spawn_arg_object(
     call_node: uni.FuncCall, walker_symbol: (uni.Symbol | None)
 ) -> es.ObjectExpression {
-    ordered_fields = self._collect_walker_field_names(walker_symbol);
+    import from jaclang.compiler.symbol_utils { collect_field_names }
+    ordered_fields = collect_field_names(walker_symbol, Tok.KW_WALKER.value);
     properties: list[(es.Property | es.SpreadElement)] = [];
     positional_index = 0;
     for param in call_node.params {
@@ -3583,23 +3579,6 @@ impl EsastGenPass._expr_from_node(
     return self.sync_loc(es.Literal(value=`default), jac_node=(nd or self.cur_node));
 }
 
-"""Collect walker has-var field names for positional argument mapping."""
-impl EsastGenPass._collect_walker_field_names(
-    walker_symbol: (uni.Symbol | None)
-) -> list[str] {
-    if not walker_symbol {
-        return [];
-    }
-    decl_owner = walker_symbol.decl.name_of;
-    if (
-        isinstance(decl_owner, uni.Archetype)
-        and (decl_owner.arch_type.name == Tok.KW_WALKER)
-    ) {
-        return [field.sym_name for field in decl_owner.get_has_vars()];
-    }
-    return [];
-}
-
 """Get the main module of the program."""
 impl EsastGenPass.get_main_mod -> uni.Module {
     main_mod_path = self.ir_in.annexable_by or self.ir_in.loc.mod_path;
@@ -3617,23 +3596,6 @@ impl EsastGenPass.search_sym_in_main_mod(expr: uni.Expr) -> (uni.Symbol | None) 
     }
     main_mod = self.get_main_mod();
     return main_mod and main_mod.lookup(expr.sym_name);
-}
-
-"""Resolve a symbol from an expression (handles dotted access)."""
-impl EsastGenPass._resolve_expr_symbol(expr: uni.Expr) -> (uni.Symbol | None) {
-    if (isinstance(expr, uni.AstSymbolNode) and expr.sym) {
-        return expr.sym;
-    }
-    if isinstance(expr, uni.AtomTrailer) {
-        attrs = expr.as_attr_list;
-        if attrs {
-            return attrs[-1].sym;
-        }
-    }
-    if (sym := self.search_sym_in_main_mod(expr)) {
-        return sym;
-    }
-    return None;
 }
 
 """Remove Jac/ES await wrappers for spawn analysis."""

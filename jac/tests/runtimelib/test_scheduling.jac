@@ -184,7 +184,7 @@ test "compute next run and schedule decorator" {
 
     # _execute catches exceptions gracefully
     def bad_fn {
-        raise RuntimeError("boom") ;
+        raise RuntimeError("boom");
     }
     task = ScheduledTask(
         name="bad_task",
@@ -264,7 +264,7 @@ test "scheduler executes walkers and functions correctly" {
 
     # Bad function to verify error recovery
     def bad_fn {
-        raise RuntimeError("deliberate error") ;
+        raise RuntimeError("deliberate error");
     }
     sched.register("bad", bad_fn, ScheduleSpec(interval=0.2), False);
 

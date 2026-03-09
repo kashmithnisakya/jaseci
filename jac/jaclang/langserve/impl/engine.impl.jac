@@ -1,6 +1,3 @@
-import from jaclang.cli.console { console }
-import time;
-
 impl Task.postinit -> None {
     self.task_id = Task._task_id;
     self.cancel_token = threading.Event();
@@ -71,10 +68,7 @@ impl JacLangServer._do_type_check(file_uri: str) -> None {
 
 """Rebuild a file and its dependencies (typecheck)."""
 impl JacLangServer.type_check_file(
-    file_uri: str, cancel_token: Event | None = None, annex_view: Optional[str] = None,
-    # This parameter will be passed recursively
-    # and dont need to pass when the function itself is called
-    # outside.
+    file_uri: str, cancel_token: Event | None = None
 ) -> bool {
     if cancel_token and cancel_token.is_set() {
         return False;
@@ -82,11 +76,26 @@ impl JacLangServer.type_check_file(
     try {
         document = self.workspace.get_text_document(file_uri);
         fs_path = document.path;
-        self._clear_alerts_for_file(fs_path);
 
+        # Determine the main file to compile
+        base = discover_base_file(fs_path);
+        main_path = base or fs_path;
+
+        # Collect all files involved (main + annexes) for diagnostics
+        files_to_check = [main_path];
+        files_to_check.extend(discover_annex_files(main_path, '.impl.jac'));
+        files_to_check.extend(discover_annex_files(main_path, '.test.jac'));
+
+        # Clear alerts for all involved files
+        for f in files_to_check {
+            self._clear_alerts_for_file(f);
+        }
+
+        # Compile the main file
+        main_doc = self.workspace.get_text_document(uris.from_fs_path(main_path));
         build = self.compile(
-            use_str=document.source,
-            file_path=document.path,
+            use_str=main_doc.source,
+            file_path=main_path,
             type_check=True,
             no_cgen=True,
             cancel_token=cancel_token,
@@ -95,15 +104,8 @@ impl JacLangServer.type_check_file(
         if cancel_token and cancel_token.is_set() {
             return False;
         }
-        self.update_modules(fs_path, build);
+        self.update_modules(main_path, build);
 
-        if build.annexable_by {
-            return self.type_check_file(
-                uris.from_fs_path(build.annexable_by),
-                cancel_token=cancel_token,
-                annex_view=fs_path,
-            );
-        }
         # Aggregate errors from internal_program (jaclang.* modules) if any
         all_errors = list(self.errors_had);
         all_warnings = list(self.warnings_had);
@@ -111,19 +113,12 @@ impl JacLangServer.type_check_file(
             all_errors.extend(self._compiler._internal_program.errors_had);
             all_warnings.extend(self._compiler._internal_program.warnings_had);
         }
-        self.publish_diagnostics(
-            (
-                uris.from_fs_path(annex_view)
-                    if annex_view
-                    else uris.from_fs_path(fs_path)
-                # to display diagnostic , it need URI starts with "file://"
-            ),
-            utils.gen_diagnostics((annex_view or fs_path), all_errors, all_warnings)
-        );
-        if annex_view {
+
+        # Publish diagnostics to all involved files
+        for f in files_to_check {
             self.publish_diagnostics(
-                uris.from_fs_path(fs_path),
-                utils.gen_diagnostics(fs_path, all_errors, all_warnings)
+                uris.from_fs_path(f),
+                utils.gen_diagnostics(f, all_errors, all_warnings)
             );
         }
     } except Exception as e {
@@ -507,7 +502,7 @@ impl JacLangServer.get_completion_items_of(
 }
 
 """Return the type of an AST node if it has one."""
-impl JacLangServer.get_node_type(n: uni.AstNode) -> Optional[TypeBase] {
+impl JacLangServer.get_node_type(n: uni.UniNode) -> Optional[TypeBase] {
     if isinstance(n, uni.Expr) {
         typ = self.get_type_evaluator().get_type_of_expression(n);
         self.debug("found type " + str(typ) + " for expr " + str(n));
@@ -517,7 +512,7 @@ impl JacLangServer.get_node_type(n: uni.AstNode) -> Optional[TypeBase] {
     return None;
 }
 
-impl JacLangServer.get_completion_of_node(nd: uni.AstNode) -> lspt.CompletionList {
+impl JacLangServer.get_completion_of_node(nd: uni.UniNode) -> lspt.CompletionList {
     if (node_type := self.get_node_type(nd)) {
         self.debug("found type " + str(node_type));
         return self.get_completion_items_of(node_type);
@@ -531,7 +526,7 @@ impl JacLangServer.get_completion_of_node(nd: uni.AstNode) -> lspt.CompletionLis
 
 impl JacLangServer.get_node_at_position(
     file_path: str, line: int, col: int
-) -> Optional[uni.AstNode] {
+) -> Optional[uni.UniNode] {
     if (ast := self.get_ast_of_file(file_path)) {
         for ast_node in ast._in_mod_nodes {
             if not isinstance(ast_node, uni.Token) {
@@ -545,7 +540,7 @@ impl JacLangServer.get_node_at_position(
     return None;
 }
 
-impl JacLangServer.get_ast_of_file(file_path: str) -> Optional[uni.AstNode] {
+impl JacLangServer.get_ast_of_file(file_path: str) -> Optional[uni.UniNode] {
     with self._state_lock.read_lock() {
         if file_path in self.mod.hub {
             return self.mod.hub[file_path];
@@ -641,7 +636,7 @@ impl JacLangServer.debug(msg: str) -> None {
 
 impl JacLangServer.get_token_at_position(
     file_path: str, position: lspt.Position
-) -> Optional[uni.AstNode] {
+) -> Optional[uni.UniNode] {
     fs_path = uris.to_fs_path(file_path);
     with self._state_lock.read_lock() {
         if fs_path not in self.mod.hub {

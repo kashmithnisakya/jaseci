@@ -1,5 +1,4 @@
 """DockerHub registry implementation."""
-import os;
 import docker;
 import from typing { Any }
 import from docker.errors { APIError, BuildError }
@@ -12,10 +11,8 @@ obj DockerHubRegistry(ImageRegistry) {
         docker_password: str by postinit;
 
     def postinit {
-        self.docker_username = self.config.get('docker_username', '')
-        or os.getenv('DOCKER_USERNAME', 'juzailmlwork');
-        self.docker_password = self.config.get('docker_password', '')
-        or os.getenv('DOCKER_PASSWORD', '');
+        self.docker_username = self.config.get('docker_username', '');
+        self.docker_password = self.config.get('docker_password', '');
     }
 
     def build_image(code_folder: str, image_name: (str | None) = None) -> str {
@@ -32,7 +29,7 @@ obj DockerHubRegistry(ImageRegistry) {
                 path=code_folder, tag=repository_name, dockerfile='Dockerfile', rm=True
             );
         } except BuildError as e {
-            raise RuntimeError(f"Failed to build Docker image: {e}") from e ;
+            raise RuntimeError(f"Failed to build Docker image: {e}") from e;
         }
 
         return repository_name;
@@ -47,7 +44,7 @@ obj DockerHubRegistry(ImageRegistry) {
             );
             docker_client.images.push(image_name);
         } except APIError as e {
-            raise RuntimeError(f"Failed to push Docker image: {e}") from e ;
+            raise RuntimeError(f"Failed to push Docker image: {e}") from e;
         }
     }
 

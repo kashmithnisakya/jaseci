@@ -91,7 +91,7 @@ impl __getattr__(name: str) -> object {
     } elif (name == 'llm') {
         return _get_llm();
     }
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}") ;
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}");
 }
 
 """Get commit lazily."""

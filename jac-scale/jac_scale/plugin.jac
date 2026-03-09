@@ -32,7 +32,7 @@ def _scale_pre_hook(context: HookContext) -> None {
         target = context.get_arg("target", "kubernetes");
         registry = context.get_arg("registry", "dockerhub");
         if not os.path.exists(filename) {
-            raise FileNotFoundError(f"File not found: '{filename}'") ;
+            raise FileNotFoundError(f"File not found: '{filename}'");
         }
         code_folder = os.path.dirname(filename) or '.';
         dotenv_path = os.path.join(code_folder, '.env');
@@ -80,7 +80,7 @@ def _scale_pre_hook(context: HookContext) -> None {
         # Deploy
         result = deployment_target.deploy(app_config);
         if not result.success {
-            raise RuntimeError(result.message or "Deployment failed") ;
+            raise RuntimeError(result.message or "Deployment failed");
         }
         if result.service_url {
             console.print(
@@ -237,7 +237,7 @@ class JacCmd {
         )
         def destroy(file_path: str, target: str = "kubernetes") -> int {
             if not os.path.exists(file_path) {
-                raise FileNotFoundError(f"File not found: '{file_path}'") ;
+                raise FileNotFoundError(f"File not found: '{file_path}'");
             }
             code_folder = os.path.dirname(file_path) or '.';
             dotenv_path = os.path.join(code_folder, '.env');
@@ -257,9 +257,8 @@ class JacCmd {
                 target_config = scale_config.get_kubernetes_config();  # Default for now
             }
 
-            app_name = os.getenv('APP_NAME') or target_config.get('app_name', 'jaseci');
-            namespace = os.getenv('K8s_NAMESPACE')
-            or target_config.get('namespace', 'default');
+            app_name = target_config.get('app_name', 'jaseci');
+            namespace = target_config.get('namespace', 'default');
 
             # Warn user and require confirmation before proceeding
             console.print(
@@ -307,7 +306,7 @@ class JacCmd {
         )
         def status(file_path: str, target: str = "kubernetes") -> int {
             if not os.path.exists(file_path) {
-                raise FileNotFoundError(f"File not found: '{file_path}'") ;
+                raise FileNotFoundError(f"File not found: '{file_path}'");
             }
             code_folder = os.path.dirname(file_path) or '.';
             dotenv_path = os.path.join(code_folder, '.env');
@@ -330,7 +329,7 @@ class JacCmd {
             deployment_target = DeploymentTargetFactory.create(
                 target, target_config, logger
             );
-            app_name = os.getenv('APP_NAME') or target_config.get('app_name', 'jaseci');
+            app_name = target_config.get('app_name', 'jaseci');
 
             # Get and display status
             status_data = deployment_target.get_full_status(app_name);
@@ -352,7 +351,11 @@ class JacScalePlugin {
         return ctx;
     }
 
-    """Create the API server instance."""
+    """Create the API server instance.
+
+    Note: jac-scale doesn't bind the port until run_server is called.
+    Port fallback is handled in run_server.
+    """
     @hookimpl
     static def create_server(
         jac_server: JacServer, host: str, port: int

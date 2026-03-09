@@ -9,17 +9,9 @@ import sys;
 import types;
 import from typing { Any }
 import from jaclang.cli.console { console }
-
-glob _runtime_initialized = False;
-
-"""Initialize Jac runtime once on first use."""
-def _ensure_jac_runtime -> None {
-    global _runtime_initialized;
-    if not _runtime_initialized {
-        import from jaclang.jac0core.runtime { JacRuntime as Jac }
-        Jac.setup();
-        _runtime_initialized = True;
-    }
+import from jaclang.cli.commands.cli_helpers {
+    ensure_jac_runtime as _ensure_jac_runtime,
+    proc_file as _proc_file
 }
 
 """Discover jac.toml from the file's directory when an absolute/relative path is given.
@@ -33,8 +25,11 @@ def _discover_config_from_file(filename: str) -> None {
     import from pathlib { Path }
     import from jaclang.project.config { JacConfig, get_config, set_config }
     import from jaclang.project.dependencies { add_venv_to_path }
+    import from jaclang.jac0core.runtime { JacRuntime as Jac }
 
     file_path = Path(filename).resolve();
+    # Store entry file path for runtime utilities (called before _proc_file)
+    Jac.full_target_path = str(file_path);
     file_dir = file_path.parent;
 
     # Preserve the active profile from any previously loaded config so that
@@ -87,35 +82,6 @@ def _populate_native_argv(engine: object, argv: list[str]) -> None {
     argv_ptr[0] = ctypes.cast(c_argv, ctypes.c_void_p).value;
     # Keep references alive so the GC doesn't collect them
     engine._jac_argv_refs = (c_strings, c_argv);
-}
-
-"""Create JacRuntime and return the base path, module name, and runtime state.
-
-This is the canonical function for setting up CLI execution context.
-It handles base_path setup, closing any existing context, and creating a new one.
-"""
-def _proc_file(filename: str) -> tuple {
-    import from jaclang.jac0core.runtime { JacRuntime as Jac }
-    (base, mod) = os.path.split(filename);
-    base = base or './';
-    if filename.endswith('.na.jac') {
-        mod = mod[:-7];
-    } elif filename.endswith('.jac') {
-        mod = mod[:-4];
-    } elif filename.endswith('.py') {
-        mod = mod[:-3];
-    } else {
-        console.error('Not a valid file!\nOnly supports `.jac` and `.py`');
-        `exit(1);
-    }
-    # Only set base path if not already set (allows tests to override)
-    if not Jac.base_path_dir {
-        Jac.set_base_path(base);
-    }
-    # CLI contexts use system_root (no user authentication)
-    mach = Jac.create_j_context(user_root=None);
-    Jac.set_context(mach);
-    return (base, mod, mach);
 }
 
 """Run the specified .jac file."""
@@ -217,7 +183,7 @@ impl run(
     } except Exception as e {
         if Jac.program.errors_had {
             for error in Jac.program.errors_had {
-                console.error(error.pretty_print(colors=True));
+                console.error(error.pretty_print());
             }
         } else {
             import from jaclang.jac0core.helpers { dump_traceback }
@@ -226,6 +192,11 @@ impl run(
         sys.argv = original_argv;
         mach.close();
         return 1;
+    }
+    if Jac.program.warnings_had {
+        for warning in Jac.program.warnings_had {
+            console.warning(f"{warning}");
+        }
     }
     sys.argv = original_argv;
     mach.close();
@@ -317,7 +288,7 @@ impl start(
         Jac.jac_import(target=mod, base_path=base, lng=lng);
         if Jac.program.errors_had {
             for error in Jac.program.errors_had {
-                console.error(error.pretty_print(colors=True));
+                console.error(error.pretty_print());
             }
             mach.close();
             return 1;
@@ -325,7 +296,7 @@ impl start(
     } except Exception as e {
         if Jac.program.errors_had {
             for error in Jac.program.errors_had {
-                console.error(error.pretty_print(colors=True));
+                console.error(error.pretty_print());
             }
         } else {
             import from jaclang.jac0core.helpers { dump_traceback }
@@ -405,16 +376,26 @@ impl start(
             } except Exception as e {
                 console.error(f"Warning: Initial client compilation failed: {e}");
             }
-            vite_process = _start_vite_dev_server(base, vite_port, actual_api_port);
+            vite_process = _start_vite_dev_server(base, vite_port, server.port);
         }
     }
     # Pass startup banner callback so it's printed AFTER compilation/bundling completes
+    # The actual_port parameter receives the port that was actually bound (may differ if original was in use)
+    # In dev mode with client, vite_port is separate from API port
     try {
         server.start(
             dev=dev,
             no_client=no_client,
-            on_ready=lambda :
-                _print_startup_message(dev, no_client, port, actual_api_port, base)
+            on_ready=lambda actual_port :
+                _print_startup_message(
+                    dev,
+                    no_client,
+                    vite_port
+                        if (dev and not no_client)
+                        else actual_port,
+                    actual_port,
+                    base
+                )
         );
         return 0;
     } except KeyboardInterrupt {
