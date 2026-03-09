@@ -240,10 +240,6 @@ impl JacAPIServerCore.start(
 
     self._setup_scheduler();
 
-    # Call the ready callback (e.g., to print startup banner)
-    if on_ready {
-        on_ready();
-    }
     # Find an available port (may differ from requested if port is in use)
     original_port = self.port;
     self.port = _find_available_port(self.port);
@@ -255,6 +251,10 @@ impl JacAPIServerCore.start(
     }
     # Print startup banner with correct port
     self._print_startup_banner(dev, no_client);
+    # Call the ready callback with the actual port (e.g., to print startup banner)
+    if on_ready {
+        on_ready(self.port);
+    }
     self.server.run_server(port=self.port);
 }
 
