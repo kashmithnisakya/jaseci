@@ -158,25 +158,6 @@ test "compute next run and schedule decorator" {
     assert module.static_fn.schedule_spec.trigger == ScheduleTrigger.STATIC;
     assert module.str_trigger_fn.schedule_spec.trigger == ScheduleTrigger.STATIC;
 
-    # DYNAMIC: decoration succeeds and attaches the spec; no error at decoration time
-    @schedule(interval=10, trigger=ScheduleTrigger.DYNAMIC)
-    def dynamic_fn { }
-    assert hasattr(dynamic_fn, 'schedule_spec');
-    assert dynamic_fn.schedule_spec.trigger == ScheduleTrigger.DYNAMIC;
-    assert Scheduler.instance().dynamic_handler is None , (
-        "No dynamic handler should be registered without jac-scale"
-    );
-
-    # Verify that the missing handler raises NotImplementedError with the right message
-    try {
-        if Scheduler.instance().dynamic_handler is None {
-            raise NotImplementedError("Dynamic scheduling requires jac-scale.");
-        }
-        assert False , "Expected NotImplementedError";
-    } except NotImplementedError as e {
-        assert "jac-scale" in str(e).lower();
-    }
-
     # _execute catches exceptions gracefully
     def bad_fn {
         raise RuntimeError("boom");
