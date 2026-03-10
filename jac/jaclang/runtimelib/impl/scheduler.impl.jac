@@ -222,7 +222,9 @@ impl Scheduler._execute(task: ScheduledTask) -> None {
     try {
         if task.spec.trigger == ScheduleTrigger.DYNAMIC {
             if self.dynamic_handler is None {
-                raise NotImplementedError("Dynamic scheduling is not implemented in jaclang.");
+                raise NotImplementedError(
+                    "Dynamic scheduling is not implemented in jaclang."
+                );
             }
             self.dynamic_handler(task);
             return;
