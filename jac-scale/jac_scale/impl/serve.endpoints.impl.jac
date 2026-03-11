@@ -78,7 +78,7 @@ impl JacAPIServerEndpoints.create_walker_parameters(
         }
         parameters.append(
             APIParameter(
-                name='node' if (field_name == '_jac_spawn_node') else field_name,
+                name='nd' if (field_name == '_jac_spawn_node') else field_name,
                 data_type=field_type,
                 required=walker_fields[field_name]['required'],
                 default=walker_fields[field_name]['default'],
@@ -684,7 +684,7 @@ impl JacAPIServerEndpoints.register_dynamic_walker_endpoint -> None {
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.POST,
-            path='/walker/{walker_name}/{node}',
+            path='/walker/{walker_name}/{nd}',
             callback=dynamic_walker_handler,
             parameters=[
                 APIParameter(
@@ -696,7 +696,7 @@ impl JacAPIServerEndpoints.register_dynamic_walker_endpoint -> None {
                     type=ParameterType.PATH
                 ),
                 APIParameter(
-                    name='node',
+                    name='nd',
                     data_type='string',
                     required=True,
                     default=None,
@@ -714,7 +714,7 @@ impl JacAPIServerEndpoints.register_dynamic_walker_endpoint -> None {
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.GET,
-            path='/walker/{walker_name}/{node}',
+            path='/walker/{walker_name}/{nd}',
             callback=dynamic_walker_handler,
             parameters=[
                 APIParameter(
@@ -726,7 +726,7 @@ impl JacAPIServerEndpoints.register_dynamic_walker_endpoint -> None {
                     type=ParameterType.PATH
                 ),
                 APIParameter(
-                    name='node',
+                    name='nd',
                     data_type='string',
                     required=True,
                     default=None,
