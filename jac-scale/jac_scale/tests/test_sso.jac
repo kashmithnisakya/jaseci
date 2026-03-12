@@ -15,7 +15,7 @@ import from fastapi { Request }
 import from fastapi.responses { JSONResponse, RedirectResponse }
 
 import from jac_scale.config_loader { reset_scale_config }
-import from jac_scale.google_sso_provider { GoogleSSOProvider }
+import from jac_scale.sso.google { GoogleSSOProvider }
 import from jac_scale.serve { JacAPIServer }
 import from jac_scale.enums { Operations, Platforms }
 import from jac_scale.user_manager { JacScaleUserManager }
@@ -215,7 +215,7 @@ test "get sso with google platform" {
     (test_dir, user_manager) = _setup_user_manager();
     try {
         with unittest.mock.patch(
-            "jac_scale.google_sso_provider.GoogleSSOProvider",
+            "jac_scale.sso.google.GoogleSSOProvider",
             side_effect=MockGoogleSSO
         ) as mock_sso {
             sso = user_manager.get_sso(Platforms.GOOGLE.value, Operations.LOGIN.value);
@@ -263,7 +263,7 @@ test "get sso redirect uri format" {
     (test_dir, user_manager) = _setup_user_manager();
     try {
         with unittest.mock.patch(
-            "jac_scale.google_sso_provider.GoogleSSOProvider",
+            "jac_scale.sso.google.GoogleSSOProvider",
             side_effect=MockGoogleSSO
         ) {
             sso = user_manager.get_sso(Platforms.GOOGLE.value, Operations.LOGIN.value);
@@ -782,7 +782,7 @@ test "register sso endpoints" {
     server.server = mock_server_impl;
     mock_server_impl.reset_mock();
     server.register_sso_endpoints();
-    assert mock_server_impl.add_endpoint.call_count == 2;
+    assert mock_server_impl.add_endpoint.call_count == 3;
     calls = mock_server_impl.add_endpoint.call_args_list;
     first_endpoint = calls[0][0][0];
     assert "/sso/{platform}/{operation}" in first_endpoint.path;
@@ -792,7 +792,7 @@ test "register sso endpoints" {
 # TestGoogleSSOProvider
 """Test initiate_auth delegates to inner SSO."""
 test "google sso provider initiate auth" {
-    with unittest.mock.patch("jac_scale.google_sso_provider.GoogleSSO") as mock_cls {
+    with unittest.mock.patch("jac_scale.sso.google.GoogleSSO") as mock_cls {
         mock_inner_sso = unittest.mock.Mock();
         mock_cls.return_value = mock_inner_sso;
         provider = GoogleSSOProvider("id", "secret", "uri");
@@ -811,7 +811,7 @@ test "google sso provider initiate auth" {
 
 """Test handle_callback delegates and maps user info."""
 test "google sso provider handle callback" {
-    with unittest.mock.patch("jac_scale.google_sso_provider.GoogleSSO") as mock_cls {
+    with unittest.mock.patch("jac_scale.sso.google.GoogleSSO") as mock_cls {
         mock_inner_sso = unittest.mock.Mock();
         mock_cls.return_value = mock_inner_sso;
         provider = GoogleSSOProvider("id", "secret", "uri");
@@ -836,7 +836,7 @@ test "google sso provider handle callback" {
 
 """Test get_platform_name returns google."""
 test "google sso provider get platform name" {
-    with unittest.mock.patch("jac_scale.google_sso_provider.GoogleSSO") as mock_cls {
+    with unittest.mock.patch("jac_scale.sso.google.GoogleSSO") as mock_cls {
         mock_inner_sso = unittest.mock.Mock();
         mock_cls.return_value = mock_inner_sso;
         provider = GoogleSSOProvider("id", "secret", "uri");

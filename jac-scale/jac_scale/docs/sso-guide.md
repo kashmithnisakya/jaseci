@@ -49,10 +49,10 @@ Jac Scale uses an abstract base class `SSOProvider` to enforce a consistent inte
 
 ### Step 1: Create the Provider Class
 
-Create a new file (e.g., `github_sso_provider.jac`) and implement the `SSOProvider` interface:
+Create a new file in the `sso/` package (e.g., `sso/github.jac`) and implement the `SSOProvider` interface:
 
 ```jac
-import from jac_scale.sso_provider { SSOProvider, SSOUserInfo }
+import from jac_scale.sso.provider { SSOProvider, SSOUserInfo }
 
 obj GitHubSSOProvider(SSOProvider) {
     can initiate_auth(redirect_uri: str) -> str {

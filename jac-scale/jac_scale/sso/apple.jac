@@ -1,27 +1,27 @@
-"""Google SSO Provider implementation for jac-scale.
+"""Apple SSO Provider implementation for jac-scale.
 
-This module implements the SSOProvider interface for Google OAuth authentication.
+This module implements the SSOProvider interface for Apple Sign In authentication.
 """
 
 import from fastapi { Request, Response }
-import from fastapi_sso.sso.google { GoogleSSO }
-import from jac_scale.sso_provider { SSOProvider, SSOUserInfo }
+import from fastapi_sso.sso.apple { AppleSSO }
+import from jac_scale.sso.provider { SSOProvider, SSOUserInfo }
 
-"""Google OAuth SSO Provider.
+"""Apple Sign In SSO Provider.
 
-This class wraps the fastapi_sso GoogleSSO implementation to conform to
+This class wraps the fastapi_sso AppleSSO implementation to conform to
 our SSOProvider interface, enabling consistent handling across all SSO vendors.
 """
-obj GoogleSSOProvider(SSOProvider) {
+obj AppleSSOProvider(SSOProvider) {
     has client_id: str,
         client_secret: str,
         redirect_uri: str,
         allow_insecure_http: bool = True,
-        _google_sso: (GoogleSSO | None) = None;
+        _apple_sso: (AppleSSO | None) = None;
 
-    """Initialize the Google SSO provider."""
+    """Initialize the Apple SSO provider."""
     def postinit -> None {
-        self._google_sso = GoogleSSO(
+        self._apple_sso = AppleSSO(
             client_id=self.client_id,
             client_secret=self.client_secret,
             redirect_uri=self.redirect_uri,
@@ -29,42 +29,42 @@ obj GoogleSSOProvider(SSOProvider) {
         );
     }
 
-    """Initiate Google OAuth authentication flow.
+    """Initiate Apple Sign In authentication flow.
 
     Args:
         operation: The operation type ('login' or 'register')
 
     Returns:
-        RedirectResponse to Google's OAuth authorization page
+        RedirectResponse to Apple's OAuth authorization page
     """
     async def initiate_auth(operation: str) -> Response {
-        if not self._google_sso {
-            raise RuntimeError("GoogleSSO not initialized");
+        if not self._apple_sso {
+            raise RuntimeError("AppleSSO not initialized");
         }
 
-        with self._google_sso {
-            return await self._google_sso.get_login_redirect();
+        with self._apple_sso {
+            return await self._apple_sso.get_login_redirect();
         }
     }
 
-    """Handle the OAuth callback from Google.
+    """Handle the OAuth callback from Apple.
 
     Args:
         request: The FastAPI request object containing OAuth callback data
 
     Returns:
-        SSOUserInfo: Standardized user information from Google
+        SSOUserInfo: Standardized user information from Apple
 
     Raises:
         Exception: If authentication fails or user info cannot be retrieved
     """
     async def handle_callback(request: Request) -> SSOUserInfo {
-        if not self._google_sso {
-            raise RuntimeError("GoogleSSO not initialized");
+        if not self._apple_sso {
+            raise RuntimeError("AppleSSO not initialized");
         }
 
-        with self._google_sso {
-            user_info = await self._google_sso.verify_and_process(request);
+        with self._apple_sso {
+            user_info = await self._apple_sso.verify_and_process(request);
             return SSOUserInfo(
                 email=user_info.email,
                 external_id=user_info.id,
@@ -77,9 +77,9 @@ obj GoogleSSOProvider(SSOProvider) {
     """Get the platform identifier.
 
     Returns:
-        str: 'google'
+        str: 'apple'
     """
     def get_platform_name -> str {
-        return "google";
+        return "apple";
     }
 }

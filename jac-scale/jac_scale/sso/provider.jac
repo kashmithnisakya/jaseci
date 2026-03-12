@@ -66,7 +66,7 @@ obj SSOProvider {
     """Get the platform identifier for this provider.
 
     Returns:
-        str: Platform name (e.g., 'google', 'microsoft', 'github')
+        str: Platform name (e.g., 'google', 'apple', 'microsoft', 'github')
     """
     def get_platform_name -> str;
 }

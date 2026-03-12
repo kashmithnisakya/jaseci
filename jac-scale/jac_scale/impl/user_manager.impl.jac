@@ -202,8 +202,17 @@ impl JacScaleUserManager.get_sso(platform: str, operation: str) -> (SSOProvider 
     credentials = self.SUPPORTED_PLATFORMS[platform];
     redirect_uri = f"{SSO_HOST}/{platform}/{operation}/callback";
     if platform == Platforms.GOOGLE.value {
-        import from jac_scale.google_sso_provider { GoogleSSOProvider }
+        import from jac_scale.sso.google { GoogleSSOProvider }
         return GoogleSSOProvider(
+            client_id=credentials['client_id'],
+            client_secret=credentials['client_secret'],
+            redirect_uri=redirect_uri,
+            allow_insecure_http=True
+        );
+    }
+    if platform == Platforms.APPLE.value {
+        import from jac_scale.sso.apple { AppleSSOProvider }
+        return AppleSSOProvider(
             client_id=credentials['client_id'],
             client_secret=credentials['client_secret'],
             redirect_uri=redirect_uri,
