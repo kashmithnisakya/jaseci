@@ -16,18 +16,23 @@ import from fastapi.responses { JSONResponse, RedirectResponse }
 
 import from jac_scale.config_loader { reset_scale_config }
 import from jac_scale.sso.google { GoogleSSOProvider }
+import from jac_scale.sso.apple { AppleSSOProvider }
 import from jac_scale.serve { JacAPIServer }
 import from jac_scale.enums { Operations, Platforms }
 import from jac_scale.user_manager { JacScaleUserManager }
 import from jaclang.runtimelib.transport { TransportResponse }
 
-"""Return mock SSO config with Google credentials configured."""
+"""Return mock SSO config with Google and Apple credentials configured."""
 def mock_sso_config_with_credentials -> dict {
     return {
         "host": "http://localhost:8000/sso",
         "google": {
             "client_id": "test_client_id",
             "client_secret": "test_client_secret"
+        },
+        "apple": {
+            "client_id": "apple_test_client_id",
+            "client_secret": "apple_test_client_secret"
         }
     };
 }
@@ -36,7 +41,8 @@ def mock_sso_config_with_credentials -> dict {
 def mock_sso_config_without_credentials -> dict {
     return {
         "host": "http://localhost:8000/sso",
-        "google": {"client_id": "", "client_secret": ""}
+        "google": {"client_id": "", "client_secret": ""},
+        "apple": {"client_id": "", "client_secret": ""}
     };
 }
 
@@ -44,7 +50,8 @@ def mock_sso_config_without_credentials -> dict {
 def mock_sso_config_partial_credentials -> dict {
     return {
         "host": "http://localhost:8000/sso",
-        "google": {"client_id": "test_id", "client_secret": ""}
+        "google": {"client_id": "test_id", "client_secret": ""},
+        "apple": {"client_id": "apple_test_id", "client_secret": ""}
     };
 }
 
@@ -99,6 +106,58 @@ obj MockGoogleSSO {
     }
 
     def __enter__ -> "MockGoogleSSO" {
+        return self;
+    }
+
+    def __exit__(
+        _exc_type: type | None,
+        _exc_val: BaseException | None,
+        _exc_tb: TracebackType | None
+    ) -> None {
+        0;
+    }
+}
+
+"""Mock AppleSSO for testing - implements SSOProvider interface."""
+obj MockAppleSSO {
+    has client_id: str,
+        client_secret: str,
+        redirect_uri: str,
+        allow_insecure_http: bool = False;
+
+    def postinit {
+        self.get_login_redirect = self._default_get_login_redirect;
+        self.verify_and_process = self._default_verify_and_process;
+        self.initiate_auth = self._default_initiate_auth;
+        self.handle_callback = self._default_handle_callback;
+    }
+
+    """Mock get_login_redirect method."""
+    async def _default_get_login_redirect -> RedirectResponse {
+        return RedirectResponse(url="https://appleid.apple.com/auth/authorize");
+    }
+
+    """Mock verify_and_process method."""
+    async def _default_verify_and_process(_request: Request) -> MockUserInfo {
+        return MockUserInfo(email="test@privaterelay.appleid.com");
+    }
+
+    """Mock initiate_auth method (SSOProvider interface)."""
+    async def _default_initiate_auth(operation: str) -> RedirectResponse {
+        return RedirectResponse(url="https://appleid.apple.com/auth/authorize");
+    }
+
+    """Mock handle_callback method (SSOProvider interface)."""
+    async def _default_handle_callback(request: Request) -> MockUserInfo {
+        return await self.verify_and_process(request);
+    }
+
+    """Mock get_platform_name method (SSOProvider interface)."""
+    def get_platform_name -> str {
+        return "apple";
+    }
+
+    def __enter__ -> "MockAppleSSO" {
         return self;
     }
 
@@ -215,8 +274,7 @@ test "get sso with google platform" {
     (test_dir, user_manager) = _setup_user_manager();
     try {
         with unittest.mock.patch(
-            "jac_scale.sso.google.GoogleSSOProvider",
-            side_effect=MockGoogleSSO
+            "jac_scale.sso.google.GoogleSSOProvider", side_effect=MockGoogleSSO
         ) as mock_sso {
             sso = user_manager.get_sso(Platforms.GOOGLE.value, Operations.LOGIN.value);
             assert sso is not None;
@@ -263,8 +321,7 @@ test "get sso redirect uri format" {
     (test_dir, user_manager) = _setup_user_manager();
     try {
         with unittest.mock.patch(
-            "jac_scale.sso.google.GoogleSSOProvider",
-            side_effect=MockGoogleSSO
+            "jac_scale.sso.google.GoogleSSOProvider", side_effect=MockGoogleSSO
         ) {
             sso = user_manager.get_sso(Platforms.GOOGLE.value, Operations.LOGIN.value);
             assert sso.redirect_uri == "http://localhost:8000/sso/google/login/callback";
@@ -841,5 +898,231 @@ test "google sso provider get platform name" {
         mock_cls.return_value = mock_inner_sso;
         provider = GoogleSSOProvider("id", "secret", "uri");
         assert provider.get_platform_name() == "google";
+    }
+}
+
+# TestAppleSSOProvider
+"""Test get_sso returns AppleSSOProvider instance for Apple platform."""
+test "get sso with apple platform" {
+    (test_dir, user_manager) = _setup_user_manager();
+    try {
+        with unittest.mock.patch(
+            "jac_scale.sso.apple.AppleSSOProvider", side_effect=MockAppleSSO
+        ) as mock_sso {
+            sso = user_manager.get_sso(Platforms.APPLE.value, Operations.LOGIN.value);
+            assert sso is not None;
+            assert sso.client_id == "apple_test_client_id";
+            assert sso.client_secret == "apple_test_client_secret";
+            mock_sso.assert_called_once();
+        }
+    } finally {
+        _teardown_user_manager(test_dir);
+    }
+}
+
+"""Test get_sso creates correct redirect URI for Apple platform."""
+test "get sso apple redirect uri format" {
+    (test_dir, user_manager) = _setup_user_manager();
+    try {
+        with unittest.mock.patch(
+            "jac_scale.sso.apple.AppleSSOProvider", side_effect=MockAppleSSO
+        ) {
+            sso = user_manager.get_sso(Platforms.APPLE.value, Operations.LOGIN.value);
+            assert sso.redirect_uri == "http://localhost:8000/sso/apple/login/callback";
+        }
+    } finally {
+        _teardown_user_manager(test_dir);
+    }
+}
+
+"""Test successful Apple SSO initiation."""
+test "apple sso initiate success" {
+    (test_dir, user_manager) = _setup_user_manager();
+    try {
+        with unittest.mock.patch.object(
+            user_manager, "get_sso", return_value=MockAppleSSO("id", "secret", "uri")
+        ) {
+            result = asyncio.run(
+                user_manager.sso_initiate(
+                    Platforms.APPLE.value, Operations.LOGIN.value
+                )
+            );
+            assert isinstance(result, RedirectResponse);
+            assert "apple.com" in result.headers.get("location", "");
+        }
+    } finally {
+        _teardown_user_manager(test_dir);
+    }
+}
+
+"""Test successful Apple SSO callback for login."""
+test "apple sso callback login success" {
+    (test_dir, user_manager) = _setup_user_manager();
+    try {
+        mock_request = unittest.mock.Mock(spec=Request);
+        user_manager.get_user.return_value = {
+            "email": "test@privaterelay.appleid.com",
+            "root_id": str(uuid4())
+        };
+        mock_sso = MockAppleSSO("id", "secret", "uri");
+        mock_sso.verify_and_process = unittest.mock.AsyncMock(
+            return_value=MockUserInfo(email="test@privaterelay.appleid.com")
+        );
+        with unittest.mock.patch.object(
+            user_manager, "get_sso", return_value=mock_sso
+        ) {
+            with unittest.mock.patch.object(
+                user_manager, "create_jwt_token", return_value="mock_apple_jwt"
+            ) {
+                result = asyncio.run(
+                    user_manager.sso_callback(
+                        mock_request, Platforms.APPLE.value, Operations.LOGIN.value
+                    )
+                );
+                assert isinstance(result, (JSONResponse, TransportResponse));
+                body = _get_response_body(result);
+                assert "Login successful" in body;
+                assert "test@privaterelay.appleid.com" in body;
+                assert "mock_apple_jwt" in body;
+            }
+        }
+    } finally {
+        _teardown_user_manager(test_dir);
+    }
+}
+
+"""Test successful Apple SSO callback for registration."""
+test "apple sso callback register success" {
+    (test_dir, user_manager) = _setup_user_manager();
+    try {
+        mock_request = unittest.mock.Mock(spec=Request);
+        user_manager.get_user.return_value = None;
+        user_manager.create_user.return_value = {
+            "email": "newuser@privaterelay.appleid.com",
+            "root_id": str(uuid4())
+        };
+        mock_sso = MockAppleSSO("id", "secret", "uri");
+        mock_sso.verify_and_process = unittest.mock.AsyncMock(
+            return_value=MockUserInfo(email="newuser@privaterelay.appleid.com")
+        );
+        with unittest.mock.patch.object(
+            user_manager, "get_sso", return_value=mock_sso
+        ) {
+            with unittest.mock.patch.object(
+                user_manager, "create_jwt_token", return_value="mock_apple_jwt"
+            ) {
+                with unittest.mock.patch(
+                    "jac_scale.user_manager.generate_random_password",
+                    return_value="random_pass"
+                ) {
+                    result = asyncio.run(
+                        user_manager.sso_callback(
+                            mock_request,
+                            Platforms.APPLE.value,
+                            Operations.REGISTER.value
+                        )
+                    );
+                    assert isinstance(result, (JSONResponse, TransportResponse));
+                    user_manager.create_user.assert_called_once_with(
+                        "newuser@privaterelay.appleid.com", "random_pass"
+                    );
+                }
+            }
+        }
+    } finally {
+        _teardown_user_manager(test_dir);
+    }
+}
+
+"""Test Apple initiate_auth delegates to inner SSO."""
+test "apple sso provider initiate auth" {
+    with unittest.mock.patch("jac_scale.sso.apple.AppleSSO") as mock_cls {
+        mock_inner_sso = unittest.mock.Mock();
+        mock_cls.return_value = mock_inner_sso;
+        provider = AppleSSOProvider("id", "secret", "uri");
+        assert provider._apple_sso == mock_inner_sso;
+        expected_response = unittest.mock.Mock();
+        mock_inner_sso.get_login_redirect = unittest.mock.AsyncMock(
+            return_value=expected_response
+        );
+        mock_inner_sso.__enter__ = unittest.mock.Mock(return_value=mock_inner_sso);
+        mock_inner_sso.__exit__ = unittest.mock.Mock(return_value=None);
+        response = asyncio.run(provider.initiate_auth("login"));
+        mock_inner_sso.get_login_redirect.assert_called_once();
+        assert response == expected_response;
+    }
+}
+
+"""Test Apple handle_callback delegates and maps user info."""
+test "apple sso provider handle callback" {
+    with unittest.mock.patch("jac_scale.sso.apple.AppleSSO") as mock_cls {
+        mock_inner_sso = unittest.mock.Mock();
+        mock_cls.return_value = mock_inner_sso;
+        provider = AppleSSOProvider("id", "secret", "uri");
+        mock_request = unittest.mock.Mock(spec=Request);
+        mock_user = unittest.mock.Mock();
+        mock_user.email = "test@privaterelay.appleid.com";
+        mock_user.id = "apple_12345";
+        mock_user.display_name = "Apple User";
+        mock_inner_sso.verify_and_process = unittest.mock.AsyncMock(
+            return_value=mock_user
+        );
+        mock_inner_sso.__enter__ = unittest.mock.Mock(return_value=mock_inner_sso);
+        mock_inner_sso.__exit__ = unittest.mock.Mock(return_value=None);
+        result = asyncio.run(provider.handle_callback(mock_request));
+        mock_inner_sso.verify_and_process.assert_called_once_with(mock_request);
+        assert result.email == "test@privaterelay.appleid.com";
+        assert result.external_id == "apple_12345";
+        assert result.platform == "apple";
+        assert result.display_name == "Apple User";
+    }
+}
+
+"""Test get_platform_name returns apple."""
+test "apple sso provider get platform name" {
+    with unittest.mock.patch("jac_scale.sso.apple.AppleSSO") as mock_cls {
+        mock_inner_sso = unittest.mock.Mock();
+        mock_cls.return_value = mock_inner_sso;
+        provider = AppleSSOProvider("id", "secret", "uri");
+        assert provider.get_platform_name() == "apple";
+    }
+}
+
+"""Test SUPPORTED_PLATFORMS includes Apple when credentials are configured."""
+test "supported platforms initialization with apple credentials" {
+    reset_scale_config();
+    mock_config = MockScaleConfig(
+        {
+            "host": "http://localhost:8000/sso",
+            "google": {"client_id": "google_id", "client_secret": "google_secret"},
+            "apple": {"client_id": "apple_id", "client_secret": "apple_secret"}
+        }
+    );
+    with unittest.mock.patch(
+        "jac_scale.user_manager.get_scale_config", return_value=mock_config
+    ) {
+        user_manager = JacScaleUserManager(base_path="");
+        assert "google" in user_manager.SUPPORTED_PLATFORMS;
+        assert "apple" in user_manager.SUPPORTED_PLATFORMS;
+        assert user_manager.SUPPORTED_PLATFORMS["apple"]["client_id"] == "apple_id";
+    }
+}
+
+"""Test SUPPORTED_PLATFORMS excludes Apple when credentials are missing."""
+test "supported platforms initialization without apple credentials" {
+    reset_scale_config();
+    mock_config = MockScaleConfig(
+        {
+            "host": "http://localhost:8000/sso",
+            "google": {"client_id": "google_id", "client_secret": "google_secret"},
+            "apple": {"client_id": "", "client_secret": ""}
+        }
+    );
+    with unittest.mock.patch(
+        "jac_scale.user_manager.get_scale_config", return_value=mock_config
+    ) {
+        user_manager = JacScaleUserManager(base_path="");
+        assert "google" in user_manager.SUPPORTED_PLATFORMS;
+        assert "apple" not in user_manager.SUPPORTED_PLATFORMS;
     }
 }

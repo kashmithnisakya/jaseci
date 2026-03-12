@@ -314,7 +314,9 @@ edge_ops.jac
 engine.impl.jac
 estree.impl.jac
 formatters.jac
-google_sso_provider.jac
+apple.jac
+google.jac
+provider.jac
 grammar_checker.jac
 grammar_extract_pass.impl.jac
 guess_game5.impl.jac
@@ -444,7 +446,9 @@ search.jac
 callback.cl.jac
 media.impl.jac
 basellm.impl.jac
-google_sso_provider.jac
+apple.jac
+google.jac
+provider.jac
 db.jac
 webhook.impl.jac
 serve.endpoints.impl.jac

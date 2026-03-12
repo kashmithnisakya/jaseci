@@ -4,6 +4,9 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 ## jac-scale 0.2.6 (Unreleased)
 
+- **Apple Sign In SSO Support**: Added Apple as a supported SSO provider alongside Google. Configure via `[plugins.scale.sso.apple]` in `jac.toml` with `client_id` and `client_secret`. Apple's POST callback is handled automatically. Added a POST route for `/sso/{platform}/{operation}/callback` to support Apple's OAuth flow.
+- [Internal] Refactor: Reorganized SSO providers into a `sso/` package.
+
 ## jac-scale 0.2.5 (Latest Release)
 
 - **Fix: Walker Route OpenAPI Parameter Naming**: Fixed inconsistency where walker routes with node parameters used `{nd}` in URL paths but declared `node` in OpenAPI schema, causing FastAPI validation errors (`"Field required"` for parameter `node`). The OpenAPI schema now correctly uses `nd` to match the actual path variable and function parameter. This fixes requests to `/walker/{walker_name}/{node_id}` endpoints. Note: `node` is a reserved Jac keyword, so `nd` is used as the parameter name throughout.
