@@ -308,9 +308,7 @@ edge_ops.jac
 engine.impl.jac
 estree.impl.jac
 formatters.jac
-apple.jac
-google.jac
-provider.jac
+google_sso_provider.jac
 grammar_extract_pass.impl.jac
 guess_game5.impl.jac
 guess_game6.impl.jac
@@ -439,9 +437,6 @@ search.jac
 callback.cl.jac
 media.impl.jac
 basellm.impl.jac
-apple.jac
-google.jac
-provider.jac
 db.jac
 webhook.impl.jac
 serve.endpoints.impl.jac
@@ -668,3 +663,7 @@ with_llm_image.jac
 with_llm_type.jac
 with_llm_video.jac
 self_type.jac
+provider.jac
+apple.jac
+google.jac
+github.jac
