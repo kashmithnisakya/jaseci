@@ -433,6 +433,10 @@ impl JacAPIServerAdmin.register_admin_endpoints -> None {
             description='Get parsed Prometheus metrics as JSON (admin only)'
         )
     );
+    # Dashboard proxy endpoints (must be registered before the /admin/{path:path} catch-all)
+    self.setup_dashboard_proxies();
+    self.register_dashboard_endpoints();
+
     # Admin UI - redirect /admin to /admin/
     self.server.add_endpoint(
         JEndPoint(

@@ -113,6 +113,26 @@ impl JacScaleConfig.get_default_config(self: JacScaleConfig) -> dict[str, Any] {
         'scheduler': {
             'system_user_password': 'system_secret',
             'collection': 'scheduled_jobs'
+        },
+        'dashboards': {
+            'grafana': {
+                'enabled': False,
+                'url': 'http://localhost:3000',
+                'admin_user': 'admin',
+                'admin_password': 'admin'
+            },
+            'mongo_express': {
+                'enabled': False,
+                'url': 'http://localhost:8081',
+                'username': 'admin',
+                'password': 'admin'
+            },
+            'redis_insight': {
+                'enabled': False,
+                'url': 'http://localhost:5540',
+                'username': '',
+                'password': ''
+            }
         }
     };
 }
@@ -303,6 +323,43 @@ impl JacScaleConfig.get_scheduler_config(self: JacScaleConfig) -> dict[str, Any]
         'system_user_password': os.environ.get('SYSTEM_USER_PASSWORD')
         or scheduler_config.get('system_user_password', 'system_secret'),
         'collection': scheduler_config.get('collection', 'scheduled_jobs')
+    };
+}
+
+"""Get dashboards proxy configuration from jac.toml."""
+impl JacScaleConfig.get_dashboards_config(self: JacScaleConfig) -> dict[str, Any] {
+    config = self.load();
+    dashboards_config = config.get('dashboards', {});
+    return _build_dashboards_config(dashboards_config);
+}
+
+"""Build dashboards config dict from raw config, applying defaults and env overrides."""
+def _build_dashboards_config(raw: Any) -> dict[str, Any] {
+    grafana = raw.get('grafana', {});
+    mongo = raw.get('mongo_express', {});
+    redis = raw.get('redis_insight', {});
+    return {
+        'grafana': {
+            'enabled': grafana.get('enabled', False),
+            'url': os.environ.get('GRAFANA_URL')
+                or grafana.get('url', 'http://localhost:3000'),
+            'admin_user': grafana.get('admin_user', 'admin'),
+            'admin_password': grafana.get('admin_password', 'admin')
+        },
+        'mongo_express': {
+            'enabled': mongo.get('enabled', False),
+            'url': os.environ.get('MONGO_EXPRESS_URL')
+                or mongo.get('url', 'http://localhost:8081'),
+            'username': mongo.get('username', 'admin'),
+            'password': mongo.get('password', 'admin')
+        },
+        'redis_insight': {
+            'enabled': redis.get('enabled', False),
+            'url': os.environ.get('REDIS_INSIGHT_URL')
+                or redis.get('url', 'http://localhost:5540'),
+            'username': redis.get('username', ''),
+            'password': redis.get('password', '')
+        }
     };
 }
 

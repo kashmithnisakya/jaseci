@@ -13,6 +13,9 @@ cl {
     import from .users.UsersPage { UsersPage }
     import from .sso.SSOPage { SSOPage }
     import from .monitoring.MetricsPage { MetricsPage }
+    import from .dashboards.GrafanaPage { GrafanaPage }
+    import from .dashboards.MongoExpressPage { MongoExpressPage }
+    import from .dashboards.RedisInsightPage { RedisInsightPage }
     import from .placeholder.PlaceholderPage {
         SessionsPage,
         ApiKeysPage,
@@ -57,6 +60,9 @@ cl {
              },
              "monitor": {
                  "metrics": MetricsPage,
+                 "grafana": GrafanaPage,
+                 "mongodb": MongoExpressPage,
+                 "redis": RedisInsightPage,
                  "logs": LogsPage,
                  "health": HealthPage,
                  "alerts": AlertsConfigPage

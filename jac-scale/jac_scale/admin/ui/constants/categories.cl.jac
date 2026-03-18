@@ -31,6 +31,9 @@ cl {
              ],
              "monitor": [
                  {"id": "metrics", "label": "Metrics"},
+                 {"id": "grafana", "label": "Grafana"},
+                 {"id": "mongodb", "label": "MongoDB"},
+                 {"id": "redis", "label": "Redis"},
                  {"id": "logs", "label": "Logs"},
                  {"id": "health", "label": "Health"},
                  {"id": "alerts", "label": "Alerts"}
