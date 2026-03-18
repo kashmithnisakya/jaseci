@@ -59,8 +59,8 @@ POST /sso/{platform}/callback
 
 A single callback endpoint handles both login and registration:
 
-- If the user **already exists** — logs them in and returns a JWT token.
-- If the user **does not exist** — automatically registers them with a random password, then returns a JWT token.
+- If the user **already exists**: logs them in and returns a JWT token.
+- If the user **does not exist**: automatically registers them with a random password, then returns a JWT token.
 
 Both GET and POST methods are supported (Apple Sign In uses POST for its callback).
 
