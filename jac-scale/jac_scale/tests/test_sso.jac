@@ -330,7 +330,6 @@ def _teardown_user_manager(test_dir: str) -> None {
 # ============================================================================
 # Common SSO Tests (get_sso, sso_initiate, sso_callback)
 # ============================================================================
-
 """Test get_sso returns GoogleSSO instance for Google platform."""
 test "get sso with google platform" {
     (test_dir, user_manager) = _setup_user_manager();
@@ -434,9 +433,7 @@ test "sso initiate with unconfigured platform" {
     try {
         user_manager.SUPPORTED_PLATFORMS = {};
         result = asyncio.run(
-            user_manager.sso_initiate(
-                Platforms.GOOGLE.value, Operations.LOGIN.value
-            )
+            user_manager.sso_initiate(Platforms.GOOGLE.value, Operations.LOGIN.value)
         );
         assert isinstance(result, (JSONResponse, TransportResponse));
         body = _get_response_body(result);
@@ -500,9 +497,7 @@ test "sso callback login existing user" {
                 user_manager, "create_jwt_token", return_value="mock_jwt_token"
             ) {
                 result = asyncio.run(
-                    user_manager.sso_callback(
-                        mock_request, Platforms.GOOGLE.value
-                    )
+                    user_manager.sso_callback(mock_request, Platforms.GOOGLE.value)
                 );
                 assert isinstance(result, (JSONResponse, TransportResponse));
                 body = _get_response_body(result);
@@ -541,9 +536,7 @@ test "sso callback auto register new user" {
                     return_value="random_pass"
                 ) {
                     result = asyncio.run(
-                        user_manager.sso_callback(
-                            mock_request, Platforms.GOOGLE.value
-                        )
+                        user_manager.sso_callback(mock_request, Platforms.GOOGLE.value)
                     );
                     assert isinstance(result, (JSONResponse, TransportResponse));
                     user_manager.create_user.assert_called_once_with(
@@ -694,7 +687,6 @@ test "supported platforms initialization without jac toml credentials" {
 # ============================================================================
 # SSO Account Linking Tests
 # ============================================================================
-
 """Test linking an SSO account successfully."""
 test "link sso account success" {
     (test_dir, user_manager) = _setup_user_manager();
@@ -804,7 +796,6 @@ test "get user by sso" {
 # ============================================================================
 # Endpoint Registration Tests
 # ============================================================================
-
 """Test SSO endpoints registration."""
 test "register sso endpoints" {
     mock_server_impl = unittest.mock.Mock();
@@ -840,7 +831,6 @@ test "register sso endpoints" {
 # ============================================================================
 # Google SSO Provider Tests
 # ============================================================================
-
 """Test Google initiate_auth delegates to inner SSO."""
 test "google sso provider initiate auth" {
     with unittest.mock.patch("jac_scale.sso.google.GoogleSSO") as mock_cls {
@@ -898,7 +888,6 @@ test "google sso provider get platform name" {
 # ============================================================================
 # Apple SSO Provider Tests
 # ============================================================================
-
 """Test get_sso returns AppleSSOProvider instance for Apple platform."""
 test "get sso with apple platform" {
     (test_dir, user_manager) = _setup_user_manager();
@@ -972,9 +961,7 @@ test "apple sso callback login existing user" {
                 user_manager, "create_jwt_token", return_value="mock_apple_jwt"
             ) {
                 result = asyncio.run(
-                    user_manager.sso_callback(
-                        mock_request, Platforms.APPLE.value
-                    )
+                    user_manager.sso_callback(mock_request, Platforms.APPLE.value)
                 );
                 assert isinstance(result, (JSONResponse, TransportResponse));
                 body = _get_response_body(result);
@@ -1013,9 +1000,7 @@ test "apple sso callback auto register new user" {
                     return_value="random_pass"
                 ) {
                     result = asyncio.run(
-                        user_manager.sso_callback(
-                            mock_request, Platforms.APPLE.value
-                        )
+                        user_manager.sso_callback(mock_request, Platforms.APPLE.value)
                     );
                     assert isinstance(result, (JSONResponse, TransportResponse));
                     user_manager.create_user.assert_called_once_with(
@@ -1125,7 +1110,6 @@ test "supported platforms initialization without apple credentials" {
 # ============================================================================
 # GitHub SSO Provider Tests
 # ============================================================================
-
 """Test get_sso returns GithubSSOProvider instance for GitHub platform."""
 test "get sso with github platform" {
     (test_dir, user_manager) = _setup_user_manager();
@@ -1199,9 +1183,7 @@ test "github sso callback login existing user" {
                 user_manager, "create_jwt_token", return_value="mock_github_jwt"
             ) {
                 result = asyncio.run(
-                    user_manager.sso_callback(
-                        mock_request, Platforms.GITHUB.value
-                    )
+                    user_manager.sso_callback(mock_request, Platforms.GITHUB.value)
                 );
                 assert isinstance(result, (JSONResponse, TransportResponse));
                 body = _get_response_body(result);
@@ -1240,9 +1222,7 @@ test "github sso callback auto register new user" {
                     return_value="random_pass"
                 ) {
                     result = asyncio.run(
-                        user_manager.sso_callback(
-                            mock_request, Platforms.GITHUB.value
-                        )
+                        user_manager.sso_callback(mock_request, Platforms.GITHUB.value)
                     );
                     assert isinstance(result, (JSONResponse, TransportResponse));
                     user_manager.create_user.assert_called_once_with(
