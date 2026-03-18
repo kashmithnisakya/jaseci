@@ -58,6 +58,7 @@ POST /sso/{platform}/callback
 ```
 
 A single callback endpoint handles both login and registration:
+
 - If the user **already exists** — logs them in and returns a JWT token.
 - If the user **does not exist** — automatically registers them with a random password, then returns a JWT token.
 
@@ -66,6 +67,7 @@ Both GET and POST methods are supported (Apple Sign In uses POST for its callbac
 ### Frontend Redirect
 
 If `client_auth_callback_url` is configured, the callback redirects to that URL with query parameters:
+
 - **Success**: `{client_auth_callback_url}?token={jwt_token}`
 - **Error**: `{client_auth_callback_url}?error={code}&message={details}`
 
@@ -79,11 +81,14 @@ If not configured, the callback returns a JSON `TransportResponse`.
 4. Click **Create Credentials > OAuth client ID**.
 5. Select **Web application**.
 6. Add the redirect URI:
+
    ```
    http://localhost:8000/sso/google/callback
    ```
+
 7. Copy the **Client ID** and **Client Secret**.
 8. Export them as environment variables:
+
    ```bash
    export GOOGLE_CLIENT_ID="your_client_id"
    export GOOGLE_CLIENT_SECRET="your_client_secret"
@@ -95,11 +100,14 @@ If not configured, the callback returns a JSON `TransportResponse`.
 2. Register an **App ID** with **Sign In with Apple** enabled.
 3. Create a **Services ID** for web authentication.
 4. Configure the redirect URI:
+
    ```
    http://localhost:8000/sso/apple/callback
    ```
+
 5. Generate a **Client Secret** (Apple uses a JWT-based secret).
 6. Export them as environment variables:
+
    ```bash
    export APPLE_CLIENT_ID="your_services_id"
    export APPLE_CLIENT_SECRET="your_client_secret"
@@ -112,11 +120,14 @@ If not configured, the callback returns a JSON `TransportResponse`.
 1. Go to [GitHub Developer Settings](https://github.com/settings/developers).
 2. Click **New OAuth App**.
 3. Set the **Authorization callback URL** to:
+
    ```
    http://localhost:8000/sso/github/callback
    ```
+
 4. Copy the **Client ID** and generate a **Client Secret**.
 5. Export them as environment variables:
+
    ```bash
    export GITHUB_CLIENT_ID="your_client_id"
    export GITHUB_CLIENT_SECRET="your_client_secret"
@@ -205,13 +216,13 @@ if platform == Platforms.MICROSOFT.value {
 }
 ```
 
-2. Add the default config in `impl/config_loader.impl.jac`:
+1. Add the default config in `impl/config_loader.impl.jac`:
 
 ```jac
 'microsoft': {'client_id': '', 'client_secret': ''}
 ```
 
-3. Add the config parsing in `get_sso_config()`.
+1. Add the config parsing in `get_sso_config()`.
 
 ## 7. UserManager Extension Pattern
 
