@@ -12,10 +12,11 @@ impl JacScaleConfig.get_default_config(self: JacScaleConfig) -> dict[str, Any] {
             'exp_delta_days': 7
         },
         'sso': {
-            'host': 'http://localhost:8000/sso',
+            'host': 'http://localhost:8000',
             'client_auth_callback_url': '',  # If set, redirects to this URL with token/error
             'google': {'client_id': '', 'client_secret': ''},
-            'apple': {'client_id': '', 'client_secret': ''}
+            'apple': {'client_id': '', 'client_secret': ''},
+            'github': {'client_id': '', 'client_secret': ''}
         },
         'database': {
             'mongodb_uri': None,
@@ -123,8 +124,9 @@ impl JacScaleConfig.get_sso_config(self: JacScaleConfig) -> dict[str, Any] {
     sso_config = config.get('sso', {});
     google_config = sso_config.get('google', {});
     apple_config = sso_config.get('apple', {});
+    github_config = sso_config.get('github', {});
     return {
-        'host': sso_config.get('host', 'http://localhost:8000/sso'),
+        'host': sso_config.get('host', 'http://localhost:8000'),
         'client_auth_callback_url': sso_config.get('client_auth_callback_url', ''),
         'google': {
             'client_id': google_config.get('client_id', ''),
@@ -133,6 +135,10 @@ impl JacScaleConfig.get_sso_config(self: JacScaleConfig) -> dict[str, Any] {
         'apple': {
             'client_id': apple_config.get('client_id', ''),
             'client_secret': apple_config.get('client_secret', '')
+        },
+        'github': {
+            'client_id': github_config.get('client_id', ''),
+            'client_secret': github_config.get('client_secret', '')
         }
     };
 }

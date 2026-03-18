@@ -1,28 +1,28 @@
-"""Apple SSO Provider implementation for jac-scale.
+"""GitHub SSO Provider implementation for jac-scale.
 
-This module implements the SSOProvider interface for Apple Sign In authentication.
+This module implements the SSOProvider interface for GitHub OAuth authentication.
 """
 
 import from fastapi { Request, Response }
-import from fastapi_sso.sso.apple { AppleSSO }
+import from fastapi_sso.sso.github { GithubSSO }
 import from jac_scale.sso.provider { SSOProvider, SSOUserInfo }
 import from jac_scale.enums { Platforms }
 
-"""Apple Sign In SSO Provider.
+"""GitHub OAuth SSO Provider.
 
-This class wraps the fastapi_sso AppleSSO implementation to conform to
+This class wraps the fastapi_sso GithubSSO implementation to conform to
 our SSOProvider interface, enabling consistent handling across all SSO vendors.
 """
-obj AppleSSOProvider(SSOProvider) {
+obj GithubSSOProvider(SSOProvider) {
     has client_id: str,
         client_secret: str,
         redirect_uri: str,
         allow_insecure_http: bool = True,
-        _apple_sso: (AppleSSO | None) = None;
+        _github_sso: (GithubSSO | None) = None;
 
-    """Initialize the Apple SSO provider."""
+    """Initialize the GitHub SSO provider."""
     def postinit -> None {
-        self._apple_sso = AppleSSO(
+        self._github_sso = GithubSSO(
             client_id=self.client_id,
             client_secret=self.client_secret,
             redirect_uri=self.redirect_uri,
@@ -30,39 +30,39 @@ obj AppleSSOProvider(SSOProvider) {
         );
     }
 
-    """Initiate Apple Sign In authentication flow.
+    """Initiate GitHub OAuth authentication flow.
 
     Returns:
-        RedirectResponse to Apple's OAuth authorization page
+        RedirectResponse to GitHub's OAuth authorization page
     """
     async def initiate_auth -> Response {
-        if not self._apple_sso {
-            raise RuntimeError("AppleSSO not initialized");
+        if not self._github_sso {
+            raise RuntimeError("GithubSSO not initialized");
         }
 
-        with self._apple_sso {
-            return await self._apple_sso.get_login_redirect();
+        with self._github_sso {
+            return await self._github_sso.get_login_redirect();
         }
     }
 
-    """Handle the OAuth callback from Apple.
+    """Handle the OAuth callback from GitHub.
 
     Args:
         request: The FastAPI request object containing OAuth callback data
 
     Returns:
-        SSOUserInfo: Standardized user information from Apple
+        SSOUserInfo: Standardized user information from GitHub
 
     Raises:
         Exception: If authentication fails or user info cannot be retrieved
     """
     async def handle_callback(request: Request) -> SSOUserInfo {
-        if not self._apple_sso {
-            raise RuntimeError("AppleSSO not initialized");
+        if not self._github_sso {
+            raise RuntimeError("GithubSSO not initialized");
         }
 
-        with self._apple_sso {
-            user_info = await self._apple_sso.verify_and_process(request);
+        with self._github_sso {
+            user_info = await self._github_sso.verify_and_process(request);
             return SSOUserInfo(
                 email=user_info.email,
                 external_id=user_info.id,
@@ -75,9 +75,9 @@ obj AppleSSOProvider(SSOProvider) {
     """Get the platform identifier.
 
     Returns:
-        str: 'apple'
+        str: 'github'
     """
     def get_platform_name -> str {
-        return Platforms.APPLE.value;
+        return Platforms.GITHUB.value;
     }
 }

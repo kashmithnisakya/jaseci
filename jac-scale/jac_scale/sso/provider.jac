@@ -42,13 +42,10 @@ Example:
 obj SSOProvider {
     """Initialize SSO authentication flow.
 
-    Args:
-        operation: The operation type ('login' or 'register')
-
     Returns:
         Response object (typically a redirect to the SSO provider's auth page)
     """
-    async def initiate_auth(operation: str) -> Response;
+    async def initiate_auth -> Response;
 
     """Handle the OAuth callback from the SSO provider.
 

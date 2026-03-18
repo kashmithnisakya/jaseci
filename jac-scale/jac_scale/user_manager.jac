@@ -52,14 +52,11 @@ obj JacScaleUserManager(UserManager) {
     def refresh_jwt_token(token: str) -> (str | None);
     def get_jwt_claims(token: str) -> (dict | None);
     # SSO methods
-    def get_sso(platform: str, operation: str) -> (SSOProvider | None);
+    def get_sso(platform: str) -> (SSOProvider | None);
     async def sso_initiate(
         platform: str, operation: str
     ) -> (Response | TransportResponse);
-
-    async def sso_callback(
-        request: Request, platform: str, operation: str
-    ) -> TransportResponse;
+    async def sso_callback(request: Request, platform: str) -> TransportResponse;
 
     # SSO Account Linking methods
     def link_sso_account(

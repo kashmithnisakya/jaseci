@@ -721,10 +721,10 @@ impl JacAPIServerCore._create_sso_callback_wrapper -> Callable[
 ] {
     import from urllib.parse { quote }
     async def sso_callback_wrapper(
-        request: Request, platform: str, operation: str
+        request: Request, platform: str
     ) -> (Response | TransportResponse) {
         # Call original sso_callback which returns TransportResponse
-        result = await self.user_manager.sso_callback(request, platform, operation);
+        result = await self.user_manager.sso_callback(request, platform);
 
         # Check if frontend redirect URL is configured
         sso_config = get_scale_config().get_sso_config();
@@ -764,7 +764,7 @@ impl JacAPIServerCore.register_sso_endpoints -> None {
                     data_type='string',
                     required=True,
                     default=None,
-                    description='SSO platform: google, apple',
+                    description='SSO platform: google, apple, github',
                     type=ParameterType.PATH
                 ),
                 APIParameter(
@@ -772,21 +772,21 @@ impl JacAPIServerCore.register_sso_endpoints -> None {
                     data_type='string',
                     required=True,
                     default=None,
-                    description='Operation to perform: "login" or "register"',
+                    description='Operation: "login" or "register"',
                     type=ParameterType.PATH
                 )
             ],
             response_model=None,
             tags=['SSO APIs'],
             summary='Initiate SSO authentication',
-            description='Redirects to the SSO provider for authentication. Supported platforms: Google, Apple. Configure each platform in jac.toml under [plugins.scale.sso].'
+            description='Redirects to the SSO provider for authentication. Supported platforms: Google, Apple, GitHub. Operations: login, register. Configure each platform in jac.toml under [plugins.scale.sso].'
         )
     );
     sso_callback_wrapper = self._create_sso_callback_wrapper();
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.GET,
-            path='/sso/{platform}/{operation}/callback',
+            path='/sso/{platform}/callback',
             callback=sso_callback_wrapper,
             parameters=[
                 APIParameter(
@@ -794,29 +794,21 @@ impl JacAPIServerCore.register_sso_endpoints -> None {
                     data_type='string',
                     required=True,
                     default=None,
-                    description='SSO platform: google, apple',
-                    type=ParameterType.PATH
-                ),
-                APIParameter(
-                    name='operation',
-                    data_type='string',
-                    required=True,
-                    default=None,
-                    description='Operation to perform: "login" or "register"',
+                    description='SSO platform: google, apple, github',
                     type=ParameterType.PATH
                 )
             ],
             response_model=None,
             tags=['SSO APIs'],
             summary='SSO callback endpoint (GET)',
-            description='Handles the callback from SSO provider after authentication. If client_auth_callback_url is configured, redirects with token/error params.'
+            description='Handles the callback from SSO provider after authentication. Logs in existing users or registers new ones automatically. If client_auth_callback_url is configured, redirects with token/error params.'
         )
     );
     # Apple Sign In sends callbacks as POST - register a POST handler for the same path
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.POST,
-            path='/sso/{platform}/{operation}/callback',
+            path='/sso/{platform}/callback',
             callback=sso_callback_wrapper,
             parameters=[
                 APIParameter(
@@ -824,22 +816,14 @@ impl JacAPIServerCore.register_sso_endpoints -> None {
                     data_type='string',
                     required=True,
                     default=None,
-                    description='SSO platform: google, apple',
-                    type=ParameterType.PATH
-                ),
-                APIParameter(
-                    name='operation',
-                    data_type='string',
-                    required=True,
-                    default=None,
-                    description='Operation to perform: "login" or "register"',
+                    description='SSO platform: google, apple, github',
                     type=ParameterType.PATH
                 )
             ],
             response_model=None,
             tags=['SSO APIs'],
             summary='SSO callback endpoint (POST)',
-            description='Handles the POST callback from SSO providers like Apple Sign In. If client_auth_callback_url is configured, redirects with token/error params.'
+            description='Handles the POST callback from SSO providers like Apple Sign In. Logs in existing users or registers new ones automatically. If client_auth_callback_url is configured, redirects with token/error params.'
         )
     );
 }
