@@ -1369,6 +1369,7 @@ def _ensure_grafana_manager -> (Any | None) {
     }
     monitoring_cfg = get_scale_config().get_monitoring_config();
     if not monitoring_cfg.get('enabled', False) {
+        logger.info("GrafanaManager: Monitoring not enabled, skipping init");
         return None;
     }
     # Auto-detect Grafana URL from K8s config

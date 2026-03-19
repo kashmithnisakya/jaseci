@@ -55,6 +55,18 @@ impl GrafanaManager.setup(
         }
     }
     self._initialized = True;
+
+    # If a previous admin password was persisted (from a prior sync), use it
+    # instead of the default config password — handles server restarts after
+    # the admin changed their password.
+    stored_admin = self._load_credentials('admin');
+    if stored_admin and stored_admin.get('grafana_password') {
+        self._admin_password = stored_admin['grafana_password'];
+        logger.info(
+            "GrafanaManager: Loaded persisted admin password from previous sync"
+        );
+    }
+
     logger.info(
         f"GrafanaManager initialised (url={self._grafana_url}, "
         f"monitoring_user={self._monitoring_user})"
@@ -116,16 +128,36 @@ impl GrafanaManager.sync_admin_password(new_password: str) -> bool {
         return False;
     }
 
+    # Try with current cached password first
     success = self._update_grafana_admin_password(new_password);
+
+    if not success {
+        # Maybe the cached password is stale — try with persisted password
+        stored = self._load_credentials('admin');
+        if stored and stored.get('grafana_password') {
+            old_password = self._admin_password;
+            self._admin_password = stored['grafana_password'];
+            logger.info("GrafanaManager: Retrying with persisted admin password");
+            success = self._update_grafana_admin_password(new_password);
+            if not success {
+                self._admin_password = old_password;
+            }
+        }
+    }
+
     if success {
         self._admin_password = new_password;
         self._persist_credentials('admin', {
             'grafana_user': self._admin_user,
+            'grafana_password': new_password,
             'synced_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
         });
         logger.info("GrafanaManager: Admin password synced to Grafana");
     } else {
-        logger.error("GrafanaManager: Failed to sync admin password to Grafana");
+        logger.error(
+            "GrafanaManager: Failed to sync admin password to Grafana. "
+            "Current cached password may not match Grafana's admin password."
+        );
     }
     return success;
 }
@@ -277,15 +309,15 @@ impl GrafanaManager._api_request(
         return {'status': response.status};
     } except HTTPError as e {
         response_body = e.read().decode('utf-8') if e.fp else '';
-        logger.debug(
+        logger.warning(
             f"GrafanaManager API {method} {path} returned {e.code}: {response_body}"
         );
         return None;
     } except URLError as e {
-        logger.debug(f"GrafanaManager API {method} {path} failed: {e.reason}");
+        logger.warning(f"GrafanaManager API {method} {path} failed: {e.reason}");
         return None;
     } except Exception as e {
-        logger.debug(f"GrafanaManager API {method} {path} error: {e}");
+        logger.warning(f"GrafanaManager API {method} {path} error: {e}");
         return None;
     }
 }

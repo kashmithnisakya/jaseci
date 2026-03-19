@@ -97,6 +97,7 @@ obj JacAPIServerCore {
     # HMR support
     def enable_hmr(hot_reloader: Any) -> None;
     def _setup_scheduler -> None;
+    def _setup_grafana -> None;
     # API key management
     def get_api_key_manager -> ApiKeyManager;
     def create_api_key(

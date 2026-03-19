@@ -239,6 +239,7 @@ impl JacAPIServerCore.start(
     self._configure_openapi_security();
     self.user_manager.create_user(Con.GUEST.value, '__no_password__');
     self._setup_scheduler();
+    self._setup_grafana();
     # Find an available port (may differ from requested if port is in use)
     original_port = self.port;
     self.port = _find_available_port(self.port);
@@ -1082,6 +1083,52 @@ impl JacAPIServerCore._setup_scheduler -> None {
 
     # Register /jobs REST endpoints
     self.register_scheduler_endpoints();
+}
+
+"""Set up Grafana credentials — only runs inside K8s (not local dev)."""
+impl JacAPIServerCore._setup_grafana -> None {
+    import os;
+    import time;
+    # Only run inside K8s — this env var is auto-set in every K8s pod
+    if not os.environ.get('KUBERNETES_SERVICE_HOST') {
+        return;
+    }
+    monitoring_cfg = get_scale_config().get_monitoring_config();
+    if not monitoring_cfg.get('enabled', False) {
+        return;
+    }
+
+    import from jac_scale.admin.grafana_manager { GrafanaManager }
+    k8s_cfg = get_scale_config().get_kubernetes_config();
+    app_name = k8s_cfg.get('app_name', 'jaseci');
+    grafana_url = f"http://{app_name}-grafana-service:3000";
+
+    admin_cfg = get_scale_config().get_admin_config();
+    grafana_mgr = GrafanaManager.instance();
+    grafana_mgr.setup(
+        admin_password=admin_cfg.get('default_password', 'changeme'),
+        monitoring_user=monitoring_cfg.get('monitoring_username', 'jac-monitor'),
+        monitoring_password=monitoring_cfg.get('monitoring_password', 'monitoring123'),
+        grafana_url=grafana_url
+    );
+
+    # Wait for Grafana to be ready (up to 60 seconds)
+    for attempt in range(12) {
+        if grafana_mgr._check_health() {
+            break;
+        }
+        logger.info(
+            f"Waiting for Grafana to be ready (attempt {attempt + 1}/12)..."
+        );
+        time.sleep(5);
+    }
+
+    try {
+        result = grafana_mgr.sync_credentials();
+        logger.info(f"Grafana credentials synced: {result}");
+    } except Exception as e {
+        logger.warning(f"Grafana credential sync failed: {e}");
+    }
 }
 
 """Create a wrapper around the metrics endpoint that requires admin authentication."""
