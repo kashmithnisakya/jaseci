@@ -1416,8 +1416,7 @@ impl JacAPIServerAdmin.admin_get_grafana_credentials(
             );
         }
         return TransportResponse.success(
-            data={'credentials': creds},
-            meta=Meta(extra={'http_status': 200})
+            data={'credentials': creds}, meta=Meta(extra={'http_status': 200})
         );
     } except Exception as e {
         return TransportResponse.fail(
@@ -1485,10 +1484,7 @@ impl JacAPIServerAdmin.admin_sync_grafana(
         }
         result = grafana_mgr.sync_credentials();
         return TransportResponse.success(
-            data={
-                'message': 'Grafana credential sync complete',
-                'result': result
-            },
+            data={'message': 'Grafana credential sync complete', 'result': result},
             meta=Meta(extra={'http_status': 200})
         );
     } except Exception as e {

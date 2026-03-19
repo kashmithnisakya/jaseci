@@ -664,3 +664,5 @@ with_llm_image.jac
 with_llm_type.jac
 with_llm_video.jac
 self_type.jac
+grafana_manager.jac
+test_grafana_manager.jac

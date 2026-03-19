@@ -23,7 +23,6 @@ def _reset_grafana_manager -> None {
 # ============================================================================
 # GrafanaManager Unit Tests (mocked HTTP)
 # ============================================================================
-
 test "grafana_manager singleton returns same instance" {
     _reset_grafana_manager();
     mgr1 = GrafanaManager.instance();
@@ -100,6 +99,7 @@ test "grafana_manager sync_credentials full flow with mock" {
         }
         if '/api/users/lookup' in path {
             return None;  # User doesn't exist yet
+
         }
         if path == '/api/admin/users' and method == 'POST' {
             return {'id': 2, 'message': 'User created'};
@@ -179,6 +179,7 @@ test "grafana_manager ensure_monitoring_user creates user" {
     ) -> (dict | None) {
         if '/api/users/lookup' in path {
             return None;  # User doesn't exist
+
         }
         if path == '/api/admin/users' and method == 'POST' {
             return {'id': 5, 'message': 'User created'};
@@ -222,6 +223,7 @@ test "grafana_manager ensure_monitoring_user skips when exists" {
     ) -> (dict | None) {
         if '/api/users/lookup' in path {
             return {'id': 3, 'login': 'jac-monitor'};  # User exists
+
         }
         return None;
     }
@@ -345,7 +347,6 @@ test "grafana_manager auto_generates password when empty" {
 # ============================================================================
 # Admin Endpoint Tests (via ScaleTestClient)
 # ============================================================================
-
 test "admin grafana credentials endpoint requires admin" {
     client = make_client();
     try {
@@ -361,8 +362,7 @@ test "admin grafana credentials returns not configured when manager not init" {
     try {
         token = client.admin_login();
         response = client.get(
-            "/admin/grafana/credentials",
-            headers={"Authorization": f"Bearer {token}"}
+            "/admin/grafana/credentials", headers={"Authorization": f"Bearer {token}"}
         );
         data = response.json();
         # GrafanaManager is not initialized in test mode (no monitoring enabled)

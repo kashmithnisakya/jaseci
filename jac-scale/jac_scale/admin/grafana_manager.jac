@@ -40,7 +40,6 @@ obj GrafanaManager {
     def ensure_monitoring_user -> dict[str, Any];
     def rotate_monitoring_password -> dict[str, Any];
     def get_monitoring_credentials -> (dict[str, Any] | None);
-
     # Grafana HTTP API helpers
     def _api_request(
         method: str,
@@ -56,9 +55,9 @@ obj GrafanaManager {
     def _create_grafana_user(
         username: str, password: str, role: str = 'Viewer'
     ) -> (dict | None);
+
     def _update_grafana_user_password(user_id: int, password: str) -> bool;
     def _update_grafana_admin_password(new_password: str) -> bool;
-
     # Persistence
     def _persist_credentials(key: str, data: dict) -> None;
     def _load_credentials(key: str) -> (dict | None);

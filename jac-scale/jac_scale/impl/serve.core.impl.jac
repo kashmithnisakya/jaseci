@@ -1117,9 +1117,7 @@ impl JacAPIServerCore._setup_grafana -> None {
         if grafana_mgr._check_health() {
             break;
         }
-        logger.info(
-            f"Waiting for Grafana to be ready (attempt {attempt + 1}/12)..."
-        );
+        logger.info(f"Waiting for Grafana to be ready (attempt {attempt + 1}/12)...");
         time.sleep(5);
     }
 

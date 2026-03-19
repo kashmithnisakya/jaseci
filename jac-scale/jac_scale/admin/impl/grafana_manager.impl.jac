@@ -147,11 +147,14 @@ impl GrafanaManager.sync_admin_password(new_password: str) -> bool {
 
     if success {
         self._admin_password = new_password;
-        self._persist_credentials('admin', {
-            'grafana_user': self._admin_user,
-            'grafana_password': new_password,
-            'synced_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
-        });
+        self._persist_credentials(
+            'admin',
+            {
+                'grafana_user': self._admin_user,
+                'grafana_password': new_password,
+                'synced_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
+            }
+        );
         logger.info("GrafanaManager: Admin password synced to Grafana");
     } else {
         logger.error(
@@ -194,9 +197,7 @@ impl GrafanaManager.ensure_monitoring_user -> dict[str, Any] {
     }
 
     # Create user in Grafana
-    created = self._create_grafana_user(
-        self._monitoring_user, password, 'Viewer'
-    );
+    created = self._create_grafana_user(self._monitoring_user, password, 'Viewer');
     if not created {
         raise RuntimeError(
             f"Failed to create monitoring user '{self._monitoring_user}' in Grafana"
@@ -207,13 +208,16 @@ impl GrafanaManager.ensure_monitoring_user -> dict[str, Any] {
     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat();
 
     # Persist credentials
-    self._persist_credentials('monitoring', {
-        'grafana_user': self._monitoring_user,
-        'grafana_password': password,
-        'grafana_user_id': user_id,
-        'created_at': now_str,
-        'updated_at': now_str
-    });
+    self._persist_credentials(
+        'monitoring',
+        {
+            'grafana_user': self._monitoring_user,
+            'grafana_password': password,
+            'grafana_user_id': user_id,
+            'created_at': now_str,
+            'updated_at': now_str
+        }
+    );
 
     logger.info(
         f"GrafanaManager: Created monitoring user '{self._monitoring_user}' "
@@ -246,12 +250,15 @@ impl GrafanaManager.rotate_monitoring_password -> dict[str, Any] {
     }
 
     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat();
-    self._persist_credentials('monitoring', {
-        'grafana_user': self._monitoring_user,
-        'grafana_password': new_password,
-        'grafana_user_id': user_id,
-        'updated_at': now_str
-    });
+    self._persist_credentials(
+        'monitoring',
+        {
+            'grafana_user': self._monitoring_user,
+            'grafana_password': new_password,
+            'grafana_user_id': user_id,
+            'updated_at': now_str
+        }
+    );
 
     logger.info(f"GrafanaManager: Rotated monitoring user password (id={user_id})");
     return {
@@ -277,7 +284,6 @@ impl GrafanaManager.get_monitoring_credentials -> (dict[str, Any] | None) {
 }
 
 # ── Grafana HTTP API helpers ─────────────────────────────────────────────────
-
 """Make an HTTP request to the Grafana API."""
 impl GrafanaManager._api_request(
     method: str,
@@ -336,21 +342,18 @@ impl GrafanaManager._verify_admin_auth -> bool {
 
 """Look up a Grafana user by login name."""
 impl GrafanaManager._get_grafana_user(username: str) -> (dict | None) {
-    return self._api_request(
-        'GET', f'/api/users/lookup?loginOrEmail={username}'
-    );
+    return self._api_request('GET', f'/api/users/lookup?loginOrEmail={username}');
 }
 
 """Create a new user in Grafana and set their org role."""
 impl GrafanaManager._create_grafana_user(
     username: str, password: str, role: str = 'Viewer'
 ) -> (dict | None) {
-    result = self._api_request('POST', '/api/admin/users', {
-        'name': username,
-        'login': username,
-        'password': password,
-        'OrgId': 1
-    });
+    result = self._api_request(
+        'POST',
+        '/api/admin/users',
+        {'name': username, 'login': username, 'password': password, 'OrgId': 1}
+    );
     if not result {
         return None;
     }
@@ -358,20 +361,15 @@ impl GrafanaManager._create_grafana_user(
     user_id = result.get('id');
     if user_id and role != 'Admin' {
         # Set the user's org role (default is Viewer)
-        self._api_request(
-            'PATCH', f'/api/org/users/{user_id}', {'role': role}
-        );
+        self._api_request('PATCH', f'/api/org/users/{user_id}', {'role': role});
     }
     return result;
 }
 
 """Update a Grafana user's password by user ID."""
-impl GrafanaManager._update_grafana_user_password(
-    user_id: int, password: str
-) -> bool {
+impl GrafanaManager._update_grafana_user_password(user_id: int, password: str) -> bool {
     result = self._api_request(
-        'PUT', f'/api/admin/users/{user_id}/password',
-        {'password': password}
+        'PUT', f'/api/admin/users/{user_id}/password', {'password': password}
     );
     return result is not None;
 }
@@ -379,14 +377,12 @@ impl GrafanaManager._update_grafana_user_password(
 """Update the Grafana admin user's password."""
 impl GrafanaManager._update_grafana_admin_password(new_password: str) -> bool {
     result = self._api_request(
-        'PUT', '/api/admin/users/1/password',
-        {'password': new_password}
+        'PUT', '/api/admin/users/1/password', {'password': new_password}
     );
     return result is not None;
 }
 
 # ── Persistence ──────────────────────────────────────────────────────────────
-
 """Persist credential data to MongoDB or in-memory store."""
 impl GrafanaManager._persist_credentials(key: str, data: dict) -> None {
     doc = dict(data);
@@ -395,9 +391,7 @@ impl GrafanaManager._persist_credentials(key: str, data: dict) -> None {
         try {
             existing = self._db.find_one(self._collection, {'_id': key});
             if existing {
-                self._db.update_one(
-                    self._collection, {'_id': key}, {'$set': data}
-                );
+                self._db.update_one(self._collection, {'_id': key}, {'$set': data});
             } else {
                 self._db.insert_one(self._collection, doc);
             }
