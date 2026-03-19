@@ -99,8 +99,9 @@ impl JacScaleConfig.get_default_config(self: JacScaleConfig) -> dict[str, Any] {
                 5.0,
                 10.0
             ],
-            'prometheus_admin_password': 'Adminpassword123',
-            'k8s_metrics_enabled': True
+            'k8s_metrics_enabled': True,
+            'monitoring_username': 'jac-monitor',
+            'monitoring_password': 'monitoring123'
         },
         'admin': {
             'enabled': True,
@@ -174,7 +175,8 @@ impl JacScaleConfig.get_kubernetes_config(self: JacScaleConfig) -> dict[str, Any
     monitoring = self.get_monitoring_config();
     k8s_config['monitoring_enabled'] = monitoring['enabled'];
     k8s_config['k8s_metrics_enabled'] = monitoring['k8s_metrics_enabled'];
-    k8s_config['prometheus_admin_password'] = monitoring['prometheus_admin_password'];
+    k8s_config['monitoring_username'] = monitoring['monitoring_username'];
+    k8s_config['monitoring_password'] = monitoring['monitoring_password'];
     # Convert to dict using KubernetesConfig.from_dict() which handles all defaults
     import from jac_scale.targets.kubernetes.kubernetes_config { KubernetesConfig }
     k8s_config_obj = KubernetesConfig.from_dict(KubernetesConfig, k8s_config);
@@ -272,8 +274,11 @@ impl JacScaleConfig.get_monitoring_config(self: JacScaleConfig) -> dict[str, Any
             'histogram_buckets', default_buckets
         ),
         'k8s_metrics_enabled': monitoring_config.get('k8s_metrics_enabled', True),
-        'prometheus_admin_password': monitoring_config.get(
-            'prometheus_admin_password', 'Adminpassword123'
+        'monitoring_username': monitoring_config.get(
+            'monitoring_username', 'jac-monitor'
+        ),
+        'monitoring_password': monitoring_config.get(
+            'monitoring_password', 'monitoring123'
         )
     };
 }

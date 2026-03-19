@@ -84,6 +84,16 @@ obj JacAPIServerAdmin {
 
     # Monitoring
     def admin_get_metrics(Authorization: str | None = None) -> TransportResponse;
+    # Grafana credential management
+    def admin_get_grafana_credentials(
+        Authorization: str | None = None
+    ) -> TransportResponse;
+    def admin_rotate_grafana_monitoring_password(
+        Authorization: str | None = None
+    ) -> TransportResponse;
+    def admin_sync_grafana(
+        Authorization: str | None = None
+    ) -> TransportResponse;
     # Admin UI
     def serve_admin_page -> Response;
     def serve_admin_index -> Response;

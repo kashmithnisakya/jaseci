@@ -4,6 +4,7 @@ import hashlib;
 import from typing { Any }
 import from kubernetes { client }
 import from jac_scale.targets.kubernetes.kubernetes_config { KubernetesConfig }
+import from jac_scale.config_loader { get_scale_config }
 import from jac_scale.abstractions.logger { Logger }
 import from jac_scale.targets.kubernetes.utils.kubernetes_utils {
     delete_if_exists,
@@ -16,7 +17,8 @@ import from kubernetes.client.exceptions { ApiException }
 Prometheus is always exposed as ClusterIP (internal, scraped by Grafana).
 Grafana is exposed as ClusterIP, routed via NGINX Ingress at /grafana.
 
-Admin credentials for Grafana use the 'prometheus_admin_password' config value.
+Admin credentials for Grafana use the jac-scale admin default password.
+Monitoring viewer credentials use 'monitoring_username' / 'monitoring_password' from config.
 
 Kubernetes metrics are collected via:
   - kube-state-metrics: exposes K8s object state (pods, deployments, replicas, restarts)
@@ -621,7 +623,9 @@ obj MonitoringDeployer {
         prometheus_name = f"{app_name}-prometheus";
         grafana_secret_name = f"{grafana_name}-secret";
 
-        # Admin credentials password sourced from prometheus_admin_password config field
+        # Admin credentials sourced from jac-scale admin default password
+        admin_cfg = get_scale_config().get_admin_config();
+        grafana_admin_password = admin_cfg.get('default_password', 'changeme');
         grafana_secret = {
             'apiVersion': 'v1',
             'kind': 'Secret',
@@ -632,8 +636,8 @@ obj MonitoringDeployer {
             },
             'type': 'Opaque',
             'stringData': {
-                'GF_SECURITY_ADMIN_USER': 'admin',
-                'GF_SECURITY_ADMIN_PASSWORD': self.k8s_config.prometheus_admin_password
+                'GF_SECURITY_ADMIN_USER': admin_cfg.get('username', 'admin'),
+                'GF_SECURITY_ADMIN_PASSWORD': grafana_admin_password
             }
         };
         try {

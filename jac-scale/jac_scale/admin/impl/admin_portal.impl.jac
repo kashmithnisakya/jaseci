@@ -433,6 +433,55 @@ impl JacAPIServerAdmin.register_admin_endpoints -> None {
             description='Get parsed Prometheus metrics as JSON (admin only)'
         )
     );
+    # Grafana credential management endpoints
+    async def get_grafana_creds_handler(request: Request) -> TransportResponse {
+        authorization = request.headers.get('Authorization');
+        return self.admin_get_grafana_credentials(authorization);
+    }
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.GET,
+            path='/admin/grafana/credentials',
+            callback=get_grafana_creds_handler,
+            parameters=[],
+            response_model=None,
+            tags=['Admin'],
+            summary='Get Grafana monitoring credentials',
+            description='Get monitoring user credentials for Grafana (admin only)'
+        )
+    );
+    async def rotate_grafana_creds_handler(request: Request) -> TransportResponse {
+        authorization = request.headers.get('Authorization');
+        return self.admin_rotate_grafana_monitoring_password(authorization);
+    }
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.POST,
+            path='/admin/grafana/credentials/rotate',
+            callback=rotate_grafana_creds_handler,
+            parameters=[],
+            response_model=None,
+            tags=['Admin'],
+            summary='Rotate Grafana monitoring password',
+            description='Regenerate the monitoring user password in Grafana (admin only)'
+        )
+    );
+    async def sync_grafana_handler(request: Request) -> TransportResponse {
+        authorization = request.headers.get('Authorization');
+        return self.admin_sync_grafana(authorization);
+    }
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.POST,
+            path='/admin/grafana/sync',
+            callback=sync_grafana_handler,
+            parameters=[],
+            response_model=None,
+            tags=['Admin'],
+            summary='Sync Grafana credentials',
+            description='Force a full credential sync with Grafana (admin only)'
+        )
+    );
     # Admin UI - redirect /admin to /admin/
     self.server.add_endpoint(
         JEndPoint(
@@ -617,6 +666,17 @@ impl JacAPIServerAdmin.reset_password(
     }
     # Clear the requires_password_reset flag
     self.user_manager.set_requires_password_reset(username, False);
+    # Sync password to Grafana if the user is admin
+    if self.user_manager.is_admin(username) {
+        try {
+            grafana_mgr = _ensure_grafana_manager();
+            if grafana_mgr {
+                grafana_mgr.sync_admin_password(new_password);
+            }
+        } except Exception as e {
+            logger.warning(f"Failed to sync admin password to Grafana: {e}");
+        }
+    }
     # Generate new token
     new_token = self.user_manager.create_jwt_token(username);
     return TransportResponse.success(
@@ -1298,4 +1358,143 @@ impl JacAPIServerAdmin.serve_admin_asset(path: str) -> Response {
         return FileResponse(path=str(index_file), media_type="text/html");
     }
     return Response(content="Not found", status_code=404);
+}
+
+"""Lazily initialise GrafanaManager from monitoring config if not already set up."""
+def _ensure_grafana_manager -> (Any | None) {
+    import from jac_scale.admin.grafana_manager { GrafanaManager }
+    grafana_mgr = GrafanaManager.instance();
+    if grafana_mgr._initialized {
+        return grafana_mgr;
+    }
+    monitoring_cfg = get_scale_config().get_monitoring_config();
+    if not monitoring_cfg.get('enabled', False) {
+        return None;
+    }
+    # Auto-detect Grafana URL from K8s config
+    k8s_cfg = get_scale_config().get_kubernetes_config();
+    app_name = k8s_cfg.get('app_name', 'jaseci');
+    grafana_url = f"http://{app_name}-grafana-service:3000";
+    # Grafana admin password = jac-scale admin default password
+    admin_cfg = get_scale_config().get_admin_config();
+    grafana_mgr.setup(
+        admin_password=admin_cfg.get('default_password', 'changeme'),
+        monitoring_user=monitoring_cfg.get('monitoring_username', 'jac-monitor'),
+        monitoring_password=monitoring_cfg.get('monitoring_password', 'monitoring123'),
+        grafana_url=grafana_url
+    );
+    return grafana_mgr;
+}
+
+"""Get Grafana monitoring credentials (admin only)."""
+impl JacAPIServerAdmin.admin_get_grafana_credentials(
+    Authorization: str | None = None
+) -> TransportResponse {
+    error = self.require_admin(Authorization);
+    if error {
+        return error;
+    }
+    try {
+        grafana_mgr = _ensure_grafana_manager();
+        if not grafana_mgr {
+            return TransportResponse.fail(
+                code='NOT_CONFIGURED',
+                message='Monitoring is not enabled in config',
+                meta=Meta(extra={'http_status': 503})
+            );
+        }
+        creds = grafana_mgr.get_monitoring_credentials();
+        if not creds {
+            return TransportResponse.success(
+                data={
+                    'message': 'No monitoring credentials found. '
+                    'Run POST /admin/grafana/sync to create them.',
+                    'credentials': None
+                },
+                meta=Meta(extra={'http_status': 200})
+            );
+        }
+        return TransportResponse.success(
+            data={'credentials': creds},
+            meta=Meta(extra={'http_status': 200})
+        );
+    } except Exception as e {
+        return TransportResponse.fail(
+            code='GRAFANA_ERROR',
+            message=f'Failed to get Grafana credentials: {str(e)}',
+            meta=Meta(extra={'http_status': 500})
+        );
+    }
+}
+
+"""Rotate the Grafana monitoring user password (admin only)."""
+impl JacAPIServerAdmin.admin_rotate_grafana_monitoring_password(
+    Authorization: str | None = None
+) -> TransportResponse {
+    error = self.require_admin(Authorization);
+    if error {
+        return error;
+    }
+    try {
+        grafana_mgr = _ensure_grafana_manager();
+        if not grafana_mgr {
+            return TransportResponse.fail(
+                code='NOT_CONFIGURED',
+                message='Monitoring is not enabled in config',
+                meta=Meta(extra={'http_status': 503})
+            );
+        }
+        result = grafana_mgr.rotate_monitoring_password();
+        return TransportResponse.success(
+            data={
+                'message': 'Monitoring password rotated successfully',
+                'credentials': {
+                    'username': result.get('username'),
+                    'password': result.get('password'),
+                    'user_id': result.get('user_id')
+                }
+            },
+            meta=Meta(extra={'http_status': 200})
+        );
+    } except Exception as e {
+        return TransportResponse.fail(
+            code='GRAFANA_ERROR',
+            message=f'Failed to rotate monitoring password: {str(e)}',
+            meta=Meta(extra={'http_status': 500})
+        );
+    }
+}
+
+"""Force a full Grafana credential sync (admin only)."""
+impl JacAPIServerAdmin.admin_sync_grafana(
+    Authorization: str | None = None
+) -> TransportResponse {
+    error = self.require_admin(Authorization);
+    if error {
+        return error;
+    }
+    try {
+        grafana_mgr = _ensure_grafana_manager();
+        if not grafana_mgr {
+            return TransportResponse.fail(
+                code='NOT_CONFIGURED',
+                message='Monitoring is not enabled in config',
+                meta=Meta(extra={'http_status': 503})
+            );
+        }
+        result = grafana_mgr.sync_credentials();
+        return TransportResponse.success(
+            data={
+                'message': 'Grafana credential sync complete',
+                'result': result
+            },
+            meta=Meta(extra={'http_status': 200})
+        );
+    } except Exception as e {
+        return TransportResponse.fail(
+            code='GRAFANA_ERROR',
+            message=f'Grafana sync failed: {str(e)}',
+            meta=Meta(extra={'http_status': 500})
+        );
+    }
 }

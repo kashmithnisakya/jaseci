@@ -44,7 +44,8 @@ obj KubernetesConfig(BaseConfig) {
         plugin_versions: dict[str, str] = {},
         monitoring_enabled: bool = False,
         k8s_metrics_enabled: bool = True,
-        prometheus_admin_password: str = 'Adminpassword123',
+        monitoring_username: str = 'jac-monitor',
+        monitoring_password: str = 'monitoring123',
         # Dashboard configuration
         redis_dashboard: bool = False,
         mongodb_dashboard: bool = False,
@@ -108,7 +109,8 @@ obj KubernetesConfig(BaseConfig) {
                 # Monitoring configuration
                 'monitoring_enabled': self.monitoring_enabled,
                 'k8s_metrics_enabled': self.k8s_metrics_enabled,
-                'prometheus_admin_password': self.prometheus_admin_password,
+                'monitoring_username': self.monitoring_username,
+                'monitoring_password': self.monitoring_password,
                 # Dashboard configuration
                 'redis_dashboard': self.redis_dashboard,
                 'mongodb_dashboard': self.mongodb_dashboard,
@@ -172,9 +174,8 @@ obj KubernetesConfig(BaseConfig) {
             plugin_versions=config.get('plugin_versions', {}),
             monitoring_enabled=config.get('monitoring_enabled', False),
             k8s_metrics_enabled=config.get('k8s_metrics_enabled', True),
-            prometheus_admin_password=config.get(
-                'prometheus_admin_password', 'Adminpassword123'
-            ),
+            monitoring_username=config.get('monitoring_username', 'jac-monitor'),
+            monitoring_password=config.get('monitoring_password', 'monitoring123'),
             redis_dashboard=config.get('redis_dashboard', False),
             mongodb_dashboard=config.get('mongodb_dashboard', False),
             mongo_express_username=config.get('mongo_express_username', 'admin'),

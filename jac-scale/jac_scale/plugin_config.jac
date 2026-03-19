@@ -241,10 +241,15 @@ class JacScalePluginConfig {
                             ],
                             "description": "Histogram bucket boundaries in seconds for latency metrics"
                         },
-                        "prometheus_admin_password": {
+                        "monitoring_username": {
                             "type": "string",
-                            "default": "Adminpassword123",
-                            "description": "Admin password for Grafana when deploying the monitoring stack"
+                            "default": "jac-monitor",
+                            "description": "Username for Grafana monitoring viewer user"
+                        },
+                        "monitoring_password": {
+                            "type": "string",
+                            "default": "monitoring123",
+                            "description": "Password for Grafana monitoring viewer user"
                         }
                     }
                 }
