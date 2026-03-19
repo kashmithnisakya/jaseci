@@ -212,6 +212,10 @@ jobs:
       run: |
         pytest -x jac-scale/jac_scale/tests/test_restspec.jac
 
+    - name: Run Grafana Manager tests
+      run: |
+        pytest -x -vv -s jac-scale/jac_scale/tests/test_grafana_manager.jac
+
   test-scale-k8s:
     runs-on: ubuntu-latest
     steps:
