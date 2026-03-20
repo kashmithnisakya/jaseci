@@ -390,6 +390,9 @@ session_expiry_hours = 24
 | PUT | `/admin/users/{username}` | Update user role/settings |
 | DELETE | `/admin/users/{username}` | Delete a user |
 | POST | `/admin/users/{username}/force-password-reset` | Force password reset |
+| GET | `/admin/grafana/credentials` | Get monitoring credentials for Grafana (Viewer) |
+| POST | `/admin/grafana/credentials/rotate` | Rotate monitoring user password in Grafana |
+| POST | `/admin/grafana/sync` | Force sync credentials to Grafana |
 | GET | `/admin/sso/providers` | List SSO providers |
 | GET | `/admin/sso/users/{username}/accounts` | Get user's SSO accounts |
 
@@ -1527,7 +1530,8 @@ jac-scale can deploy a full observability stack (Prometheus + Grafana + kube-sta
 |----------|---------|-------------|
 | `enabled` | `false` | Deploy the monitoring stack and expose the app's `/metrics` endpoint |
 | `k8s_metrics_enabled` | `true` | Include kube-state-metrics and node-exporter exporters |
-| `prometheus_admin_password` | `Adminpassword123` | Grafana `admin` login password |
+| `monitoring_username` | `jac-monitor` | Grafana monitoring user (Viewer role) |
+| `monitoring_password` | `monitoring123` | Grafana monitoring user password |
 
 **To enable in `jac.toml`:**
 
@@ -1535,12 +1539,23 @@ jac-scale can deploy a full observability stack (Prometheus + Grafana + kube-sta
 [plugins.scale.monitoring]
 enabled = true
 k8s_metrics_enabled = true
-prometheus_admin_password = "StrongPassword123!"
+monitoring_username = "jac-monitor"
+monitoring_password = "SecureMonitoringPass!"
 ```
+
+**Grafana credentials:**
+
+| Credential | Grafana Role | Source |
+|------------|-------------|--------|
+| Admin (jac-scale admin) | Admin | Admin password from `[plugins.scale.admin]` - synced on password change |
+| Monitoring (`monitoring_username`/`monitoring_password`) | Viewer | Config values above - dashboard-only access |
 
 After deployment, access:
 
-- **Grafana:** `http://localhost:<ingress_node_port>/grafana` - log in with `admin` / `<prometheus_admin_password>`
+- **Grafana (admin):** `http://localhost:<ingress_node_port>/grafana` - log in with jac-scale admin credentials
+- **Grafana (monitoring):** `http://localhost:<ingress_node_port>/grafana` - log in with `monitoring_username` / `monitoring_password`
+
+When admin changes their password via `/admin/reset-password`, the Grafana admin password is automatically synced.
 
 On AWS clusters, the NGINX Ingress controller is exposed via a Network Load Balancer (NLB). Grafana is accessible at `<nlb-url>/grafana`.
 
