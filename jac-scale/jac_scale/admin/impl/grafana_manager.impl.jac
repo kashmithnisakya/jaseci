@@ -140,19 +140,25 @@ impl GrafanaManager.sync_admin_password(new_password: str) -> bool {
                 import jwt;
                 jwt_cfg = get_scale_config().get_jwt_config();
                 jwt_secret: str = str(jwt_cfg.get('secret', ''));
-                decoded: dict = dict(jwt.decode(encrypted_pw, jwt_secret, algorithms=['HS256']));
+                decoded: dict = dict(
+                    jwt.decode(encrypted_pw, jwt_secret, algorithms=['HS256'])
+                );
                 persisted_pw: str = str(decoded.get('password', ''));
                 if persisted_pw {
                     old_password = self._admin_password;
                     self._admin_password = persisted_pw;
-                    logger.info("GrafanaManager: Retrying with persisted admin password");
+                    logger.info(
+                        "GrafanaManager: Retrying with persisted admin password"
+                    );
                     success = self._update_grafana_admin_password(new_password);
                     if not success {
                         self._admin_password = old_password;
                     }
                 }
             } except Exception as e {
-                logger.warning(f"GrafanaManager: Could not decrypt persisted password: {e}");
+                logger.warning(
+                    f"GrafanaManager: Could not decrypt persisted password: {e}"
+                );
             }
         }
     }
@@ -164,7 +170,9 @@ impl GrafanaManager.sync_admin_password(new_password: str) -> bool {
             import jwt;
             jwt_cfg = get_scale_config().get_jwt_config();
             jwt_secret2: str = str(jwt_cfg.get('secret', ''));
-            encrypted = jwt.encode({'password': new_password}, jwt_secret2, algorithm='HS256');
+            encrypted = jwt.encode(
+                {'password': new_password}, jwt_secret2, algorithm='HS256'
+            );
             self._persist_credentials(
                 'admin',
                 {
@@ -174,7 +182,9 @@ impl GrafanaManager.sync_admin_password(new_password: str) -> bool {
                 }
             );
         } except Exception as e {
-            logger.warning(f"GrafanaManager: Could not encrypt password for persistence: {e}");
+            logger.warning(
+                f"GrafanaManager: Could not encrypt password for persistence: {e}"
+            );
         }
         logger.info("GrafanaManager: Admin password synced to Grafana");
     } else {
@@ -416,11 +426,15 @@ impl GrafanaManager._decrypt_persisted_admin_password -> (str | None) {
             import jwt;
             jwt_secret: str = str(get_scale_config().get_jwt_config().get('secret', ''));
             if jwt_secret {
-                decoded: dict = dict(jwt.decode(encrypted_pw, jwt_secret, algorithms=['HS256']));
+                decoded: dict = dict(
+                    jwt.decode(encrypted_pw, jwt_secret, algorithms=['HS256'])
+                );
                 return str(decoded.get('password', '')) or None;
             }
         } except Exception as e {
-            logger.warning(f"GrafanaManager: Could not decrypt persisted password: {e}");
+            logger.warning(
+                f"GrafanaManager: Could not decrypt persisted password: {e}"
+            );
         }
     }
     # Fallback for legacy unencrypted entries

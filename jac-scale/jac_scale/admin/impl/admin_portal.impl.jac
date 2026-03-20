@@ -1405,7 +1405,9 @@ def _persist_admin_password_for_later(password: str) -> None {
         db = Db(client=get_mongo_client(), db_name='jac_scale');
         doc = {
             '_id': 'admin',
-            'encrypted_password': jwt.encode({'password': password}, jwt_secret, algorithm='HS256'),
+            'encrypted_password': jwt.encode(
+                {'password': password}, jwt_secret, algorithm='HS256'
+            ),
             'synced_at': str(datetime.datetime.now(datetime.timezone.utc))
         };
         if db.find_one('grafana_credentials', {'_id': 'admin'}) {
