@@ -53,12 +53,13 @@ obj GrafanaManager {
     def _verify_admin_auth -> bool;
     def _get_grafana_user(username: str) -> (dict | None);
     def _create_grafana_user(
-        username: str, password: str, role: str = 'Viewer'
+        username: str, password: str, role: str = 'Admin'
     ) -> (dict | None);
 
     def _update_grafana_user_password(user_id: int, password: str) -> bool;
     def _update_grafana_admin_password(new_password: str) -> bool;
     # Persistence
+    def _decrypt_persisted_admin_password -> (str | None);
     def _persist_credentials(key: str, data: dict) -> None;
     def _load_credentials(key: str) -> (dict | None);
 }

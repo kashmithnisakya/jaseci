@@ -1548,7 +1548,7 @@ monitoring_password = "SecureMonitoringPass!"
 | Credential | Grafana Role | Source |
 |------------|-------------|--------|
 | Admin (jac-scale admin) | Admin | Admin password from `[plugins.scale.admin]` - synced on password change |
-| Monitoring (`monitoring_username`/`monitoring_password`) | Viewer | Config values above - dashboard-only access |
+| Monitoring (`monitoring_username`/`monitoring_password`) | Admin | Config values above - full Grafana access |
 
 After deployment, access:
 

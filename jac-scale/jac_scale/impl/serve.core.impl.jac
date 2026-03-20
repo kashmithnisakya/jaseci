@@ -1085,12 +1085,10 @@ impl JacAPIServerCore._setup_scheduler -> None {
     self.register_scheduler_endpoints();
 }
 
-"""Set up Grafana credentials — only runs inside K8s (not local dev)."""
+"""Set up Grafana credentials - only runs inside K8s (not local dev)."""
 impl JacAPIServerCore._setup_grafana -> None {
-    import os;
-    import time;
-    # Only run inside K8s — this env var is auto-set in every K8s pod
-    if not os.environ.get('KUBERNETES_SERVICE_HOST') {
+    # Only run inside K8s - this env var is auto-set in every K8s pod
+    if not getenv('KUBERNETES_SERVICE_HOST') {
         return;
     }
     monitoring_cfg = get_scale_config().get_monitoring_config();

@@ -56,17 +56,6 @@ impl GrafanaManager.setup(
     }
     self._initialized = True;
 
-    # If a previous admin password was persisted (from a prior sync), use it
-    # instead of the default config password — handles server restarts after
-    # the admin changed their password.
-    stored_admin = self._load_credentials('admin');
-    if stored_admin and stored_admin.get('grafana_password') {
-        self._admin_password = stored_admin['grafana_password'];
-        logger.info(
-            "GrafanaManager: Loaded persisted admin password from previous sync"
-        );
-    }
-
     logger.info(
         f"GrafanaManager initialised (url={self._grafana_url}, "
         f"monitoring_user={self._monitoring_user})"
@@ -106,6 +95,17 @@ impl GrafanaManager.sync_credentials -> dict[str, Any] {
     }
     result['admin_auth_ok'] = True;
 
+    # If admin changed password while monitoring was disabled, sync it now
+    persisted_pw = self._decrypt_persisted_admin_password();
+    if persisted_pw and persisted_pw != self._admin_password {
+        logger.info("GrafanaManager: Syncing pending admin password change");
+        if self.sync_admin_password(persisted_pw) {
+            result['admin_password_synced'] = True;
+        } else {
+            logger.warning("GrafanaManager: Failed to sync pending admin password");
+        }
+    }
+
     # Ensure monitoring user
     try {
         monitor_result = self.ensure_monitoring_user();
@@ -117,7 +117,7 @@ impl GrafanaManager.sync_credentials -> dict[str, Any] {
         logger.error(f"GrafanaManager: Failed to ensure monitoring user: {e}");
     }
 
-    logger.info(f"GrafanaManager: Credential sync complete — {result}");
+    logger.info(f"GrafanaManager: Credential sync complete - {result}");
     return result;
 }
 
@@ -132,29 +132,50 @@ impl GrafanaManager.sync_admin_password(new_password: str) -> bool {
     success = self._update_grafana_admin_password(new_password);
 
     if not success {
-        # Maybe the cached password is stale — try with persisted password
+        # Maybe the cached password is stale - try with persisted password
         stored = self._load_credentials('admin');
-        if stored and stored.get('grafana_password') {
-            old_password = self._admin_password;
-            self._admin_password = stored['grafana_password'];
-            logger.info("GrafanaManager: Retrying with persisted admin password");
-            success = self._update_grafana_admin_password(new_password);
-            if not success {
-                self._admin_password = old_password;
+        encrypted_pw = stored.get('encrypted_password') if stored is not None else None;
+        if encrypted_pw {
+            try {
+                import jwt;
+                jwt_cfg = get_scale_config().get_jwt_config();
+                jwt_secret: str = str(jwt_cfg.get('secret', ''));
+                decoded: dict = dict(jwt.decode(encrypted_pw, jwt_secret, algorithms=['HS256']));
+                persisted_pw: str = str(decoded.get('password', ''));
+                if persisted_pw {
+                    old_password = self._admin_password;
+                    self._admin_password = persisted_pw;
+                    logger.info("GrafanaManager: Retrying with persisted admin password");
+                    success = self._update_grafana_admin_password(new_password);
+                    if not success {
+                        self._admin_password = old_password;
+                    }
+                }
+            } except Exception as e {
+                logger.warning(f"GrafanaManager: Could not decrypt persisted password: {e}");
             }
         }
     }
 
     if success {
         self._admin_password = new_password;
-        self._persist_credentials(
-            'admin',
-            {
-                'grafana_user': self._admin_user,
-                'grafana_password': new_password,
-                'synced_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
-            }
-        );
+        # Persist encrypted password
+        try {
+            import jwt;
+            jwt_cfg = get_scale_config().get_jwt_config();
+            jwt_secret2: str = str(jwt_cfg.get('secret', ''));
+            encrypted = jwt.encode({'password': new_password}, jwt_secret2, algorithm='HS256');
+            self._persist_credentials(
+                'admin',
+                {
+                    'grafana_user': self._admin_user,
+                    'encrypted_password': encrypted,
+                    'synced_at': str(datetime.datetime.now(datetime.timezone.utc))
+                }
+            );
+        } except Exception as e {
+            logger.warning(f"GrafanaManager: Could not encrypt password for persistence: {e}");
+        }
         logger.info("GrafanaManager: Admin password synced to Grafana");
     } else {
         logger.error(
@@ -196,8 +217,8 @@ impl GrafanaManager.ensure_monitoring_user -> dict[str, Any] {
         self._monitoring_password = password;
     }
 
-    # Create user in Grafana
-    created = self._create_grafana_user(self._monitoring_user, password, 'Viewer');
+    # Create user in Grafana with Admin role
+    created = self._create_grafana_user(self._monitoring_user, password, 'Admin');
     if not created {
         raise RuntimeError(
             f"Failed to create monitoring user '{self._monitoring_user}' in Grafana"
@@ -205,7 +226,7 @@ impl GrafanaManager.ensure_monitoring_user -> dict[str, Any] {
     }
 
     user_id = created.get('id');
-    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat();
+    now_str = str(datetime.datetime.now(datetime.timezone.utc));
 
     # Persist credentials
     self._persist_credentials(
@@ -221,7 +242,7 @@ impl GrafanaManager.ensure_monitoring_user -> dict[str, Any] {
 
     logger.info(
         f"GrafanaManager: Created monitoring user '{self._monitoring_user}' "
-        f"with Viewer role (id={user_id})"
+        f"with Admin role (id={user_id})"
     );
     return {
         'username': self._monitoring_user,
@@ -249,7 +270,7 @@ impl GrafanaManager.rotate_monitoring_password -> dict[str, Any] {
         );
     }
 
-    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat();
+    now_str = str(datetime.datetime.now(datetime.timezone.utc));
     self._persist_credentials(
         'monitoring',
         {
@@ -347,7 +368,7 @@ impl GrafanaManager._get_grafana_user(username: str) -> (dict | None) {
 
 """Create a new user in Grafana and set their org role."""
 impl GrafanaManager._create_grafana_user(
-    username: str, password: str, role: str = 'Viewer'
+    username: str, password: str, role: str = 'Admin'
 ) -> (dict | None) {
     result = self._api_request(
         'POST',
@@ -359,8 +380,8 @@ impl GrafanaManager._create_grafana_user(
     }
 
     user_id = result.get('id');
-    if user_id and role != 'Admin' {
-        # Set the user's org role (default is Viewer)
+    if user_id {
+        # Set the user's org role
         self._api_request('PATCH', f'/api/org/users/{user_id}', {'role': role});
     }
     return result;
@@ -383,6 +404,30 @@ impl GrafanaManager._update_grafana_admin_password(new_password: str) -> bool {
 }
 
 # ── Persistence ──────────────────────────────────────────────────────────────
+"""Decrypt the persisted admin password from DB using JWT secret."""
+impl GrafanaManager._decrypt_persisted_admin_password -> (str | None) {
+    stored = self._load_credentials('admin');
+    if not stored {
+        return None;
+    }
+    encrypted_pw = stored.get('encrypted_password');
+    if encrypted_pw {
+        try {
+            import jwt;
+            jwt_secret: str = str(get_scale_config().get_jwt_config().get('secret', ''));
+            if jwt_secret {
+                decoded: dict = dict(jwt.decode(encrypted_pw, jwt_secret, algorithms=['HS256']));
+                return str(decoded.get('password', '')) or None;
+            }
+        } except Exception as e {
+            logger.warning(f"GrafanaManager: Could not decrypt persisted password: {e}");
+        }
+    }
+    # Fallback for legacy unencrypted entries
+    legacy_pw = stored.get('grafana_password', '') if stored else '';
+    return str(legacy_pw) or None;
+}
+
 """Persist credential data to MongoDB or in-memory store."""
 impl GrafanaManager._persist_credentials(key: str, data: dict) -> None {
     doc = dict(data);

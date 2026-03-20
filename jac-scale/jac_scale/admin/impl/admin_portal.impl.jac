@@ -22,6 +22,7 @@ import from jac_scale.jserver.jserver {
     ParameterType
 }
 import from jac_scale.config_loader { get_scale_config }
+import from jac_scale.db { Db, get_mongo_client }
 import from jac_scale.user_manager { UserRole }
 import from jaclang.jac0core.runtime { JacRuntime as Jac }
 import from jaclang.jac0core.constant { Constants as Con }
@@ -672,6 +673,10 @@ impl JacAPIServerAdmin.reset_password(
             grafana_mgr = _ensure_grafana_manager();
             if grafana_mgr {
                 grafana_mgr.sync_admin_password(new_password);
+            } else {
+                # Monitoring not enabled yet — persist the password so
+                # _setup_grafana() can sync it when monitoring is enabled later.
+                _persist_admin_password_for_later(new_password);
             }
         } except Exception as e {
             logger.warning(f"Failed to sync admin password to Grafana: {e}");
@@ -1385,6 +1390,33 @@ def _ensure_grafana_manager -> (Any | None) {
         grafana_url=grafana_url
     );
     return grafana_mgr;
+}
+
+"""Encrypt and persist admin password to DB so _setup_grafana() can sync it later."""
+def _persist_admin_password_for_later(password: str) -> None {
+    import datetime, jwt;
+    cfg = get_scale_config();
+    jwt_secret: str = str(cfg.get_jwt_config().get('secret', ''));
+    mongodb_uri = cfg.get_database_config().get('mongodb_uri');
+    if not (mongodb_uri and jwt_secret) {
+        return;
+    }
+    try {
+        db = Db(client=get_mongo_client(), db_name='jac_scale');
+        doc = {
+            '_id': 'admin',
+            'encrypted_password': jwt.encode({'password': password}, jwt_secret, algorithm='HS256'),
+            'synced_at': str(datetime.datetime.now(datetime.timezone.utc))
+        };
+        if db.find_one('grafana_credentials', {'_id': 'admin'}) {
+            db.update_one('grafana_credentials', {'_id': 'admin'}, {'$set': doc});
+        } else {
+            db.insert_one('grafana_credentials', doc);
+        }
+        logger.info("Persisted encrypted admin password for future Grafana sync");
+    } except Exception as e {
+        logger.debug(f"Could not persist admin password: {e}");
+    }
 }
 
 """Get Grafana monitoring credentials (admin only)."""
