@@ -1123,4 +1123,3 @@ impl JacAPIServerCore._setup_grafana -> None {
         logger.warning(f"Grafana credential sync failed: {e}");
     }
 }
-
