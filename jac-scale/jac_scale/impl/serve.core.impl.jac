@@ -134,23 +134,20 @@ impl JacAPIServerCore.postinit -> None {
             }
         }
         self.server.app.add_middleware(MetricsMiddleware);
-        # Register /metrics endpoint (admin-only)
-        metrics_handler = self._create_admin_metrics_handler(
-            self._metrics.get_endpoint_handler()
-        );
+        # Register /metrics endpoint (public)
         self.server.add_endpoint(
             JEndPoint(
                 method=HTTPMethod.GET,
                 path=metrics_endpoint,
-                callback=metrics_handler,
+                callback=self._metrics.get_endpoint_handler(),
                 parameters=[],
                 response_model=None,
                 tags=['Monitoring'],
-                summary='Prometheus metrics (Admin only)',
-                description='Exposes application metrics in Prometheus format for scraping. Requires admin authentication.'
+                summary='Prometheus metrics',
+                description='Exposes application metrics in Prometheus format for scraping.'
             )
         );
-        logger.info(f"Prometheus metrics enabled at {metrics_endpoint} (admin-only)");
+        logger.info(f"Prometheus metrics enabled at {metrics_endpoint}");
     }
 }
 
@@ -1127,52 +1124,3 @@ impl JacAPIServerCore._setup_grafana -> None {
     }
 }
 
-"""Create a wrapper around the metrics endpoint that requires admin authentication."""
-impl JacAPIServerCore._create_admin_metrics_handler(
-    original_handler: Callable[..., Any]
-) -> Callable[..., Any] {
-    import from fastapi { Request }
-    import from fastapi.responses { Response, JSONResponse }
-    import from jaclang.runtimelib.transport { TransportResponse, Meta }
-    import dataclasses;
-    import base64;
-
-    monitoring_config = get_scale_config().get_monitoring_config();
-    prometheus_password = monitoring_config.get('prometheus_admin_password', '');
-    admin_config = get_scale_config().get_admin_config();
-    admin_username = admin_config.get('username', 'admin');
-
-    async def admin_metrics_handler(request: Request) -> Response {
-        authorization = request.headers.get('Authorization');
-        # Accept Bearer JWT token (admin portal) or Basic Auth (Prometheus scraping)
-        authed = False;
-        if authorization {
-            if authorization.startswith('Bearer ') {
-                authed = self.validate_admin_token(authorization) is not None;
-            } elif authorization.startswith('Basic ') and prometheus_password {
-                try {
-                    decoded = base64.b64decode(authorization[6:]).decode('utf-8');
-                    parts = decoded.split(':', 1);
-                    authed = parts[0] == admin_username
-                    and parts[1] == prometheus_password;
-                } except Exception {
-                    authed = False;
-                }
-            }
-        }
-        if not authed {
-            return JSONResponse(
-                status_code=403,
-                content=dataclasses.asdict(
-                    TransportResponse.fail(
-                        code='FORBIDDEN',
-                        message='Admin access required',
-                        meta=Meta(extra={'http_status': 403})
-                    )
-                )
-            );
-        }
-        return original_handler();
-    }
-    return admin_metrics_handler;
-}

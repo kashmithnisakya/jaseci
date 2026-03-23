@@ -202,39 +202,7 @@ import from jac_scale.tests.scale_test_client { ScaleTestClient }
 
 glob FIXTURES_DIR: str = str(Path(__file__).parent / "fixtures");
 
-test "admin metrics endpoint returns valid response" {
-    tmp = tempfile.mkdtemp();
-    try {
-        # Copy fixture files to temp dir for isolation
-        import glob as glob_mod;
-        for f in glob_mod.glob(str(Path(FIXTURES_DIR) / "*")) {
-            dest = Path(tmp) / Path(f).name;
-            if Path(f).is_file() {
-                shutil.copy2(f, dest);
-            }
-        }
-        client = ScaleTestClient.from_file(
-            str(Path(FIXTURES_DIR) / "test_api.jac"), base_path=tmp
-        );
-        try {
-            token = client.admin_login();
-            response = client.get(
-                "/admin/metrics", headers={"Authorization": f"Bearer {token}"}
-            );
-            assert response.status_code == 200;
-            data = response.json();
-            assert data["ok"] is True;
-            assert "enabled" in data["data"];
-            assert "metrics" in data["data"];
-        } finally {
-            client.close();
-        }
-    } finally {
-        shutil.rmtree(tmp, ignore_errors=True);
-    }
-}
-
-test "admin metrics endpoint requires authentication" {
+test "admin metrics endpoint returns valid response without auth" {
     tmp = tempfile.mkdtemp();
     try {
         import glob as glob_mod;
@@ -249,9 +217,37 @@ test "admin metrics endpoint requires authentication" {
         );
         try {
             response = client.get("/admin/metrics");
-            assert response.status_code == 403;
+            assert response.status_code == 200;
             data = response.json();
-            assert data["ok"] is False;
+            assert data["ok"] is True;
+            assert "enabled" in data["data"];
+            assert "metrics" in data["data"];
+        } finally {
+            client.close();
+        }
+    } finally {
+        shutil.rmtree(tmp, ignore_errors=True);
+    }
+}
+
+test "metrics endpoint is publicly accessible" {
+    tmp = tempfile.mkdtemp();
+    try {
+        import glob as glob_mod;
+        for f in glob_mod.glob(str(Path(FIXTURES_DIR) / "*")) {
+            dest = Path(tmp) / Path(f).name;
+            if Path(f).is_file() {
+                shutil.copy2(f, dest);
+            }
+        }
+        client = ScaleTestClient.from_file(
+            str(Path(FIXTURES_DIR) / "test_api.jac"), base_path=tmp
+        );
+        try {
+            response = client.get("/admin/metrics");
+            assert response.status_code == 200;
+            data = response.json();
+            assert data["ok"] is True;
         } finally {
             client.close();
         }

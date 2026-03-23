@@ -417,10 +417,9 @@ impl JacAPIServerAdmin.register_admin_endpoints -> None {
             description='Get graph data for any user (admin only)'
         )
     );
-    # Metrics endpoint for dashboard
+    # Metrics endpoint for dashboard (public)
     async def get_metrics_handler(request: Request) -> TransportResponse {
-        authorization = request.headers.get('Authorization');
-        return self.admin_get_metrics(authorization);
+        return self.admin_get_metrics();
     }
     self.server.add_endpoint(
         JEndPoint(
@@ -431,7 +430,7 @@ impl JacAPIServerAdmin.register_admin_endpoints -> None {
             response_model=None,
             tags=['Admin'],
             summary='Get metrics data',
-            description='Get parsed Prometheus metrics as JSON (admin only)'
+            description='Get parsed Prometheus metrics as JSON'
         )
     );
     # Grafana credential management endpoints
@@ -1053,16 +1052,12 @@ impl JacAPIServerAdmin.admin_graph_data(
     }
 }
 
-"""Get parsed Prometheus metrics as JSON for admin dashboard."""
+"""Get parsed Prometheus metrics as JSON (public endpoint)."""
 impl JacAPIServerAdmin.admin_get_metrics(
     Authorization: str | None = None
 ) -> TransportResponse {
     import re;
     import from prometheus_client { generate_latest, REGISTRY }
-    error = self.require_admin(Authorization);
-    if error {
-        return error;
-    }
     if not self._metrics or not self._metrics.is_enabled() {
         return TransportResponse.success(
             data={

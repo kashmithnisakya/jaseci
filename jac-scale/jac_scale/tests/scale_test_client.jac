@@ -6,7 +6,7 @@ without opening OS ports. Supports admin login, authenticated requests, etc.
 Example:
     client = ScaleTestClient.from_file("app.jac", base_path="/tmp/test");
     token = client.admin_login("admin", "changeme");
-    response = client.get("/admin/metrics", headers={"Authorization": f"Bearer {token}"});
+    response = client.get("/admin/metrics");
     assert response.status_code == 200;
     client.close();
 """
