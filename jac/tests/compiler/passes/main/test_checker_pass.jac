@@ -2574,6 +2574,26 @@ test "runtime_ternary_isinstance_generic_narrowing" {
     )}:\n" + "\n---\n".join(e.pretty_print() for e in i3_errors);
 }
 
+"""isinstance narrowing should preserve generic type parameters from union members."""
+test "runtime_isinstance_preserves_generic_params" {
+    program = JacProgram();
+    mod = program.compile(
+        os.path.join(CHECKER_FIXTURES, "checker_runtime_errors.jac"), options=NO_TC
+    );
+    TypeCheckPass(ir_in=mod, prog=program);
+
+    # Issue 4 ok_ functions: lines 240-290 (isinstance preserving generics)
+    i4_errors = [
+        e
+        for e in program.errors_had
+        if e.loc and 240 <= e.loc.first_line <= 290
+    ];
+    assert len(i4_errors) == 0 , f"isinstance generic preservation should produce 0 errors, got {len(
+        i4_errors
+    )}:\n" + "\n---\n".join(e.pretty_print() for e in i4_errors);
+}
+
+
 """Total error count for runtime errors fixture — all patterns should pass."""
 test "runtime_errors_total" {
     program = JacProgram();

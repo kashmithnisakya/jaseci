@@ -224,3 +224,71 @@ def ok_ternary_isinstance_nested_generic(
         if isinstance(expr, `list)
         else expr.__jac__;
 }
+
+# ============================================================================
+# Issue 4: isinstance narrowing should preserve generic type parameters
+#
+# When `isinstance(x, list)` narrows `x: list[Foo] | Bar`, the true branch
+# should narrow to `list[Foo]` (preserving type args), not bare `list`.
+# Currently the narrowing uses the isinstance type directly (unparameterized),
+# so iterating over the narrowed list gives Unknown element types.
+#
+# Mirrors: runtime.impl.jac `(i.__jac__ for i in expr)` in visit()
+# ============================================================================
+
+# --- ok_ functions: patterns that should work (lines 240-290) ---
+
+def ok_isinstance_preserves_single_generic(
+    expr: list[NodeArch] | str
+) -> str {
+    # isinstance(expr, list) true → should be list[NodeArch], not bare list
+    if isinstance(expr, `list) {
+        for item in expr {
+            return item.__jac__;
+        }
+    }
+    return "";
+}
+
+def ok_isinstance_preserves_multi_generic(
+    expr: list[NodeArch] | list[EdgeArch] | str
+) -> str {
+    # isinstance(expr, list) true → should be list[NodeArch] | list[EdgeArch]
+    if isinstance(expr, `list) {
+        for item in expr {
+            return item.__jac__;
+        }
+    }
+    return "";
+}
+
+def ok_isinstance_preserves_generic_ternary(
+    expr: list[NodeArch] | NodeArch
+) -> str {
+    # Ternary true branch: isinstance(expr, list) → list[NodeArch]
+    return expr[0].__jac__
+        if isinstance(expr, `list)
+        else expr.__jac__;
+}
+
+def ok_isinstance_preserves_dict_generic(
+    data: dict[str, int] | list[int] | str
+) -> int {
+    # isinstance(data, dict) true → dict[str, int]
+    if isinstance(data, `dict) {
+        return data["key"];
+    }
+    return 0;
+}
+
+def ok_isinstance_preserves_set_generic(
+    data: set[str] | list[str] | int
+) -> str {
+    # isinstance(data, set) true → set[str]
+    if isinstance(data, `set) {
+        for item in data {
+            return item.upper();
+        }
+    }
+    return "";
+}

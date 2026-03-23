@@ -174,7 +174,12 @@ impl TypeCheckPass.enter_if_else_expr(self: TypeCheckPass, nd: uni.IfElseExpr) -
     self.evaluator.push_narrowing_scope();
     if isinstance_info {
         (narrowing_key, narrowed_type) = isinstance_info;
-        self.evaluator.add_scope_narrowing(narrowing_key, narrowed_type);
+        # Refine: filter the variable's existing type to preserve generic
+        # params (e.g., isinstance(x, list) on list[int]|str → list[int]).
+        refined = self.evaluator._refine_isinstance_type(
+            narrowing_key, narrowed_type, nd.condition
+        );
+        self.evaluator.add_scope_narrowing(narrowing_key, refined);
     } else {
         self.evaluator.process_condition(nd.condition);
     }

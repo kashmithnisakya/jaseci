@@ -453,6 +453,10 @@ obj TypeEvaluator {
         symbol: uni.Symbol
     ) -> TypeBase | None;
 
+    def _refine_isinstance_type(
+        narrowing_key: str, isinstance_type: TypeBase, condition: uni.Expr
+    ) -> TypeBase;
+
     def _filter_union_for_isinstance(
         base_type: TypeBase, target_type: TypeBase
     ) -> TypeBase | None;
