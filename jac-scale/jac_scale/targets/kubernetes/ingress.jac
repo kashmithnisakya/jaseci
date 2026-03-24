@@ -625,7 +625,9 @@ obj IngressDeployer {
             # /assets/... for the backend). RIPROXYPATH is also rewritten so the JS
             # frontend sets window.__RI_PROXY_PATH__ = 'cache-dashboard' and prefixes all
             # API/socket calls with /cache-dashboard (which nginx strips via rewrite-target).
-            # Accept-Encoding is cleared so nginx can apply sub_filter to uncompressed HTML.
+            # Accept-Encoding "" lets sub_filter work on raw HTML from the upstream.
+            # gzip on re-compresses all responses (HTML, JS, CSS) before sending to
+            # the browser, so there is no performance penalty.
             redis_ingress_annotations: dict = {
                 'nginx.ingress.kubernetes.io/proxy-body-size': '0',
                 'nginx.ingress.kubernetes.io/proxy-read-timeout': '3600',
@@ -634,6 +636,10 @@ obj IngressDeployer {
                 'nginx.ingress.kubernetes.io/rewrite-target': '/$2',
                 'nginx.ingress.kubernetes.io/configuration-snippet': (
                     'proxy_set_header Accept-Encoding "";\n'
+                    'gzip on;\n'
+                    'gzip_proxied any;\n'
+                    'gzip_types text/html text/css application/javascript application/json image/svg+xml;\n'
+                    'gzip_min_length 256;\n'
                     'sub_filter_types text/html;\n'
                     'sub_filter \'src="/assets/\' \'src="/cache-dashboard/assets/\';\n'
                     'sub_filter \'href="/assets/\' \'href="/cache-dashboard/assets/\';\n'
