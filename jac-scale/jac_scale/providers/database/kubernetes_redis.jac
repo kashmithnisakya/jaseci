@@ -22,7 +22,7 @@ obj KubernetesRedisProvider(DatabaseProvider) {
     }
 
     """Load and generate Redis configuration from template."""
-    def _load_redis_config -> str {
+    def _load_redis_config(redis_username: str = 'admin', redis_password: str = 'password') -> str {
         scale_config = get_scale_config();
         db_config = scale_config.get_database_config();
 
@@ -94,6 +94,18 @@ obj KubernetesRedisProvider(DatabaseProvider) {
             redis_keyspace_events_line = '';
         }
 
+        # Configure ACL rules — the 'default' user gets the password,
+        # and if a custom username is requested we create an additional ACL user.
+        acl_lines: list[str] = [
+            f"user default on >{redis_password} ~* &* +@all"
+        ];
+        if redis_username != 'default' {
+            acl_lines.append(
+                f"user {redis_username} on >{redis_password} ~* &* +@all"
+            );
+        }
+        redis_acl_rules = '\n'.join(acl_lines);
+
         # Load template file with error handling
         try {
             template_path = Path(__file__).parent / 'redis.conf.template';
@@ -123,7 +135,8 @@ obj KubernetesRedisProvider(DatabaseProvider) {
                 redis_max_memory=redis_max_memory,
                 redis_eviction_policy=redis_eviction_policy,
                 redis_eviction_samples=redis_eviction_samples,
-                redis_keyspace_events_line=redis_keyspace_events_line
+                redis_keyspace_events_line=redis_keyspace_events_line,
+                redis_acl_rules=redis_acl_rules
             );
 
             ttl_info = f"TTL={redis_default_ttl}s"
@@ -176,7 +189,7 @@ obj KubernetesRedisProvider(DatabaseProvider) {
         connection_string = f"redis://{redis_username}:{redis_password}@{redis_service_name}:{redis_port}/0";
 
         # Load and generate Redis configuration
-        redis_conf_content = self._load_redis_config();
+        redis_conf_content = self._load_redis_config(redis_username, redis_password);
         config_hash = self._calculate_config_hash(redis_conf_content);
 
         logger.debug(f"Redis config hash: {config_hash}");
@@ -283,9 +296,8 @@ obj KubernetesRedisProvider(DatabaseProvider) {
                                     {'containerPort': redis_port, 'name': 'redis'}
                                 ],
                                 'command': [
-                                    'sh',
-                                    '-c',
-                                    'redis-server /etc/redis/redis.conf --requirepass "$REDIS_PASSWORD"'
+                                    'redis-server',
+                                    '/etc/redis/redis.conf'
                                 ],
                                 'env': [
                                     {
@@ -407,7 +419,11 @@ obj KubernetesRedisProvider(DatabaseProvider) {
             redis_username = k8s_config.get('redis_username', 'admin');
             redis_password = k8s_config.get('redis_password', 'password');
             service_name = f"{self.app_name}-redis-service";
-            self.connection_string = f"redis://{redis_username}:{redis_password}@{service_name}:6379/0";
+            if redis_username == 'default' {
+                self.connection_string = f"redis://:{redis_password}@{service_name}:6379/0";
+            } else {
+                self.connection_string = f"redis://{redis_username}:{redis_password}@{service_name}:6379/0";
+            }
         }
         return self.connection_string;
     }
@@ -452,6 +468,7 @@ obj KubernetesRedisProvider(DatabaseProvider) {
     """
     def deploy_dashboard -> dict[str, Any] {
         redis_service_name = f"{self.app_name}-redis-service";
+        redis_secret_name = f"{self.app_name}-redis-secret";
         insight_name = f"{self.app_name}-redis-insight";
 
         # RedisInsight always listens on 5540. Auth is enforced by the ingress controller.
@@ -486,6 +503,24 @@ obj KubernetesRedisProvider(DatabaseProvider) {
                     {'name': 'RI_REDIS_HOST', 'value': redis_service_name},
                     {'name': 'RI_REDIS_PORT', 'value': '6379'},
                     {'name': 'RI_REDIS_ALIAS', 'value': 'Jaseci Redis'},
+                    {
+                        'name': 'RI_REDIS_USERNAME',
+                        'valueFrom': {
+                            'secretKeyRef': {
+                                'name': redis_secret_name,
+                                'key': 'username'
+                            }
+                        }
+                    },
+                    {
+                        'name': 'RI_REDIS_PASSWORD',
+                        'valueFrom': {
+                            'secretKeyRef': {
+                                'name': redis_secret_name,
+                                'key': 'password'
+                            }
+                        }
+                    },
                     # RIPROXYPATH is injected into the HTML as window.__RI_PROXY_PATH__
                     # so the JS frontend prefixes all API calls with /cache-dashboard.
                     # Static asset paths are handled separately by the ingress sub_filter.
