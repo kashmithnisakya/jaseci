@@ -22,7 +22,9 @@ obj KubernetesRedisProvider(DatabaseProvider) {
     }
 
     """Load and generate Redis configuration from template."""
-    def _load_redis_config(redis_username: str = 'admin', redis_password: str = 'password') -> str {
+    def _load_redis_config(
+        redis_username: str = 'admin', redis_password: str = 'password'
+    ) -> str {
         scale_config = get_scale_config();
         db_config = scale_config.get_database_config();
 
@@ -96,13 +98,9 @@ obj KubernetesRedisProvider(DatabaseProvider) {
 
         # Configure ACL rules — the 'default' user gets the password,
         # and if a custom username is requested we create an additional ACL user.
-        acl_lines: list[str] = [
-            f"user default on >{redis_password} ~* &* +@all"
-        ];
+        acl_lines: list[str] = [f"user default on >{redis_password} ~* &* +@all"];
         if redis_username != 'default' {
-            acl_lines.append(
-                f"user {redis_username} on >{redis_password} ~* &* +@all"
-            );
+            acl_lines.append(f"user {redis_username} on >{redis_password} ~* &* +@all");
         }
         redis_acl_rules = '\n'.join(acl_lines);
 
@@ -295,10 +293,7 @@ obj KubernetesRedisProvider(DatabaseProvider) {
                                 'ports': [
                                     {'containerPort': redis_port, 'name': 'redis'}
                                 ],
-                                'command': [
-                                    'redis-server',
-                                    '/etc/redis/redis.conf'
-                                ],
+                                'command': ['redis-server', '/etc/redis/redis.conf'],
                                 'env': [
                                     {
                                         'name': 'REDIS_USERNAME',
@@ -501,7 +496,10 @@ obj KubernetesRedisProvider(DatabaseProvider) {
                     # Auto-accept EULA so the dashboard is usable immediately.
                     {'name': 'RI_ACCEPT_TERMS_AND_CONDITIONS', 'value': 'true'},
                     # Container has no OS keyring — provide an explicit encryption key.
-                    {'name': 'RI_ENCRYPTION_KEY', 'value': f"{self.app_name}-redis-insight-key"},
+                    {
+                        'name': 'RI_ENCRYPTION_KEY',
+                        'value': f"{self.app_name}-redis-insight-key"
+                    },
                     # Pre-seed the Redis database connection.
                     {'name': 'RI_REDIS_HOST', 'value': redis_service_name},
                     {'name': 'RI_REDIS_PORT', 'value': '6379'},
