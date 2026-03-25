@@ -3,6 +3,7 @@
 This document provides a summary of new features, improvements, and bug fixes in each version of **Jac-Scale**. For details on changes that might require updates to your existing code, please refer to the [Breaking Changes](../breaking-changes.md) page.
 
 ## jac-scale 0.2.9 (Unreleased)
+
 - **Apple & GitHub SSO Support**: Added Apple Sign In and GitHub as SSO providers via `fastapi-sso`. Unified the SSO callback into a single endpoint per platform (`/sso/{platform}/callback`) that auto-registers new users or logs in existing ones. Initiation endpoints remain separate (`/sso/{platform}/login`, `/sso/{platform}/register`). SSO `host` config simplified to just the base URL (e.g., `http://localhost:8000`). Configure via `[plugins.scale.sso.apple]` and `[plugins.scale.sso.github]` in `jac.toml`.
 - - **Grafana Credential Management**: Added `GrafanaManager` to admin portal for managing Grafana users via HTTP API. Monitoring credentials (`monitoring_username`/`monitoring_password`) in `[plugins.scale.monitoring]` config create a Grafana Viewer user for dashboard-only access. Admin password changes auto-sync to Grafana. Removed `prometheus_admin_password` - Grafana admin now uses jac-scale admin credentials. New endpoints: `GET /admin/grafana/credentials`, `POST /admin/grafana/credentials/rotate`, `POST /admin/grafana/sync`.
 
