@@ -8,33 +8,25 @@ Install and manage multiple [jaclang](https://pypi.org/project/jaclang/) version
 pip install jac-version-manager
 ```
 
-Then add the shell hook to your profile:
-
-**Bash / Zsh** - add to `~/.bashrc` or `~/.zshrc`:
-
-```bash
-eval "$(jvm init)"
-```
-
-**Fish** - add to `~/.config/fish/config.fish`:
-
-```fish
-jvm init | source
-```
-
 ## Quick Start
 
 ```bash
 # Install a jac version
 jvm install 0.13.1
 
-# Switch to it
+# Set up shell integration (one-time)
+jvm setup
+
+# Open a new terminal or reload your shell
+source ~/.zshrc
+
+# Switch to the installed version
 jvm use 0.13.1
 
 # Verify
 jac --version
 
-# Install plugins
+# Install plugins into the active environment
 jvm install-plugin byllm
 jvm install-plugin jac-scale
 ```
@@ -44,30 +36,41 @@ jvm install-plugin jac-scale
 | Command | Description |
 |---------|-------------|
 | `jvm install [version]` | Install a jac version (latest if omitted) |
+| `jvm uninstall <version>` | Remove an installed version |
 | `jvm use <version>` | Switch to an installed version |
 | `jvm current` | Show the active version |
-| `jvm list` | List installed versions (active marked with *) |
+| `jvm list` | List installed versions (active marked with `*`) |
 | `jvm list-remote` | List all available versions on PyPI |
-| `jvm uninstall <version>` | Remove an installed version |
 | `jvm install-plugin <name>` | Install a plugin into the active environment |
 | `jvm uninstall-plugin <name>` | Remove a plugin from the active environment |
-| `jvm plugins` | List jac-related packages in the active environment |
+| `jvm plugins` | List jac packages in the active environment |
 | `jvm setup` | Auto-configure shell integration (one-time) |
 
 ## How It Works
 
-Each jac version lives in an isolated Python virtual environment under `~/.jvm/versions/<version>/`. Switching versions updates a `~/.jvm/current` symlink and modifies your shell's `PATH`.
+Each jac version lives in an isolated Python virtual environment under `~/.jvm/versions/<version>/`.
+Switching versions updates a `~/.jvm/current` symlink and modifies your shell's `PATH`.
 
-```
+```text
 ~/.jvm/
-├── versions/
-│   ├── 0.12.0/      # venv with jaclang 0.12.0
-│   ├── 0.13.0/      # venv with jaclang 0.13.0
-│   └── 0.13.1/      # venv with jaclang 0.13.1
-└── current -> versions/0.13.1
+  versions/
+    0.12.0/      # venv with jaclang 0.12.0
+    0.13.0/      # venv with jaclang 0.13.0
+    0.13.1/      # venv with jaclang 0.13.1
+  current -> versions/0.13.1
 ```
 
-Plugins (byllm, jac-scale, jac-client, etc.) are installed per-environment, so different jac versions can have different plugin sets.
+Plugins (byllm, jac-scale, jac-client, etc.) are installed per-environment,
+so different jac versions can have different plugin sets.
+
+## Error Handling
+
+jvm provides helpful error messages for common mistakes:
+
+- **Typos**: `jvm instal` suggests `jvm install`, `jvm uninstall`
+- **Invalid versions**: `jvm install abc` rejects with format hint
+- **Unknown versions**: `jvm install 0.13.9` shows close matches from PyPI
+- **Network errors**: Clear messages when PyPI is unreachable
 
 ## Environment Variables
 
@@ -75,7 +78,7 @@ Plugins (byllm, jac-scale, jac-client, etc.) are installed per-environment, so d
 |----------|-------------|
 | `JVM_HOME` | Override jvm home directory (default: `~/.jvm`) |
 | `JVM_PYTHON` | Override Python executable for creating venvs |
-| `JVM_ACTIVE_VERSION` | Set automatically - shows the active jac version |
+| `JVM_ACTIVE_VERSION` | Set automatically when a version is active |
 
 ## Requirements
 
