@@ -3,13 +3,58 @@
 import argparse
 import subprocess
 import sys
+from difflib import get_close_matches
 
 from . import __version__
+
+VALID_COMMANDS = [
+    "install",
+    "uninstall",
+    "use",
+    "deactivate",
+    "current",
+    "list",
+    "ls",
+    "list-remote",
+    "ls-remote",
+    "install-plugin",
+    "uninstall-plugin",
+    "plugins",
+    "run",
+    "init",
+    "setup",
+]
+
+
+class _JvmArgumentParser(argparse.ArgumentParser):
+    """Custom argument parser with friendly error messages."""
+
+    def error(self, message: str) -> None:  # noqa: ANN101
+        """Override to suggest similar commands on typos."""
+        if "invalid choice" in message:
+            # Extract the bad command from argparse's error
+            import re
+
+            match = re.search(r"invalid choice: '(\w+)'", message)
+            if match:
+                bad_cmd = match.group(1)
+                suggestions = get_close_matches(
+                    bad_cmd, VALID_COMMANDS, n=2, cutoff=0.4
+                )
+                msg = f"Unknown command: '{bad_cmd}'"
+                if suggestions:
+                    msg += "\n\nDid you mean?\n" + "\n".join(
+                        f"  jvm {s}" for s in suggestions
+                    )
+                msg += "\n\nRun 'jvm --help' for a list of available commands."
+                print(msg, file=sys.stderr)
+                sys.exit(1)
+        super().error(message)
 
 
 def main(argv: list[str] | None = None) -> None:
     """Main CLI entry point."""
-    parser = argparse.ArgumentParser(
+    parser = _JvmArgumentParser(
         prog="jvm",
         description="Jac Version Manager - Install and switch between multiple jaclang versions",
     )
@@ -80,10 +125,17 @@ def main(argv: list[str] | None = None) -> None:
         help="Shell type (auto-detected if omitted)",
     )
 
+    # jvm setup
+    subparsers.add_parser(
+        "setup", help="Add jvm shell hook to your shell profile (~/.zshrc, ~/.bashrc, etc.)"
+    )
+
     # jvm shell-hook (internal, used by shell function)
     p_hook = subparsers.add_parser("shell-hook", help=argparse.SUPPRESS)
     p_hook.add_argument("action", choices=["use", "deactivate"])
     p_hook.add_argument("version", nargs="?")
+
+    args = parser.parse_args(argv)
 
     args = parser.parse_args(argv)
 
@@ -129,8 +181,31 @@ def _dispatch(args: argparse.Namespace) -> None:
         _cmd_run(args)
     elif cmd == "init":
         _cmd_init(args)
+    elif cmd == "setup":
+        _cmd_setup(args)
     elif cmd == "shell-hook":
         _cmd_shell_hook(args)
+
+
+def _validate_version(version: str) -> None:
+    """Validate version string format and availability on PyPI."""
+    import re
+
+    if not re.match(r"^\d+\.\d+(\.\d+)?([a-zA-Z]\w*)?$", version):
+        raise RuntimeError(
+            f"Invalid version format: '{version}'. Expected format like '0.13.1'."
+        )
+
+    from .pypi import fetch_versions
+
+    available = fetch_versions()
+    if version not in available:
+        # Suggest close matches
+        close = get_close_matches(version, available, n=3, cutoff=0.5)
+        msg = f"Version '{version}' not found on PyPI."
+        if close:
+            msg += "\n\nAvailable versions:\n" + "\n".join(f"  {v}" for v in close)
+        raise RuntimeError(msg)
 
 
 def _cmd_install(args: argparse.Namespace) -> None:
@@ -142,6 +217,8 @@ def _cmd_install(args: argparse.Namespace) -> None:
         print("Fetching latest version...")
         version = get_latest_version()
         print(f"Latest version: {version}")
+    else:
+        _validate_version(version)
 
     install_version(version, force=args.force)
 
@@ -167,9 +244,9 @@ def _cmd_use(args: argparse.Namespace) -> None:
             sys.exit(1)
 
     use_version(args.version)
-    print(
-        "Run 'eval \"$(jvm init)\"' in your shell or restart your terminal to update PATH."
-    )
+    print(f"Now using jac {args.version}")
+    if not _is_shell_hook_installed():
+        print("To use 'jac' directly, run 'jvm setup' to configure your shell (one-time).")
 
 
 def _cmd_deactivate(args: argparse.Namespace) -> None:
@@ -178,9 +255,7 @@ def _cmd_deactivate(args: argparse.Namespace) -> None:
     link = get_current_link()
     if link.exists() or link.is_symlink():
         link.unlink()
-    print(
-        "Deactivated jvm. Restart your terminal or run 'eval \"$(jvm init)\"' to update PATH."
-    )
+    print("Deactivated jvm. Restart your terminal to update PATH.")
 
 
 def _cmd_current(args: argparse.Namespace) -> None:
@@ -271,6 +346,65 @@ def _cmd_run(args: argparse.Namespace) -> None:
 
     result = subprocess.run([str(jac_bin)] + run_args)
     sys.exit(result.returncode)
+
+
+def _is_shell_hook_installed() -> bool:
+    """Check if the jvm shell hook is already in the user's shell profile."""
+    import os
+    from pathlib import Path
+
+    shell = os.environ.get("SHELL", "")
+    profiles = []
+    if "zsh" in shell:
+        profiles.append(Path.home() / ".zshrc")
+    elif "bash" in shell:
+        profiles.extend([Path.home() / ".bashrc", Path.home() / ".bash_profile"])
+    elif "fish" in shell:
+        profiles.append(Path.home() / ".config" / "fish" / "config.fish")
+    else:
+        profiles.append(Path.home() / ".zshrc")
+        profiles.append(Path.home() / ".bashrc")
+
+    for profile in profiles:
+        if profile.exists():
+            content = profile.read_text()
+            if "jvm init" in content:
+                return True
+    return False
+
+
+def _cmd_setup(args: argparse.Namespace) -> None:
+    """Add jvm shell hook to the user's shell profile."""
+    import os
+    from pathlib import Path
+
+    shell = os.environ.get("SHELL", "")
+    if "zsh" in shell:
+        profile = Path.home() / ".zshrc"
+        hook_line = 'eval "$(jvm init)"'
+    elif "bash" in shell:
+        profile = Path.home() / ".bashrc"
+        hook_line = 'eval "$(jvm init)"'
+    elif "fish" in shell:
+        profile = Path.home() / ".config" / "fish" / "config.fish"
+        hook_line = "jvm init | source"
+    else:
+        profile = Path.home() / ".zshrc"
+        hook_line = 'eval "$(jvm init)"'
+
+    if profile.exists():
+        content = profile.read_text()
+        if "jvm init" in content:
+            print(f"Shell hook already configured in {profile}")
+            return
+    else:
+        profile.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(profile, "a") as f:
+        f.write(f"\n# Jac Version Manager\n{hook_line}\n")
+
+    print(f"Added jvm shell hook to {profile}")
+    print(f"Run 'source {profile}' or open a new terminal to activate.")
 
 
 def _cmd_init(args: argparse.Namespace) -> None:

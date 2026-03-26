@@ -30,7 +30,6 @@ def use_version(version: str) -> None:
 
     # Create new symlink
     link.symlink_to(venv_path)
-    print(f"Now using jac {version}")
 
 
 def get_shell_hook_use(version: str) -> str:
@@ -49,6 +48,9 @@ def get_shell_hook_use(version: str) -> str:
 
     # Set version env var
     lines.append(f'export JVM_ACTIVE_VERSION="{version}"')
+
+    # Print confirmation (as a shell echo so it's valid when eval'd)
+    lines.append(f'echo "Now using jac {version}"')
 
     return "\n".join(lines)
 

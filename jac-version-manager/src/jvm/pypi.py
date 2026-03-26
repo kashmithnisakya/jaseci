@@ -1,6 +1,7 @@
 """PyPI version discovery for jaclang."""
 
 import json
+import urllib.error
 import urllib.request
 
 PYPI_URL = "https://pypi.org/pypi/jaclang/json"
@@ -15,6 +16,12 @@ def fetch_versions() -> list[str]:
         req = urllib.request.Request(PYPI_URL, headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode())
+    except urllib.error.URLError as e:
+        raise RuntimeError(
+            f"Could not connect to PyPI. Check your internet connection.\n  Details: {e}"
+        ) from e
+    except TimeoutError as e:
+        raise RuntimeError("Connection to PyPI timed out. Try again later.") from e
     except Exception as e:
         raise RuntimeError(f"Failed to fetch versions from PyPI: {e}") from e
 
