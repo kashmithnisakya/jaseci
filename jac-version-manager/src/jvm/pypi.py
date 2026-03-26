@@ -46,9 +46,9 @@ def _is_stable(version: str) -> bool:
     return all(tag not in version for tag in ("a", "b", "rc", "dev", "alpha", "beta"))
 
 
-def _version_key(version: str) -> tuple:
+def _version_key(version: str) -> tuple[tuple[int, int | str], ...]:
     """Create a sortable key from a version string."""
-    parts = []
+    parts: list[tuple[int, int | str]] = []
     for part in version.split("."):
         try:
             parts.append((0, int(part)))

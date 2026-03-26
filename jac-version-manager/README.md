@@ -10,13 +10,13 @@ pip install jac-version-manager
 
 Then add the shell hook to your profile:
 
-**Bash / Zsh** — add to `~/.bashrc` or `~/.zshrc`:
+**Bash / Zsh** - add to `~/.bashrc` or `~/.zshrc`:
 
 ```bash
 eval "$(jvm init)"
 ```
 
-**Fish** — add to `~/.config/fish/config.fish`:
+**Fish** - add to `~/.config/fish/config.fish`:
 
 ```fish
 jvm init | source
@@ -77,7 +77,7 @@ Plugins (byllm, jac-scale, jac-client, etc.) are installed per-environment, so d
 |----------|-------------|
 | `JVM_HOME` | Override jvm home directory (default: `~/.jvm`) |
 | `JVM_PYTHON` | Override Python executable for creating venvs |
-| `JVM_ACTIVE_VERSION` | Set automatically — shows the active jac version |
+| `JVM_ACTIVE_VERSION` | Set automatically - shows the active jac version |
 
 ## Requirements
 
