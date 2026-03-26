@@ -4,6 +4,7 @@ import argparse
 import subprocess
 import sys
 from difflib import get_close_matches
+from typing import NoReturn
 
 from . import __version__
 
@@ -29,7 +30,7 @@ VALID_COMMANDS = [
 class _JvmArgumentParser(argparse.ArgumentParser):
     """Custom argument parser with friendly error messages."""
 
-    def error(self, message: str) -> None:  # noqa: ANN101
+    def error(self, message: str) -> NoReturn:  # noqa: ANN101
         """Override to suggest similar commands on typos."""
         if "invalid choice" in message:
             # Extract the bad command from argparse's error
