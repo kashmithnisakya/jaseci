@@ -43,10 +43,7 @@ def get_latest_version() -> str:
 
 def _is_stable(version: str) -> bool:
     """Check if a version string is a stable release."""
-    for tag in ("a", "b", "rc", "dev", "alpha", "beta"):
-        if tag in version:
-            return False
-    return True
+    return all(tag not in version for tag in ("a", "b", "rc", "dev", "alpha", "beta"))
 
 
 def _version_key(version: str) -> tuple:

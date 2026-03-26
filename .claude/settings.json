@@ -11,7 +11,8 @@
       "Bash(jvm run:*)",
       "Bash(jvm plugins:*)",
       "Bash(jvm init:*)",
-      "Bash(jvm uninstall:*)"
+      "Bash(jvm uninstall:*)",
+      "Bash(ruff check:*)"
     ]
   }
 }

@@ -88,10 +88,7 @@ def get_init_script(shell: str | None = None) -> str:
         import os
 
         shell_path = os.environ.get("SHELL", "")
-        if "fish" in shell_path:
-            shell = "fish"
-        else:
-            shell = "bash"  # bash and zsh use the same hook
+        shell = "fish" if "fish" in shell_path else "bash"
 
     if shell == "fish":
         return FISH_HOOK

@@ -35,7 +35,6 @@ def use_version(version: str) -> None:
 
 def get_shell_hook_use(version: str) -> str:
     """Generate shell commands to activate a jac version in the current shell."""
-    venv_path = get_versions_dir() / version
     bin_dir = get_venv_bin(version)
 
     lines = []

@@ -48,3 +48,5 @@ suppress-none-returning = true
 # Bootstrap/low-level files that run before console is available
 "jac/jaclang/compiler/__init__.py" = ["T201"]
 "jac/jaclang/pycore/tsparser.py" = ["T201"]
+# jvm is a CLI tool — print is the standard output mechanism
+"jac-version-manager/**/*.py" = ["T201"]
