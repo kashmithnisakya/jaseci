@@ -46,15 +46,13 @@ jvm install-plugin jac-scale
 | `jvm install [version]` | Install a jac version (latest if omitted) |
 | `jvm use <version>` | Switch to an installed version |
 | `jvm current` | Show the active version |
-| `jvm list` | List installed versions |
+| `jvm list` | List installed versions (active marked with *) |
 | `jvm list-remote` | List all available versions on PyPI |
 | `jvm uninstall <version>` | Remove an installed version |
 | `jvm install-plugin <name>` | Install a plugin into the active environment |
 | `jvm uninstall-plugin <name>` | Remove a plugin from the active environment |
 | `jvm plugins` | List jac-related packages in the active environment |
-| `jvm run [args...]` | Run jac with the active version |
-| `jvm deactivate` | Deactivate jvm (remove from PATH) |
-| `jvm init` | Print shell initialization script |
+| `jvm setup` | Auto-configure shell integration (one-time) |
 
 ## How It Works
 

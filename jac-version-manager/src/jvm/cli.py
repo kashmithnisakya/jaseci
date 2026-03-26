@@ -1,7 +1,6 @@
 """CLI entry point for jvm (Jac Version Manager)."""
 
 import argparse
-import subprocess
 import sys
 from difflib import get_close_matches
 from typing import NoReturn
@@ -12,7 +11,6 @@ VALID_COMMANDS = [
     "install",
     "uninstall",
     "use",
-    "deactivate",
     "current",
     "list",
     "ls",
@@ -21,8 +19,6 @@ VALID_COMMANDS = [
     "install-plugin",
     "uninstall-plugin",
     "plugins",
-    "run",
-    "init",
     "setup",
 ]
 
@@ -80,9 +76,6 @@ def main(argv: list[str] | None = None) -> None:
     p_use = subparsers.add_parser("use", help="Switch to a jac version")
     p_use.add_argument("version", help="Version to activate")
 
-    # jvm deactivate
-    subparsers.add_parser("deactivate", help="Deactivate jvm (remove from PATH)")
-
     # jvm current
     subparsers.add_parser("current", help="Show the active jac version")
 
@@ -112,14 +105,8 @@ def main(argv: list[str] | None = None) -> None:
         "plugins", help="List installed jac plugins in the active environment"
     )
 
-    # jvm run <args>
-    p_run = subparsers.add_parser("run", help="Run jac with the active version")
-    p_run.add_argument(
-        "args", nargs=argparse.REMAINDER, help="Arguments to pass to jac"
-    )
-
-    # jvm init
-    p_init = subparsers.add_parser("init", help="Print shell initialization script")
+    # jvm init (internal, used by shell hook setup)
+    p_init = subparsers.add_parser("init", help=argparse.SUPPRESS)
     p_init.add_argument(
         "--shell",
         choices=["bash", "zsh", "fish"],
@@ -136,8 +123,6 @@ def main(argv: list[str] | None = None) -> None:
     p_hook = subparsers.add_parser("shell-hook", help=argparse.SUPPRESS)
     p_hook.add_argument("action", choices=["use", "deactivate"])
     p_hook.add_argument("version", nargs="?")
-
-    args = parser.parse_args(argv)
 
     args = parser.parse_args(argv)
 
@@ -165,8 +150,6 @@ def _dispatch(args: argparse.Namespace) -> None:
         _cmd_uninstall(args)
     elif cmd in ("use",):
         _cmd_use(args)
-    elif cmd == "deactivate":
-        _cmd_deactivate(args)
     elif cmd == "current":
         _cmd_current(args)
     elif cmd in ("list", "ls"):
@@ -179,8 +162,6 @@ def _dispatch(args: argparse.Namespace) -> None:
         _cmd_uninstall_plugin(args)
     elif cmd == "plugins":
         _cmd_plugins(args)
-    elif cmd == "run":
-        _cmd_run(args)
     elif cmd == "init":
         _cmd_init(args)
     elif cmd == "setup":
@@ -253,15 +234,6 @@ def _cmd_use(args: argparse.Namespace) -> None:
         )
 
 
-def _cmd_deactivate(args: argparse.Namespace) -> None:
-    from .config import get_current_link
-
-    link = get_current_link()
-    if link.exists() or link.is_symlink():
-        link.unlink()
-    print("Deactivated jvm. Restart your terminal to update PATH.")
-
-
 def _cmd_current(args: argparse.Namespace) -> None:
     from .switcher import get_active_version
 
@@ -328,28 +300,6 @@ def _cmd_plugins(args: argparse.Namespace) -> None:
 
     for pkg in packages:
         print(f"  {pkg['name']} {pkg['version']}")
-
-
-def _cmd_run(args: argparse.Namespace) -> None:
-    from .config import get_venv_bin
-    from .switcher import get_active_version
-
-    active = get_active_version()
-    if not active:
-        raise RuntimeError("No active jac version. Run 'jvm use <version>' first.")
-
-    jac_bin = get_venv_bin(active) / "jac"
-    if not jac_bin.exists():
-        raise RuntimeError(f"jac executable not found in version {active}.")
-
-    # Pass through to jac
-    run_args = args.args
-    # Remove leading '--' if present (argparse REMAINDER artifact)
-    if run_args and run_args[0] == "--":
-        run_args = run_args[1:]
-
-    result = subprocess.run([str(jac_bin)] + run_args)
-    sys.exit(result.returncode)
 
 
 def _is_shell_hook_installed() -> bool:
