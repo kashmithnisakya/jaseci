@@ -127,7 +127,8 @@ def main(argv: list[str] | None = None) -> None:
 
     # jvm setup
     subparsers.add_parser(
-        "setup", help="Add jvm shell hook to your shell profile (~/.zshrc, ~/.bashrc, etc.)"
+        "setup",
+        help="Add jvm shell hook to your shell profile (~/.zshrc, ~/.bashrc, etc.)",
     )
 
     # jvm shell-hook (internal, used by shell function)
@@ -246,7 +247,9 @@ def _cmd_use(args: argparse.Namespace) -> None:
     use_version(args.version)
     print(f"Now using jac {args.version}")
     if not _is_shell_hook_installed():
-        print("To use 'jac' directly, run 'jvm setup' to configure your shell (one-time).")
+        print(
+            "To use 'jac' directly, run 'jvm setup' to configure your shell (one-time)."
+        )
 
 
 def _cmd_deactivate(args: argparse.Namespace) -> None:
