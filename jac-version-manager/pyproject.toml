@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jac-version-manager"
+version = "0.1.0"
+description = "Jac Version Manager - Install and switch between multiple jaclang versions"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "Jaseci Labs" }]
+keywords = ["jac", "jaclang", "version-manager"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Build Tools",
+]
+
+[project.scripts]
+jvm = "jvm.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
