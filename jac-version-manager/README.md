@@ -11,11 +11,13 @@ pip install jac-version-manager
 Then add the shell hook to your profile:
 
 **Bash / Zsh** — add to `~/.bashrc` or `~/.zshrc`:
+
 ```bash
 eval "$(jvm init)"
 ```
 
 **Fish** — add to `~/.config/fish/config.fish`:
+
 ```fish
 jvm init | source
 ```

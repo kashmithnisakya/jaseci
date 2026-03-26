@@ -3,7 +3,6 @@
 import argparse
 import subprocess
 import sys
-from typing import Optional
 
 from . import __version__
 
@@ -14,15 +13,17 @@ def main(argv: list[str] | None = None) -> None:
         prog="jvm",
         description="Jac Version Manager - Install and switch between multiple jaclang versions",
     )
-    parser.add_argument(
-        "--version", action="version", version=f"jvm {__version__}"
-    )
+    parser.add_argument("--version", action="version", version=f"jvm {__version__}")
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # jvm install <version>
     p_install = subparsers.add_parser("install", help="Install a jac version")
-    p_install.add_argument("version", nargs="?", help="Version to install (e.g. 0.13.1). Defaults to latest.")
+    p_install.add_argument(
+        "version",
+        nargs="?",
+        help="Version to install (e.g. 0.13.1). Defaults to latest.",
+    )
     p_install.add_argument("--force", "-f", action="store_true", help="Force reinstall")
 
     # jvm uninstall <version>
@@ -43,27 +44,41 @@ def main(argv: list[str] | None = None) -> None:
     subparsers.add_parser("list", aliases=["ls"], help="List installed jac versions")
 
     # jvm list-remote
-    subparsers.add_parser("list-remote", aliases=["ls-remote"], help="List available jac versions on PyPI")
+    subparsers.add_parser(
+        "list-remote", aliases=["ls-remote"], help="List available jac versions on PyPI"
+    )
 
     # jvm install-plugin <name>
-    p_plugin = subparsers.add_parser("install-plugin", help="Install a plugin into the active jac environment")
+    p_plugin = subparsers.add_parser(
+        "install-plugin", help="Install a plugin into the active jac environment"
+    )
     p_plugin.add_argument("plugin", help="Plugin package name (e.g. byllm, jac-scale)")
     p_plugin.add_argument("--plugin-version", help="Specific plugin version")
 
     # jvm uninstall-plugin <name>
-    p_uninstall_plugin = subparsers.add_parser("uninstall-plugin", help="Uninstall a plugin from the active jac environment")
+    p_uninstall_plugin = subparsers.add_parser(
+        "uninstall-plugin", help="Uninstall a plugin from the active jac environment"
+    )
     p_uninstall_plugin.add_argument("plugin", help="Plugin package name")
 
     # jvm plugins
-    subparsers.add_parser("plugins", help="List installed jac plugins in the active environment")
+    subparsers.add_parser(
+        "plugins", help="List installed jac plugins in the active environment"
+    )
 
     # jvm run <args>
     p_run = subparsers.add_parser("run", help="Run jac with the active version")
-    p_run.add_argument("args", nargs=argparse.REMAINDER, help="Arguments to pass to jac")
+    p_run.add_argument(
+        "args", nargs=argparse.REMAINDER, help="Arguments to pass to jac"
+    )
 
     # jvm init
     p_init = subparsers.add_parser("init", help="Print shell initialization script")
-    p_init.add_argument("--shell", choices=["bash", "zsh", "fish"], help="Shell type (auto-detected if omitted)")
+    p_init.add_argument(
+        "--shell",
+        choices=["bash", "zsh", "fish"],
+        help="Shell type (auto-detected if omitted)",
+    )
 
     # jvm shell-hook (internal, used by shell function)
     p_hook = subparsers.add_parser("shell-hook", help=argparse.SUPPRESS)
@@ -143,7 +158,7 @@ def _cmd_use(args: argparse.Namespace) -> None:
 
     if not is_installed(args.version):
         print(f"Version {args.version} is not installed.")
-        answer = input(f"Would you like to install it? [y/N] ").strip().lower()
+        answer = input("Would you like to install it? [y/N] ").strip().lower()
         if answer in ("y", "yes"):
             from .installer import install_version
 
@@ -152,7 +167,9 @@ def _cmd_use(args: argparse.Namespace) -> None:
             sys.exit(1)
 
     use_version(args.version)
-    print(f"Run 'eval \"$(jvm init)\"' in your shell or restart your terminal to update PATH.")
+    print(
+        "Run 'eval \"$(jvm init)\"' in your shell or restart your terminal to update PATH."
+    )
 
 
 def _cmd_deactivate(args: argparse.Namespace) -> None:
@@ -161,7 +178,9 @@ def _cmd_deactivate(args: argparse.Namespace) -> None:
     link = get_current_link()
     if link.exists() or link.is_symlink():
         link.unlink()
-    print("Deactivated jvm. Restart your terminal or run 'eval \"$(jvm init)\"' to update PATH.")
+    print(
+        "Deactivated jvm. Restart your terminal or run 'eval \"$(jvm init)\"' to update PATH."
+    )
 
 
 def _cmd_current(args: argparse.Namespace) -> None:
@@ -190,7 +209,7 @@ def _cmd_list(args: argparse.Namespace) -> None:
         print(f"  {v}{marker}")
 
     if active:
-        print(f"\n* = currently active")
+        print("\n* = currently active")
 
 
 def _cmd_list_remote(args: argparse.Namespace) -> None:
@@ -270,7 +289,10 @@ def _cmd_shell_hook(args: argparse.Namespace) -> None:
             print("Error: version required", file=sys.stderr)
             sys.exit(1)
         if not is_installed(args.version):
-            print(f"Error: Version {args.version} is not installed. Run 'jvm install {args.version}' first.", file=sys.stderr)
+            print(
+                f"Error: Version {args.version} is not installed. Run 'jvm install {args.version}' first.",
+                file=sys.stderr,
+            )
             sys.exit(1)
         # Update symlink
         use_version(args.version)

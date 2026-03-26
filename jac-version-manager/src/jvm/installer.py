@@ -2,10 +2,15 @@
 
 import shutil
 import subprocess
-import sys
 import venv
 
-from .config import ensure_dirs, get_python_executable, get_venv_bin, get_venv_python, get_versions_dir
+from .config import (
+    ensure_dirs,
+    get_python_executable,
+    get_venv_bin,
+    get_venv_python,
+    get_versions_dir,
+)
 
 
 def list_installed() -> list[str]:
@@ -46,7 +51,11 @@ def install_version(version: str, force: bool = False) -> None:
     # Verify Python version >= 3.12
     try:
         result = subprocess.run(
-            [python, "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+            [
+                python,
+                "-c",
+                "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')",
+            ],
             capture_output=True,
             text=True,
         )
@@ -68,7 +77,16 @@ def install_version(version: str, force: bool = False) -> None:
     venv_python = get_venv_python(version)
     print("Upgrading pip and setuptools...")
     subprocess.run(
-        [str(venv_python), "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"],
+        [
+            str(venv_python),
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "pip",
+            "setuptools",
+            "wheel",
+        ],
         capture_output=True,
         text=True,
     )
@@ -84,9 +102,7 @@ def install_version(version: str, force: bool = False) -> None:
     if result.returncode != 0:
         # Cleanup on failure
         shutil.rmtree(venv_path, ignore_errors=True)
-        raise RuntimeError(
-            f"Failed to install jaclang=={version}:\n{result.stderr}"
-        )
+        raise RuntimeError(f"Failed to install jaclang=={version}:\n{result.stderr}")
 
     print(f"Successfully installed jac {version}")
 

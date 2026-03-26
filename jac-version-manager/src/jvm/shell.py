@@ -1,12 +1,6 @@
 """Shell integration for jvm."""
 
-import platform
-from pathlib import Path
-
-from .config import get_jvm_home
-
-
-BASH_ZSH_HOOK = r'''# Jac Version Manager (jvm)
+BASH_ZSH_HOOK = r"""# Jac Version Manager (jvm)
 # Add this to your ~/.bashrc or ~/.zshrc:
 #   eval "$(jvm init)"
 
@@ -46,9 +40,9 @@ if [ -L "$HOME/.jvm/current" ]; then
     fi
     unset _jvm_bin _jvm_version
 fi
-'''
+"""
 
-FISH_HOOK = r'''# Jac Version Manager (jvm)
+FISH_HOOK = r"""# Jac Version Manager (jvm)
 # Add this to your ~/.config/fish/config.fish:
 #   jvm init | source
 
@@ -81,7 +75,7 @@ if test -L "$HOME/.jvm/current"
         set -gx JVM_ACTIVE_VERSION (basename (readlink "$HOME/.jvm/current"))
     end
 end
-'''
+"""
 
 
 def get_init_script(shell: str | None = None) -> str:

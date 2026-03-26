@@ -2,7 +2,6 @@
 
 import json
 import urllib.request
-from typing import Optional
 
 PYPI_URL = "https://pypi.org/pypi/jaclang/json"
 

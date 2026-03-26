@@ -1,14 +1,9 @@
 """Version switching via symlinks and shell hooks."""
 
-import os
-import platform
-from pathlib import Path
-from typing import Optional
-
 from .config import get_current_link, get_venv_bin, get_versions_dir
 
 
-def get_active_version() -> Optional[str]:
+def get_active_version() -> str | None:
     """Get the currently active jac version."""
     link = get_current_link()
     if not link.exists():
@@ -46,7 +41,9 @@ def get_shell_hook_use(version: str) -> str:
     lines = []
 
     # Remove any existing jvm paths from PATH
-    lines.append('export PATH=$(echo "$PATH" | tr ":" "\\n" | grep -v "\\.jvm/versions/" | tr "\\n" ":")')
+    lines.append(
+        'export PATH=$(echo "$PATH" | tr ":" "\\n" | grep -v "\\.jvm/versions/" | tr "\\n" ":")'
+    )
 
     # Prepend new version's bin to PATH
     lines.append(f'export PATH="{bin_dir}:$PATH"')
