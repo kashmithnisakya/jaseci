@@ -495,7 +495,8 @@ test "token refresh functionality" {
             "/user/register",
             json={
                 "username": f"refresh_bearer_{uuid.uuid4().hex[:8]}",
-                "password": "password123"
+                "password": "password123",
+                "email": "test@test.com"
             }
         );
         create_result = extract_data(response.json());
@@ -539,7 +540,8 @@ test "token refresh functionality" {
             "/user/register",
             json={
                 "username": f"refresh_multi_{uuid.uuid4().hex[:8]}",
-                "password": "password123"
+                "password": "password123",
+                "email": "test@test.com"
             }
         );
         create_result = extract_data(response.json());
@@ -1195,7 +1197,7 @@ test "websocket functionality" {
 
         response = requests.post(
             f"{sv_base_url}/user/register",
-            json={"username": username, "password": password},
+            json={"username": username, "password": password, "email": "test@test.com"},
             timeout=10
         );
         assert response.status_code in (200, 201) , f"Failed to create user: {response.text}";
@@ -1231,7 +1233,7 @@ test "websocket functionality" {
         username = f"ws_query_user_{uuid.uuid4().hex[:8]}";
         response = requests.post(
             f"{sv_base_url}/user/register",
-            json={"username": username, "password": password},
+            json={"username": username, "password": password, "email": "test@test.com"},
             timeout=10
         );
         assert response.status_code in (200, 201);
@@ -1319,7 +1321,7 @@ test "websocket functionality" {
 
             response = requests.post(
                 f"{sv_base_url}/user/register",
-                json={"username": username, "password": password},
+                json={"username": username, "password": password, "email": "test@test.com"},
                 timeout=10
             );
             assert response.status_code in (200, 201);
