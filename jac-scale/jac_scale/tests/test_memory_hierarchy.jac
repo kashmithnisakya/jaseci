@@ -60,10 +60,10 @@ def extract_transport_response_data(
     return json_response;
 }
 
-def register_user(base_url: str, username: str, password: str = "password123") -> str {
+def register_user(base_url: str, username: str, password: str = "password123", email: str = "test@test.com") -> str {
     res = requests.post(
         f"{base_url}/user/register",
-        json={"username": username, "password": password},
+        json={"username": username, "password": password, "email": email},
         timeout=2
     );
     assert res.status_code == 201 , f"Registration failed: {res.status_code} - {res.text}";

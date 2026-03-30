@@ -103,7 +103,7 @@ def _stop_server(proc: subprocess.Popen | None) -> None {
 def _get_token(base_url: str, user: str = "testuser", pwd: str = "pass123") -> str {
     requests.post(
         f"{base_url}/user/register",
-        json={"username": user, "password": pwd},
+        json={"username": user, "password": pwd, "email": "test@test.com"},
         timeout=5
     );
     resp = requests.post(
