@@ -164,7 +164,7 @@ test "read and write" {
 
         mongo_doc_initial_count = collection.count_documents({});
         assert mongo_doc_initial_count == 4 , (
-            "Initial docs should be 4 (super root, guest_user, admin, __system__)"
+            "Initial docs should be 4 (super root, guest_user, admin, system)"
         );
 
         # Register a user
@@ -172,7 +172,7 @@ test "read and write" {
 
         mongo_doc_after_user_creation_count = collection.count_documents({});
         assert mongo_doc_after_user_creation_count == 5 , (
-            "After user creation docs should be 5 (super root, guest_user, admin, __system__, created user)"
+            "After user creation docs should be 5 (super root, guest_user, admin, system, created user)"
         );
 
         redis_size_before_task_creation = redis_client.dbsize();
@@ -200,7 +200,7 @@ test "read and write" {
 
         redis_size_after_task_read = redis_client.dbsize();
         assert redis_size_after_task_read == 9 , (
-            "Redis should have 9 entries (super root, guest user, admin, __system__, user, 2 task nodes, 2 edges)"
+            "Redis should have 9 entries (super root, guest user, admin, system, user, 2 task nodes, 2 edges)"
         );
     } finally {
         # Teardown
@@ -584,13 +584,13 @@ test "L2 and L3 commit with server restart" {
         # Verify initial state in MongoDB
         initial_mongo_count = collection.count_documents({});
         assert initial_mongo_count == 4 , (
-            f"Initial MongoDB should have 4 docs (super root, guest_user, admin, __system__), got {initial_mongo_count}"
+            f"Initial MongoDB should have 4 docs (super root, guest_user, admin, system), got {initial_mongo_count}"
         );
 
         # Verify initial Redis state (4 initial nodes are cached on startup)
         initial_redis_count = redis_client.dbsize();
         assert initial_redis_count == 4 , (
-            f"Redis should have 4 initial entries (super root, guest_user, admin, __system__) on startup, got {initial_redis_count} keys"
+            f"Redis should have 4 initial entries (super root, guest_user, admin, system) on startup, got {initial_redis_count} keys"
         );
 
         # Register a user to ensure proper caching behavior (authenticated requests)
@@ -775,7 +775,7 @@ test "Redis write cycle via commit" {
     server = start_server(FIXTURES_DIR, JAC_FILE, port);
 
     try {
-        # Initial: 4 nodes in Redis (super_root, guest, admin, __system__)
+        # Initial: 4 nodes in Redis (super_root, guest, admin, system)
         assert redis_client.dbsize() == 4 , "Redis should start with 4 initial nodes";
 
         # Create task

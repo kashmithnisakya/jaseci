@@ -162,13 +162,13 @@ test "endpoint filtering and startup" {
         resp = requests.post(f"{base_url}/jobs", json={}, timeout=5);
         assert resp.status_code != 404 , "/jobs POST should be registered";
 
-        # __system__ user created at startup
+        # system user created at startup
         resp = requests.post(
             f"{base_url}/user/login",
-            json={"username": "__system__", "password": "system_secret"},
+            json={"username": "system", "password": "system_secret"},
             timeout=5
         ).json();
-        assert resp.get("ok") , "__system__ user must exist and authenticate";
+        assert resp.get("ok") , "system user must exist and authenticate";
         assert _data(resp).get("token");
     } finally {
         _stop_server(sp);
