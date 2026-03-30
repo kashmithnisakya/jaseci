@@ -354,7 +354,7 @@ test "user registration and login" {
         test_username = f"testuser_{uuid.uuid4().hex[:8]}";
         response = client.post(
             "/user/register",
-            json={"username": test_username, "password": "testpass123"}
+            json={"username": test_username, "password": "testpass123", "email": "test@test.com"}
         );
         result = extract_data(response.json());
         assert "username" in result;
@@ -365,7 +365,7 @@ test "user registration and login" {
         # Test: status code 201 for successful registration
         status_user = f"status_{uuid.uuid4().hex[:8]}";
         response = client.post(
-            "/user/register", json={"username": status_user, "password": "password123"}
+            "/user/register", json={"username": status_user, "password": "password123", "email": "test@test.com"}
         );
         assert response.status_code == 201;
         data = extract_data(response.json());
@@ -374,7 +374,7 @@ test "user registration and login" {
 
         # Test: status code 400 for duplicate registration
         response = client.post(
-            "/user/register", json={"username": status_user, "password": "password123"}
+            "/user/register", json={"username": status_user, "password": "password123", "email": "test@test.com"}
         );
         assert response.status_code == 400;
 
@@ -382,7 +382,7 @@ test "user registration and login" {
         login_username = f"login_{uuid.uuid4().hex[:8]}";
         response = client.post(
             "/user/register",
-            json={"username": login_username, "password": "loginpass"}
+            json={"username": login_username, "password": "loginpass", "email": "test@test.com"}
         );
         create_result = extract_data(response.json());
         response = client.post(
@@ -403,7 +403,7 @@ test "user registration and login" {
         fail_username = f"fail_{uuid.uuid4().hex[:8]}";
         response = client.post(
             "/user/register",
-            json={"username": fail_username, "password": "correctpass"}
+            json={"username": fail_username, "password": "correctpass", "email": "test@test.com"}
         );
         response = client.post(
             "/user/login", json={"username": fail_username, "password": "wrongpass"}
@@ -519,7 +519,7 @@ test "token refresh functionality" {
         # Test: refresh token too old
         old_user = f"refresh_old_{uuid.uuid4().hex[:8]}";
         response = client.post(
-            "/user/register", json={"username": old_user, "password": "password123"}
+            "/user/register", json={"username": old_user, "password": "password123", "email": "test@test.com"}
         );
         very_old_token = _create_very_old_token(old_user, days_ago=15);
         response = client.post("/user/refresh-token", json={"token": very_old_token});
@@ -559,7 +559,7 @@ test "token refresh functionality" {
         # Test: refresh token preserves username
         username = f"refresh_preserve_{uuid.uuid4().hex[:8]}";
         response = client.post(
-            "/user/register", json={"username": username, "password": "password123"}
+            "/user/register", json={"username": username, "password": "password123", "email": "test@test.com"}
         );
         create_result = extract_data(response.json());
         original_token = create_result["token"];
@@ -589,7 +589,7 @@ test "integration auth flow" {
 
         # Register
         register_response = client.post(
-            "/user/register", json={"username": username, "password": "secure123"}
+            "/user/register", json={"username": username, "password": "secure123", "email": "test@test.com"}
         );
         assert register_response.status_code == 201;
         data = extract_data(register_response.json());
@@ -633,7 +633,7 @@ test "function calls" {
         # Create a user for authenticated calls
         response = client.post(
             "/user/register",
-            json={"username": f"funcuser_{uuid.uuid4().hex[:8]}", "password": "pass"}
+            json={"username": f"funcuser_{uuid.uuid4().hex[:8]}", "password": "pass", "email": "test@test.com"}
         );
         create_result = extract_data(response.json());
         token = create_result["token"];
@@ -706,7 +706,7 @@ test "walker calls" {
         # Create a user for authenticated calls
         response = client.post(
             "/user/register",
-            json={"username": f"walkeruser_{uuid.uuid4().hex[:8]}", "password": "pass"}
+            json={"username": f"walkeruser_{uuid.uuid4().hex[:8]}", "password": "pass", "email": "test@test.com"}
         );
         create_result = extract_data(response.json());
         token = create_result["token"];
@@ -780,7 +780,7 @@ test "walker calls" {
         # Create a node and verify it appears for authenticated user
         response = client.post(
             "/user/register",
-            json={"username": f"guser_{uuid.uuid4().hex[:8]}", "password": "gpass"}
+            json={"username": f"guser_{uuid.uuid4().hex[:8]}", "password": "gpass", "email": "test@test.com"}
         );
         reg = extract_data(response.json());
         response = client.post(
@@ -808,7 +808,7 @@ test "user management operations" {
         # Test: update username success
         username = f"olduser_{uuid.uuid4().hex[:8]}";
         response = client.post(
-            "/user/register", json={"username": username, "password": "password123"}
+            "/user/register", json={"username": username, "password": "password123", "email": "test@test.com"}
         );
         create_result = extract_data(response.json());
         original_token = create_result["token"];
@@ -845,7 +845,7 @@ test "user management operations" {
         # Test: update username requires auth
         username = f"authtest_{uuid.uuid4().hex[:8]}";
         response = client.post(
-            "/user/register", json={"username": username, "password": "password123"}
+            "/user/register", json={"username": username, "password": "password123", "email": "test@test.com"}
         );
         response = client.put(
             "/user/username",
@@ -856,14 +856,14 @@ test "user management operations" {
         # Test: update username cannot update other users
         user1_name = f"user1_{uuid.uuid4().hex[:8]}";
         response = client.post(
-            "/user/register", json={"username": user1_name, "password": "pass1"}
+            "/user/register", json={"username": user1_name, "password": "pass1", "email": "test@test.com"}
         );
         user1_result = extract_data(response.json());
         user1_token = user1_result["token"];
 
         user2_name = f"user2_{uuid.uuid4().hex[:8]}";
         response = client.post(
-            "/user/register", json={"username": user2_name, "password": "pass2"}
+            "/user/register", json={"username": user2_name, "password": "pass2", "email": "test@test.com"}
         );
 
         response = client.put(
@@ -876,14 +876,14 @@ test "user management operations" {
         # Test: update username duplicate fails
         user1_name = f"dup1_{uuid.uuid4().hex[:8]}";
         response = client.post(
-            "/user/register", json={"username": user1_name, "password": "pass1"}
+            "/user/register", json={"username": user1_name, "password": "pass1", "email": "test@test.com"}
         );
         user1_result = extract_data(response.json());
         user1_token = user1_result["token"];
 
         user2_name = f"dup2_{uuid.uuid4().hex[:8]}";
         response = client.post(
-            "/user/register", json={"username": user2_name, "password": "pass2"}
+            "/user/register", json={"username": user2_name, "password": "pass2", "email": "test@test.com"}
         );
 
         response = client.put(
@@ -896,7 +896,7 @@ test "user management operations" {
         # Test: update username empty validation
         username = f"testuser_{uuid.uuid4().hex[:8]}";
         response = client.post(
-            "/user/register", json={"username": username, "password": "password123"}
+            "/user/register", json={"username": username, "password": "password123", "email": "test@test.com"}
         );
         user_result = extract_data(response.json());
         token = user_result["token"];
@@ -911,7 +911,7 @@ test "user management operations" {
         # Test: update password success
         username = f"passuser_{uuid.uuid4().hex[:8]}";
         response = client.post(
-            "/user/register", json={"username": username, "password": "oldpass123"}
+            "/user/register", json={"username": username, "password": "oldpass123", "email": "test@test.com"}
         );
         create_result = extract_data(response.json());
         token = create_result["token"];
@@ -947,7 +947,7 @@ test "user management operations" {
         # Test: update password requires auth
         username = f"noauthuser_{uuid.uuid4().hex[:8]}";
         response = client.post(
-            "/user/register", json={"username": username, "password": "password123"}
+            "/user/register", json={"username": username, "password": "password123", "email": "test@test.com"}
         );
 
         response = client.put(
@@ -963,7 +963,7 @@ test "user management operations" {
         # Test: update password wrong current password
         username = f"wrongpass_{uuid.uuid4().hex[:8]}";
         response = client.post(
-            "/user/register", json={"username": username, "password": "correctpass"}
+            "/user/register", json={"username": username, "password": "correctpass", "email": "test@test.com"}
         );
         user_result = extract_data(response.json());
         token = user_result["token"];
@@ -982,14 +982,14 @@ test "user management operations" {
         # Test: update password cannot update other users
         user1_name = f"passuser1_{uuid.uuid4().hex[:8]}";
         response = client.post(
-            "/user/register", json={"username": user1_name, "password": "pass1"}
+            "/user/register", json={"username": user1_name, "password": "pass1", "email": "test@test.com"}
         );
         user1_result = extract_data(response.json());
         user1_token = user1_result["token"];
 
         user2_name = f"passuser2_{uuid.uuid4().hex[:8]}";
         response = client.post(
-            "/user/register", json={"username": user2_name, "password": "pass2"}
+            "/user/register", json={"username": user2_name, "password": "pass2", "email": "test@test.com"}
         );
 
         response = client.put(
@@ -1006,7 +1006,7 @@ test "user management operations" {
         # Test: update password empty validation
         username = f"emptypass_{uuid.uuid4().hex[:8]}";
         response = client.post(
-            "/user/register", json={"username": username, "password": "oldpass"}
+            "/user/register", json={"username": username, "password": "oldpass", "email": "test@test.com"}
         );
         user_result = extract_data(response.json());
         token = user_result["token"];
@@ -1025,7 +1025,7 @@ test "user management operations" {
         # Test: username and password update flow (combined)
         username = f"original_{uuid.uuid4().hex[:8]}";
         response = client.post(
-            "/user/register", json={"username": username, "password": "oldpass"}
+            "/user/register", json={"username": username, "password": "oldpass", "email": "test@test.com"}
         );
         create_result = extract_data(response.json());
         token = create_result["token"];
@@ -1477,7 +1477,7 @@ test "dev mode operations" {
         # Test: dev mode walker body parsing
         register_response = requests.post(
             f"{dm_base_url}/user/register",
-            json={"username": f"devtest_{uuid.uuid4().hex[:8]}", "password": "pass"},
+            json={"username": f"devtest_{uuid.uuid4().hex[:8]}", "password": "pass", "email": "test@test.com"},
             timeout=10
         );
         assert register_response.status_code == 201;
@@ -1499,7 +1499,7 @@ test "dev mode operations" {
         # Test: dev mode function body parsing
         register_response = requests.post(
             f"{dm_base_url}/user/register",
-            json={"username": f"devfunc_{uuid.uuid4().hex[:8]}", "password": "pass"},
+            json={"username": f"devfunc_{uuid.uuid4().hex[:8]}", "password": "pass", "email": "test@test.com"},
             timeout=10
         );
         assert register_response.status_code == 201;
@@ -1540,7 +1540,7 @@ test "dev mode operations" {
         username = f"asyncuser_{uuid.uuid4().hex[:8]}";
         register_response = requests.post(
             f"{dm_base_url}/user/register",
-            json={"username": username, "password": "password123"},
+            json={"username": username, "password": "password123", "email": "test@test.com"},
             timeout=10
         );
         assert register_response.status_code == 201;

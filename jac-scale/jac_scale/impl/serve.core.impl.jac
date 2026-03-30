@@ -457,7 +457,9 @@ impl JacAPIServerCore.register_create_user_endpoint -> None {
     );
 }
 
-impl JacAPIServerCore.create_user(username: str, password: str, email: str) -> TransportResponse {
+impl JacAPIServerCore.create_user(
+    username: str, password: str, email: str
+) -> TransportResponse {
     import traceback;
     import from jaclang.runtimelib.transport { TransportResponse, Meta }
     try {
