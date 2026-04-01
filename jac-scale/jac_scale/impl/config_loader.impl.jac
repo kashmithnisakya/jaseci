@@ -110,15 +110,7 @@ impl JacScaleConfig.get_default_config(self: JacScaleConfig) -> dict[str, Any] {
             'system_user_password': 'system_secret',
             'collection': 'scheduled_jobs'
         },
-        'telemetry': {'max_traces': 1000},
-        'email': {
-            'smtp_host': '',
-            'smtp_port': 587,
-            'smtp_username': '',
-            'smtp_password': '',
-            'from_email': 'noreply@example.com',
-            'use_tls': True
-        }
+        'telemetry': {'max_traces': 1000}
     };
 }
 
@@ -325,20 +317,6 @@ impl JacScaleConfig.get_scheduler_config(self: JacScaleConfig) -> dict[str, Any]
         'system_user_password': os.environ.get('SYSTEM_USER_PASSWORD')
         or scheduler_config.get('system_user_password', 'system_secret'),
         'collection': scheduler_config.get('collection', 'scheduled_jobs')
-    };
-}
-
-"""Get email/SMTP configuration from jac.toml."""
-impl JacScaleConfig.get_email_config(self: JacScaleConfig) -> dict[str, Any] {
-    config = self.load();
-    email_config = config.get('email', {});
-    return {
-        'smtp_host': email_config.get('smtp_host', ''),
-        'smtp_port': int(email_config.get('smtp_port', 587)),
-        'smtp_username': email_config.get('smtp_username', ''),
-        'smtp_password': email_config.get('smtp_password', ''),
-        'from_email': email_config.get('from_email', 'noreply@example.com'),
-        'use_tls': email_config.get('use_tls', True)
     };
 }
 
