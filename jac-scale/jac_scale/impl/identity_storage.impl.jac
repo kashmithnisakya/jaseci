@@ -43,11 +43,13 @@ impl IdentityStorage.create_user(
             };
         }
 
+        # Use explicit verified flag if provided, otherwise username=true, rest=false
+        is_verified = identity.get('verified', (id_type == 'username'));
         normalized_identities.append({
             'type': id_type,
             'value_raw': raw_value,
             'value_normalized': normalized,
-            'verified': (id_type == 'username'),
+            'verified': is_verified,
             'is_recovery': (id_type == 'email')
         });
     }
@@ -98,11 +100,7 @@ impl IdentityStorage.user_exists_by_id(user_id: str) -> bool {
 """Delete a user by user_id."""
 impl IdentityStorage.delete_user(user_id: str) -> bool {
     result = self.users_col.delete_one({'user_id': user_id});
-    if result.deleted_count > 0 {
-        self.sso_col.delete_many({'user_id': user_id});
-        return True;
-    }
-    return False;
+    return result.deleted_count > 0;
 }
 
 """Find a user by any identity value (username, email, etc.)."""
@@ -327,4 +325,106 @@ impl IdentityStorage.update_user_fields(user_id: str, fields: dict[str, Any]) ->
     fields['updated_at'] = datetime.now(UTC).isoformat();
     result = self.users_col.update_one({'user_id': user_id}, {'$set': fields});
     return result.matched_count > 0;
+}
+
+"""Link an SSO account by adding an identity with type=sso and provider field."""
+impl IdentityStorage.link_sso_account(
+    user_id: str, platform: str, external_id: str, email: str
+) -> dict[str, str] {
+    # Check if this SSO provider is already linked to any user
+    existing = self.users_col.find_one(
+        {
+            'identities': {
+                '$elemMatch': {
+                    'type': 'sso',
+                    'provider': platform
+                }
+            }
+        },
+        {'user_id': 1, '_id': 0}
+    );
+    if existing {
+        if existing['user_id'] == user_id {
+            return {'message': 'SSO account already linked to this user'};
+        }
+        return {'error': 'This SSO account is already linked to another user'};
+    }
+    now = datetime.now(UTC).isoformat();
+    identity_doc = {
+        'type': 'sso',
+        'provider': platform,
+        'verified': True,
+        'linked_at': now
+    };
+    result = self.users_col.update_one(
+        {'user_id': user_id},
+        {
+            '$push': {'identities': identity_doc},
+            '$set': {'updated_at': now}
+        }
+    );
+    if result.matched_count == 0 {
+        return {'error': 'User not found'};
+    }
+    return {
+        'message': 'SSO account linked successfully',
+        'user_id': user_id,
+        'platform': platform
+    };
+}
+
+"""Unlink an SSO account by removing the sso identity matching the provider."""
+impl IdentityStorage.unlink_sso_account(user_id: str, platform: str) -> dict[str, str] {
+    result = self.users_col.update_one(
+        {'user_id': user_id},
+        {
+            '$pull': {'identities': {'type': 'sso', 'provider': platform}},
+            '$set': {'updated_at': datetime.now(UTC).isoformat()}
+        }
+    );
+    if result.modified_count == 0 {
+        return {'error': 'SSO account not found'};
+    }
+    return {
+        'message': 'SSO account unlinked successfully',
+        'user_id': user_id,
+        'platform': platform
+    };
+}
+
+"""Get all SSO identities for a user."""
+impl IdentityStorage.get_sso_accounts(user_id: str) -> list[dict[str, str]] {
+    user = self.users_col.find_one({'user_id': user_id}, {'identities': 1, '_id': 0});
+    if not user {
+        return [];
+    }
+    accounts: list[dict[str, str]] = [];
+    for identity in user.get('identities', []) {
+        if identity.get('type') == 'sso' {
+            accounts.append({
+                'platform': identity.get('provider', ''),
+                'linked_at': identity.get('linked_at', '')
+            });
+        }
+    }
+    return accounts;
+}
+
+"""Find a user by SSO provider."""
+impl IdentityStorage.get_user_by_sso(
+    platform: str, external_id: str
+) -> dict[str, Any] | None {
+    user = self.users_col.find_one(
+        {
+            'identities': {
+                '$elemMatch': {
+                    'type': 'sso',
+                    'provider': platform
+                }
+            },
+            'status': {'$ne': 'disabled'}
+        },
+        {'_id': 0, 'credentials': 0}
+    );
+    return user;
 }

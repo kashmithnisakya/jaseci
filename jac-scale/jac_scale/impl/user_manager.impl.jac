@@ -21,12 +21,7 @@ impl JacScaleUserManager.postinit -> None {
         import from jac_scale.db { get_mongo_client }
         client = get_mongo_client();
         db = client['jac_db'];
-        sso_col = db['sso_accounts'];
-        sso_col.create_index([('platform', 1), ('external_id', 1)], unique=True);
-        sso_col.create_index('user_id');
-        self._identity_storage = IdentityStorage(
-            users_col=db['users'], sso_col=sso_col
-        );
+        self._identity_storage = IdentityStorage(users_col=db['users']);
         self._identity_storage.ensure_indexes();
     } else {
         self._identity_storage = None;
@@ -371,9 +366,12 @@ impl JacScaleUserManager.sso_callback(
                 meta=Meta(extra={'http_status': 400})
             );
         }
+        external_id = user_info.external_id;
         existing = self.find_user_by_identity(email);
         if existing {
             user_id = existing.get('user_id', '');
+            # Link SSO identity if not already linked
+            self.link_sso_account(user_id, platform, external_id, email);
             token = self.create_jwt_token(user_id);
             return TransportResponse.success(
                 data={
@@ -386,8 +384,9 @@ impl JacScaleUserManager.sso_callback(
                 meta=Meta(extra={'http_status': 200})
             );
         } else {
+            # Create user with verified email identity (provider already verified it)
             result = self.create_user(
-                identities=[{'type': 'email', 'value': email}],
+                identities=[{'type': 'email', 'value': email, 'verified': True}],
                 credential={'type': 'password', 'password': generate_random_password()}
             );
             if 'error' in result {
@@ -398,6 +397,8 @@ impl JacScaleUserManager.sso_callback(
                 );
             }
             user_id = result.get('user_id', '');
+            # Link SSO identity to the new user
+            self.link_sso_account(user_id, platform, external_id, email);
             result['token'] = self.create_jwt_token(user_id);
             result['platform'] = platform;
             return TransportResponse.success(
@@ -420,6 +421,12 @@ impl JacScaleUserManager.sso_callback(
 impl JacScaleUserManager.link_sso_account(
     user_id: str, platform: str, external_id: str, email: str
 ) -> dict[str, str] {
+    if self._identity_storage {
+        return self._identity_storage.link_sso_account(
+            user_id, platform, external_id, email
+        );
+    }
+    # SQLite fallback
     self._ensure_connection();
     cursor = self._conn.execute(
         "SELECT user_id FROM sso_accounts WHERE platform = ? AND external_id = ?",
@@ -447,6 +454,9 @@ impl JacScaleUserManager.link_sso_account(
 impl JacScaleUserManager.unlink_sso_account(
     user_id: str, platform: str
 ) -> dict[str, str] {
+    if self._identity_storage {
+        return self._identity_storage.unlink_sso_account(user_id, platform);
+    }
     self._ensure_connection();
     cursor = self._conn.execute(
         "DELETE FROM sso_accounts WHERE user_id = ? AND platform = ?",
@@ -464,6 +474,9 @@ impl JacScaleUserManager.unlink_sso_account(
 }
 
 impl JacScaleUserManager.get_sso_accounts(user_id: str) -> list[dict[str, str]] {
+    if self._identity_storage {
+        return self._identity_storage.get_sso_accounts(user_id);
+    }
     self._ensure_connection();
     cursor = self._conn.execute(
         "SELECT platform, external_id, email, linked_at FROM sso_accounts WHERE user_id = ? ORDER BY linked_at DESC",
@@ -478,6 +491,9 @@ impl JacScaleUserManager.get_sso_accounts(user_id: str) -> list[dict[str, str]] 
 impl JacScaleUserManager.get_user_by_sso(
     platform: str, external_id: str
 ) -> dict[str, str] | None {
+    if self._identity_storage {
+        return self._identity_storage.get_user_by_sso(platform, external_id);
+    }
     self._ensure_connection();
     cursor = self._conn.execute(
         "SELECT sa.user_id, u.token, u.root_id FROM sso_accounts sa JOIN users u ON sa.user_id = u.username WHERE sa.platform = ? AND sa.external_id = ?",

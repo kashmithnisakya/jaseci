@@ -1,15 +1,15 @@
 """Identity-based user storage for MongoDB.
 
-Users are stored with an array of identities (username, email, phone, etc.)
+Users are stored with an array of identities (username, email, phone, SSO, etc.)
 and an array of credentials (password, TOTP, etc.), enabling flexible
 authentication without schema changes when new identity/credential types
-are added.
+are added. SSO accounts are stored as identities with type matching the
+platform (google, apple, github).
 """
 import from typing { Any }
 
 obj IdentityStorage {
-    has users_col: Any,
-        sso_col: Any;
+    has users_col: Any;
 
     # User lifecycle
     def create_user(
@@ -51,6 +51,14 @@ obj IdentityStorage {
 
     # Generic field update
     def update_user_fields(user_id: str, fields: dict[str, Any]) -> bool;
+
+    # SSO (stored as identities with platform-specific types)
+    def link_sso_account(
+        user_id: str, platform: str, external_id: str, email: str
+    ) -> dict[str, str];
+    def unlink_sso_account(user_id: str, platform: str) -> dict[str, str];
+    def get_sso_accounts(user_id: str) -> list[dict[str, str]];
+    def get_user_by_sso(platform: str, external_id: str) -> dict[str, Any] | None;
 
     # Setup indexes
     def ensure_indexes -> None;
