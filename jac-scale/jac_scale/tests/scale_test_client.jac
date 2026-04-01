@@ -109,13 +109,7 @@ obj ScaleTestClient {
 
         # Register all endpoints (same as start() but without run_server)
         self._server.register_health_endpoint();
-        self._server.register_create_user_endpoint();
-        self._server.register_login_endpoint();
-        self._server.register_refresh_token_endpoint();
-        self._server.register_update_username_endpoint();
-        self._server.register_update_password_endpoint();
-        self._server.register_sso_endpoints();
-        self._server.register_api_key_endpoints();
+        self._server.register_auth_endpoints();
         self._server.register_graph_endpoint();
         self._server.register_admin_endpoints();
         self._server.register_llm_telemetry_endpoints();
@@ -125,7 +119,7 @@ obj ScaleTestClient {
         self._server.register_static_file_endpoint();
         self._server.register_page_endpoint();
         self._server.register_client_js_endpoint();
-        self._server.user_manager.create_user(Con.GUEST.value, '__no_password__');
+        self._server.user_manager.create_internal_user(Con.GUEST.value, '__no_password__');
 
         # Execute endpoint registration (compiles JEndPoints into FastAPI routes)
         self._server.server.create_server();
