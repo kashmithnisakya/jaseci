@@ -5,12 +5,12 @@ import from jac_scale.enums { IdentityType, CredentialType }
 
 class IdentityInput(BaseModel) {
     has type: IdentityType = Field(..., description='Identity type: username, email'),
-        value: str = Field(..., description='Identity value');
+        value: str = Field(..., min_length=1, description='Identity value');
 }
 
 class CredentialInput(BaseModel) {
     has type: CredentialType = Field(..., description='Credential type: password'),
-        password: str = Field(..., description='Password');
+        password: str = Field(..., min_length=1, description='Password');
 }
 
 class RegisterRequest(BaseModel) {
