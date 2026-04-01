@@ -500,20 +500,20 @@ impl JacAPIServerAdmin.bootstrap_admin -> None {
     }
 }
 
-"""Validate admin token and return username if valid admin."""
+"""Validate admin token and return user_id if valid admin."""
 impl JacAPIServerAdmin.validate_admin_token(Authorization: str | None) -> (str | None) {
     if not Authorization or not Authorization.startswith('Bearer ') {
         return None;
     }
     token = Authorization[7:];
-    username = self.user_manager.validate_jwt_token(token);
-    if not username {
+    user_id = self.user_manager.validate_jwt_token(token);
+    if not user_id {
         return None;
     }
-    if not self.user_manager.is_admin(username) {
+    if not self.user_manager.is_admin(user_id) {
         return None;
     }
-    return username;
+    return user_id;
 }
 
 """Check if request is from admin, return error response if not."""
@@ -548,24 +548,23 @@ impl JacAPIServerAdmin.admin_login(username: str, password: str) -> TransportRes
             meta=Meta(extra={'http_status': 401})
         );
     }
+    user_id = result.get('user_id', '');
     # Check if user is admin
-    if not self.user_manager.is_admin(username) {
+    if not self.user_manager.is_admin(user_id) {
         return TransportResponse.fail(
             code='FORBIDDEN',
             message='Admin access required',
             meta=Meta(extra={'http_status': 403})
         );
     }
-    # Check if password reset is required
-    requires_reset = self.user_manager.requires_password_reset(username);
-    token = self.user_manager.create_jwt_token(username);
+    token = self.user_manager.create_jwt_token(user_id);
     return TransportResponse.success(
         data={
             'message': 'Login successful',
             'token': token,
+            'user_id': user_id,
             'username': username,
-            'role': 'admin',
-            'requires_password_reset': requires_reset
+            'role': 'admin'
         },
         meta=Meta(extra={'http_status': 200})
     );
@@ -584,8 +583,8 @@ impl JacAPIServerAdmin.reset_password(
         );
     }
     token = Authorization[7:];
-    username = self.user_manager.validate_jwt_token(token);
-    if not username {
+    user_id = self.user_manager.validate_jwt_token(token);
+    if not user_id {
         return TransportResponse.fail(
             code='UNAUTHORIZED',
             message='Invalid or expired token',
@@ -607,7 +606,7 @@ impl JacAPIServerAdmin.reset_password(
         );
     }
     # Update password
-    result = self.user_manager.update_password(username, current_password, new_password);
+    result = self.user_manager.update_password(user_id, current_password, new_password);
     if 'error' in result {
         return TransportResponse.fail(
             code='UPDATE_FAILED',
@@ -615,10 +614,8 @@ impl JacAPIServerAdmin.reset_password(
             meta=Meta(extra={'http_status': 400})
         );
     }
-    # Clear the requires_password_reset flag
-    self.user_manager.set_requires_password_reset(username, False);
     # Generate new token
-    new_token = self.user_manager.create_jwt_token(username);
+    new_token = self.user_manager.create_jwt_token(user_id);
     return TransportResponse.success(
         data={'message': 'Password updated successfully', 'token': new_token},
         meta=Meta(extra={'http_status': 200})
@@ -633,7 +630,24 @@ impl JacAPIServerAdmin.admin_list_users(
     if error {
         return error;
     }
-    users = self.user_manager.list_all_users(limit, offset);
+    raw_users = self.user_manager.list_all_users(limit, offset);
+    # Enrich with top-level username for admin UI compatibility
+    users: list = [];
+    for u in raw_users {
+        username = '';
+        for identity in u.get('identities', []) {
+            if identity.get('type') == 'username' {
+                username = identity.get('value_raw', '');
+                break;
+            }
+        }
+        if not username {
+            identities = u.get('identities', []);
+            username = identities[0].get('value_raw', '') if identities else '';
+        }
+        u['username'] = username;
+        users.append(u);
+    }
     return TransportResponse.success(
         data={'users': users, 'count': len(users), 'limit': limit, 'offset': offset},
         meta=Meta(extra={'http_status': 200})
