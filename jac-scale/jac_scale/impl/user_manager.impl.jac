@@ -430,9 +430,7 @@ impl JacScaleUserManager.link_sso_account(
     user_id: str, platform: str, external_id: str
 ) -> dict[str, str] {
     if self._identity_storage {
-        return self._identity_storage.link_sso_account(
-            user_id, platform, external_id
-        );
+        return self._identity_storage.link_sso_account(user_id, platform, external_id);
     }
     # SQLite fallback
     self._ensure_connection();

@@ -637,7 +637,11 @@ impl JacAPIServerAdmin.admin_list_users(
     for user in users {
         identities = user.get('identities', []);
         username = next(
-            (identity.get('value_raw', '') for identity in identities if identity.get('type') == 'username'),
+            (
+                identity.get('value_raw', '')
+                for identity in identities
+                if identity.get('type') == 'username'
+            ),
             identities[0].get('value_raw', '') if identities else ''
         );
         user['username'] = username;

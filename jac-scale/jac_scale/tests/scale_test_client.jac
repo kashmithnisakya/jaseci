@@ -184,7 +184,8 @@ obj ScaleTestClient {
         return self._client.delete(path, headers=headers or {});
     }
 
-    """Register a user and return (user_id, message) tuple."""
+    """Register a user and return (user_id, message) tuple.
+    If the user already exists, returns the username as user_id."""
     def register_user(username: str, password: str) -> tuple[str, str] {
         response = self.post(
             "/user/register",
@@ -196,6 +197,11 @@ obj ScaleTestClient {
         data = response.json();
         if data.get("ok") and data.get("data") {
             return (data["data"].get("user_id", username), data["data"].get("message", ""));
+        }
+        # If user already exists, treat as success
+        error = data.get("error", {});
+        if error.get("code") == "IDENTITY_TAKEN" {
+            return (username, "User already exists");
         }
         raise RuntimeError(f"User registration failed: {data}");
     }
