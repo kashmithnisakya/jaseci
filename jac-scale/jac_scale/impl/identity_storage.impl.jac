@@ -321,7 +321,15 @@ impl IdentityStorage.link_sso_account(
 ) -> dict[str, str] {
     # Check if this SSO external_id + provider is already linked to any user
     existing = self.users_col.find_one(
-        {'identities': {'$elemMatch': {'type': 'sso', 'provider': platform, 'external_id': external_id}}},
+        {
+            'identities': {
+                '$elemMatch': {
+                    'type': 'sso',
+                    'provider': platform,
+                    'external_id': external_id
+                }
+            }
+        },
         {'user_id': 1, '_id': 0}
     );
     if existing {
@@ -398,7 +406,13 @@ impl IdentityStorage.get_user_by_sso(
 ) -> dict[str, Any] | None {
     user = self.users_col.find_one(
         {
-            'identities': {'$elemMatch': {'type': 'sso', 'provider': platform, 'external_id': external_id}},
+            'identities': {
+                '$elemMatch': {
+                    'type': 'sso',
+                    'provider': platform,
+                    'external_id': external_id
+                }
+            },
             'status': {'$ne': 'disabled'}
         },
         {'_id': 0, 'credentials': 0}
