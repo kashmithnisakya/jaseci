@@ -612,7 +612,9 @@ impl JacScaleUserManager.is_password_required(user_id: str) -> bool {
         "SELECT is_password_required FROM users WHERE username = ?", (user_id, )
     );
     row = cursor.fetchone();
-    if not row { return True; }
+    if not row {
+        return True;
+    }
     return bool(row[0]) if row[0] is not None else True;
 }
 

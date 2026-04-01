@@ -78,7 +78,9 @@ obj JacScaleUserManager(UserManager) {
     def set_user_role(user_id: str, role: str) -> dict[str, str];
     def is_admin(user_id: str) -> bool;
     def requires_password_reset(user_id: str) -> bool;
-    def set_requires_password_reset(user_id: str, requires_reset: bool) -> dict[str, str];
+    def set_requires_password_reset(
+        user_id: str, requires_reset: bool
+    ) -> dict[str, str];
     def is_password_required(user_id: str) -> bool;
     def bootstrap_admin_user -> dict[str, str];
     def list_all_users(limit: int = 100, offset: int = 0) -> list[dict[str, Any]];

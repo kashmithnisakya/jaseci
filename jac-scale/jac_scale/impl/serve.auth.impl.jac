@@ -107,7 +107,7 @@ impl JacAPIServerAuth.register_register_endpoint -> None {
             console.print(f"Error in register: {e}\n{error_trace}");
             return TransportResponse.fail(
                 code='INTERNAL_ERROR',
-                message=f"Registration failed: {e}",
+                message=f"Registration failed",
                 meta=Meta(extra={'http_status': 500})
             );
         }
