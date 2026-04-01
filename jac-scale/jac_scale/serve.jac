@@ -190,4 +190,3 @@ obj JacAPIServer(JacAPIServerCore, JacAPIServerAuth, JacAPIServerEndpoints, JacA
         _metrics: MetricsCollector | None = None,
         _ws_manager: WebSocketConnectionManager | None = None;
 }
-
