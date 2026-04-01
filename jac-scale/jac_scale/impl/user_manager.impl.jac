@@ -79,7 +79,6 @@ impl JacScaleUserManager._ensure_connection -> None {
 # ============================================================================
 # Identity-based User CRUD
 # ============================================================================
-
 """Create a user with identity-based model. Falls back to flat model for SQLite."""
 impl JacScaleUserManager.create_user(
     identities: list[dict[str, Any]], credential: dict[str, Any]
@@ -133,9 +132,7 @@ impl JacScaleUserManager.authenticate(
 }
 
 """Find a user by any identity value."""
-impl JacScaleUserManager.find_user_by_identity(
-    value: str
-) -> dict[str, Any] | None {
+impl JacScaleUserManager.find_user_by_identity(value: str) -> dict[str, Any] | None {
     if self._identity_storage {
         return self._identity_storage.find_user_by_identity(value);
     }
@@ -195,7 +192,6 @@ impl JacScaleUserManager.get_username(user_id: str) -> str | None {
 # ============================================================================
 # JWT Methods — now use user_id as the primary claim
 # ============================================================================
-
 impl JacScaleUserManager.create_jwt_token(
     user_id: str, include_role: bool = True
 ) -> str {
@@ -254,7 +250,6 @@ impl JacScaleUserManager.refresh_jwt_token(token: str) -> str | None {
 # ============================================================================
 # SSO Methods
 # ============================================================================
-
 impl JacScaleUserManager.get_sso(platform: str) -> SSOProvider | None {
     if platform not in self.SUPPORTED_PLATFORMS {
         return None;
@@ -417,7 +412,6 @@ impl JacScaleUserManager.sso_callback(
 # ============================================================================
 # SSO Account Linking
 # ============================================================================
-
 impl JacScaleUserManager.link_sso_account(
     user_id: str, platform: str, external_id: str, email: str
 ) -> dict[str, str] {
@@ -506,7 +500,6 @@ impl JacScaleUserManager.get_user_by_sso(
 # ============================================================================
 # User Role and Admin Management
 # ============================================================================
-
 impl JacScaleUserManager.get_user_role(user_id: str) -> str | None {
     if self._identity_storage {
         return self._identity_storage.get_user_role(user_id);
@@ -529,7 +522,11 @@ impl JacScaleUserManager.set_user_role(user_id: str, role: str) -> dict[str, str
         if not success {
             return {'error': 'User not found'};
         }
-        return {'message': f"Role updated to '{role}'", 'user_id': user_id, 'role': role};
+        return {
+            'message': f"Role updated to '{role}'",
+            'user_id': user_id,
+            'role': role
+        };
     }
     self._ensure_connection();
     cursor = self._conn.execute(

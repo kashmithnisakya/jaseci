@@ -63,21 +63,16 @@ def _get_network_ips -> list[str];
 """Auth endpoints: register, login, token refresh, update password, SSO, API keys."""
 obj JacAPIServerAuth {
     def register_auth_endpoints -> None;
-
     # Registration & Login
     def register_register_endpoint -> None;
     def register_login_endpoint -> None;
-
     # Token
     def register_refresh_token_endpoint -> None;
-
     # Update password
     def register_update_password_endpoint -> None;
-
     # SSO
     def register_sso_endpoints -> None;
     def _create_sso_callback_wrapper -> Callable[..., (Response | TransportResponse)];
-
     # API key management
     def get_api_key_manager -> ApiKeyManager;
     def create_api_key(

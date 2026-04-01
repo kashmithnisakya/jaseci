@@ -10,9 +10,7 @@ glob logger = logging.getLogger(__name__);
 
 """Create unique indexes for identity lookups."""
 impl IdentityStorage.ensure_indexes -> None {
-    self.users_col.create_index(
-        'identities.value_normalized', unique=True, sparse=True
-    );
+    self.users_col.create_index('identities.value_normalized', unique=True, sparse=True);
     self.users_col.create_index('status');
 }
 
@@ -21,8 +19,7 @@ impl IdentityStorage.ensure_indexes -> None {
 Returns dict with user_id + message on success, or dict with error on failure.
 """
 impl IdentityStorage.create_user(
-    identities: list[dict[str, Any]],
-    credential: dict[str, Any]
+    identities: list[dict[str, Any]], credential: dict[str, Any]
 ) -> dict[str, Any] {
     import from jaclang.jac0core.constructs { Root }
     import from jaclang { JacRuntime as Jac }
@@ -38,28 +35,26 @@ impl IdentityStorage.create_user(
         normalized = raw_value.lower().strip();
 
         if self.identity_taken(normalized) {
-            return {
-                'error': f"{id_type.capitalize()} is already registered"
-            };
+            return {'error': f"{id_type.capitalize()} is already registered"};
         }
 
         # Use explicit verified flag if provided, otherwise username=true, rest=false
         is_verified = identity.get('verified', (id_type == 'username'));
-        normalized_identities.append({
-            'type': id_type,
-            'value_raw': raw_value,
-            'value_normalized': normalized,
-            'verified': is_verified,
-            'is_recovery': (id_type == 'email')
-        });
+        normalized_identities.append(
+            {
+                'type': id_type,
+                'value_raw': raw_value,
+                'value_normalized': normalized,
+                'verified': is_verified,
+                'is_recovery': (id_type == 'email')
+            }
+        );
     }
 
     # Hash credential
     credentials: list[dict[str, Any]] = [];
     if credential.get('type') == 'password' {
-        password_hash = hashlib.sha256(
-            credential['password'].encode()
-        ).hexdigest();
+        password_hash = hashlib.sha256(credential['password'].encode()).hexdigest();
         credentials.append({'type': 'password', 'password_hash': password_hash});
     }
 
@@ -86,10 +81,7 @@ impl IdentityStorage.create_user(
 
 """Find a user by user_id."""
 impl IdentityStorage.get_user_by_id(user_id: str) -> dict[str, Any] | None {
-    return self.users_col.find_one(
-        {'user_id': user_id},
-        {'_id': 0, 'credentials': 0}
-    );
+    return self.users_col.find_one({'user_id': user_id}, {'_id': 0, 'credentials': 0});
 }
 
 """Check if a user exists by user_id."""
@@ -107,10 +99,7 @@ impl IdentityStorage.delete_user(user_id: str) -> bool {
 impl IdentityStorage.find_user_by_identity(value: str) -> dict[str, Any] | None {
     normalized = value.lower().strip();
     return self.users_col.find_one(
-        {
-            'identities.value_normalized': normalized,
-            'status': {'$ne': 'disabled'}
-        },
+        {'identities.value_normalized': normalized, 'status': {'$ne': 'disabled'}},
         {'_id': 0}
     );
 }
@@ -134,7 +123,8 @@ impl IdentityStorage.authenticate(
 
     password_hash = hashlib.sha256(password.encode()).hexdigest();
     for cred in user.get('credentials', []) {
-        if cred.get('type') == 'password' and cred.get('password_hash') == password_hash {
+        if cred.get('type') == 'password'
+        and cred.get('password_hash') == password_hash {
             return {
                 'user_id': user['user_id'],
                 'root_id': user['root_id'],
@@ -181,7 +171,9 @@ impl IdentityStorage.add_identity(
     id_type = identity.get('type', '');
 
     if self.identity_taken(normalized) {
-        return {'error': f"{id_type.capitalize()} '{raw_value}' is already registered"};
+        return {
+            'error': f"{id_type.capitalize()} '{raw_value}' is already registered"
+        };
     }
 
     identity_doc = {
@@ -220,10 +212,7 @@ impl IdentityStorage.remove_identity(
         {'user_id': user_id},
         {
             '$pull': {
-                'identities': {
-                    'type': identity_type,
-                    'value_normalized': normalized
-                }
+                'identities': {'type': identity_type, 'value_normalized': normalized}
             },
             '$set': {'updated_at': datetime.now(UTC).isoformat()}
         }
@@ -255,7 +244,8 @@ impl IdentityStorage.update_password(
     current_hash = hashlib.sha256(current_password.encode()).hexdigest();
     found = False;
     for cred in user.get('credentials', []) {
-        if cred.get('type') == 'password' and cred.get('password_hash') == current_hash {
+        if cred.get('type') == 'password'
+        and cred.get('password_hash') == current_hash {
             found = True;
             break;
         }
@@ -287,7 +277,11 @@ impl IdentityStorage.list_all_users(
         {'_id': 0, 'credentials': 0}
     ).sort(
         'created_at', -1
-    ).skip(offset).limit(limit);
+    ).skip(
+        offset
+    ).limit(
+        limit
+    );
 
     users: list[dict[str, Any]] = [];
     for doc in cursor {
@@ -333,14 +327,7 @@ impl IdentityStorage.link_sso_account(
 ) -> dict[str, str] {
     # Check if this SSO provider is already linked to any user
     existing = self.users_col.find_one(
-        {
-            'identities': {
-                '$elemMatch': {
-                    'type': 'sso',
-                    'provider': platform
-                }
-            }
-        },
+        {'identities': {'$elemMatch': {'type': 'sso', 'provider': platform}}},
         {'user_id': 1, '_id': 0}
     );
     if existing {
@@ -358,10 +345,7 @@ impl IdentityStorage.link_sso_account(
     };
     result = self.users_col.update_one(
         {'user_id': user_id},
-        {
-            '$push': {'identities': identity_doc},
-            '$set': {'updated_at': now}
-        }
+        {'$push': {'identities': identity_doc}, '$set': {'updated_at': now}}
     );
     if result.matched_count == 0 {
         return {'error': 'User not found'};
@@ -401,10 +385,12 @@ impl IdentityStorage.get_sso_accounts(user_id: str) -> list[dict[str, str]] {
     accounts: list[dict[str, str]] = [];
     for identity in user.get('identities', []) {
         if identity.get('type') == 'sso' {
-            accounts.append({
-                'platform': identity.get('provider', ''),
-                'linked_at': identity.get('linked_at', '')
-            });
+            accounts.append(
+                {
+                    'platform': identity.get('provider', ''),
+                    'linked_at': identity.get('linked_at', '')
+                }
+            );
         }
     }
     return accounts;
@@ -416,12 +402,7 @@ impl IdentityStorage.get_user_by_sso(
 ) -> dict[str, Any] | None {
     user = self.users_col.find_one(
         {
-            'identities': {
-                '$elemMatch': {
-                    'type': 'sso',
-                    'provider': platform
-                }
-            },
+            'identities': {'$elemMatch': {'type': 'sso', 'provider': platform}},
             'status': {'$ne': 'disabled'}
         },
         {'_id': 0, 'credentials': 0}

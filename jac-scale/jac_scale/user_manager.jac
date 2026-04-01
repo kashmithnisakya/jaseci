@@ -35,11 +35,11 @@ obj JacScaleUserManager(UserManager) {
     def postinit -> None;
     def _ensure_connection -> None;
     def _init_sqlite_schema -> None;
-
     # Identity-based user CRUD
     def create_user(
         identities: list[dict[str, Any]], credential: dict[str, Any]
     ) -> dict[str, Any];
+
     def create_internal_user(username: str, password: str) -> dict[str, Any];
     def authenticate(identifier: str, password: str) -> dict[str, Any] | None;
     def find_user_by_identity(value: str) -> dict[str, Any] | None;
@@ -51,31 +51,28 @@ obj JacScaleUserManager(UserManager) {
     ) -> dict[str, str];
 
     def close -> None;
-
     # JWT methods (use user_id as claim)
     def create_jwt_token(user_id: str, include_role: bool = True) -> str;
     def validate_jwt_token(token: str) -> str | None;
     def refresh_jwt_token(token: str) -> str | None;
     def get_jwt_claims(token: str) -> dict | None;
-
     # SSO methods
     def get_sso(platform: str) -> SSOProvider | None;
     async def sso_initiate(
         platform: str, operation: str
     ) -> Response | TransportResponse;
-    async def sso_callback(request: Request, platform: str) -> TransportResponse;
 
+    async def sso_callback(request: Request, platform: str) -> TransportResponse;
     # SSO Account Linking
     def link_sso_account(
         user_id: str, platform: str, external_id: str, email: str
     ) -> dict[str, str];
+
     def unlink_sso_account(user_id: str, platform: str) -> dict[str, str];
     def get_sso_accounts(user_id: str) -> list[dict[str, str]];
     def get_user_by_sso(platform: str, external_id: str) -> dict[str, str] | None;
-
     # Override validate_token to use JWT
     def validate_token(token: str) -> str | None;
-
     # User role and admin management
     def get_user_role(user_id: str) -> str | None;
     def set_user_role(user_id: str, role: str) -> dict[str, str];

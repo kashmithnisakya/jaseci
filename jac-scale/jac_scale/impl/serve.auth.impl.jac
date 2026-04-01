@@ -12,11 +12,9 @@ import from jac_scale.config_loader { get_scale_config }
 import from jac_scale.enums { IdentityType }
 
 
-
 # ============================================================================
 # Entry point — registers all auth endpoints
 # ============================================================================
-
 impl JacAPIServerAuth.register_auth_endpoints -> None {
     self.register_register_endpoint();
     self.register_login_endpoint();
@@ -29,7 +27,6 @@ impl JacAPIServerAuth.register_auth_endpoints -> None {
 # ============================================================================
 # Register (identity-based)
 # ============================================================================
-
 impl JacAPIServerAuth.register_register_endpoint -> None {
     async def register_handler(request: Request) -> TransportResponse {
         try {
@@ -65,14 +62,18 @@ impl JacAPIServerAuth.register_register_endpoint -> None {
             if identity.get('type') not in valid_types {
                 return TransportResponse.fail(
                     code='VALIDATION_ERROR',
-                    message=f"Invalid identity type: {identity.get('type')}. Must be one of: {valid_types}",
+                    message=f"Invalid identity type: {identity.get(
+                        'type'
+                    )}. Must be one of: {valid_types}",
                     meta=Meta(extra={'http_status': 400})
                 );
             }
             if not identity.get('value') {
                 return TransportResponse.fail(
                     code='VALIDATION_ERROR',
-                    message=f"Identity value is required for type '{identity.get('type')}'",
+                    message=f"Identity value is required for type '{identity.get(
+                        'type'
+                    )}'",
                     meta=Meta(extra={'http_status': 400})
                 );
             }
@@ -128,7 +129,6 @@ impl JacAPIServerAuth.register_register_endpoint -> None {
 # ============================================================================
 # Login (identity-based)
 # ============================================================================
-
 impl JacAPIServerAuth.register_login_endpoint -> None {
     async def login_handler(request: Request) -> TransportResponse {
         try {
@@ -213,7 +213,6 @@ impl JacAPIServerAuth.register_login_endpoint -> None {
 # ============================================================================
 # Refresh Token
 # ============================================================================
-
 impl JacAPIServerAuth.register_refresh_token_endpoint -> None {
     def refresh_token_handler(token: str | None = None) -> TransportResponse {
         if not token {
@@ -265,7 +264,6 @@ impl JacAPIServerAuth.register_refresh_token_endpoint -> None {
 # ============================================================================
 # Update Password (uses JWT user_id, no username param needed)
 # ============================================================================
-
 impl JacAPIServerAuth.register_update_password_endpoint -> None {
     async def update_password_handler(
         request: Request, current_password: str, new_password: str
@@ -334,7 +332,6 @@ impl JacAPIServerAuth.register_update_password_endpoint -> None {
 # ============================================================================
 # SSO
 # ============================================================================
-
 impl JacAPIServerAuth._create_sso_callback_wrapper -> Callable[
     ...,
     (Response | TransportResponse)
@@ -440,7 +437,6 @@ impl JacAPIServerAuth.register_sso_endpoints -> None {
 # ============================================================================
 # API Key Management
 # ============================================================================
-
 impl JacAPIServerAuth.get_api_key_manager -> ApiKeyManager {
     if self._api_key_manager is None {
         self._api_key_manager = ApiKeyManager();

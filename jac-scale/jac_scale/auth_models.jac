@@ -15,13 +15,15 @@ class CredentialInput(BaseModel) {
 
 class RegisterRequest(BaseModel) {
     has identities: list[IdentityInput] = Field(
-            ..., description='User identities (at least one required)'
-        ),
+        ..., description='User identities (at least one required)'
+    ),
         credential: CredentialInput = Field(..., description='User credential');
 }
 
 class LoginRequest(BaseModel) {
-    has identity: IdentityInput = Field(..., description='User identity (username or email)'),
+    has identity: IdentityInput = Field(
+        ..., description='User identity (username or email)'
+    ),
         credential: CredentialInput = Field(..., description='User credential');
 }
 
