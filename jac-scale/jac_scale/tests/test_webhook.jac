@@ -548,9 +548,9 @@ test "webhook without mongo - normal walker accessible via walker endpoint" {
     original_mongodb_uri = os.environ.pop("MONGODB_URI", None);
     client = make_client();
     try {
-        (_, token) = client.register_user(
-            f"normal_walker_user_{uuid.uuid4().hex[:8]}", "password123"
-        );
+        walker_username = f"normal_walker_user_{uuid.uuid4().hex[:8]}";
+        client.register_user(walker_username, "password123");
+        token = client.login_user(walker_username, "password123");
 
         response = client.post(
             "/walker/NormalPayment",
@@ -633,9 +633,9 @@ test "webhook without mongo - minimal webhook with valid api key" {
     original_mongodb_uri = os.environ.pop("MONGODB_URI", None);
     client = make_client();
     try {
-        (_, token) = client.register_user(
-            f"minimal_webhook_user_{uuid.uuid4().hex[:8]}", "password123"
-        );
+        _wh_user1 = f"minimal_webhook_user_{uuid.uuid4().hex[:8]}";
+        client.register_user(_wh_user1, "password123");
+        token = client.login_user(_wh_user1, "password123");
 
         api_key_response = client.post(
             "/api-key/create",
@@ -680,9 +680,9 @@ test "webhook without mongo - payment received with fields" {
     original_mongodb_uri = os.environ.pop("MONGODB_URI", None);
     client = make_client();
     try {
-        (_, token) = client.register_user(
-            f"payment_user_{uuid.uuid4().hex[:8]}", "password123"
-        );
+        _wh_user2 = f"payment_user_{uuid.uuid4().hex[:8]}";
+        client.register_user(_wh_user2, "password123");
+        token = client.login_user(_wh_user2, "password123");
 
         api_key_response = client.post(
             "/api-key/create",
@@ -737,9 +737,9 @@ test "webhook without mongo - not accessible via walker endpoint" {
     original_mongodb_uri = os.environ.pop("MONGODB_URI", None);
     client = make_client();
     try {
-        (_, token) = client.register_user(
-            f"webhook_path_user_{uuid.uuid4().hex[:8]}", "password123"
-        );
+        _wh_user3 = f"webhook_path_user_{uuid.uuid4().hex[:8]}";
+        client.register_user(_wh_user3, "password123");
+        token = client.login_user(_wh_user3, "password123");
 
         response = client.post(
             "/walker/PaymentReceived",
@@ -762,9 +762,9 @@ test "webhook without mongo - revoked api key" {
     original_mongodb_uri = os.environ.pop("MONGODB_URI", None);
     client = make_client();
     try {
-        (_, token) = client.register_user(
-            f"webhook_revoke_user_{uuid.uuid4().hex[:8]}", "password123"
-        );
+        _wh_user4 = f"webhook_revoke_user_{uuid.uuid4().hex[:8]}";
+        client.register_user(_wh_user4, "password123");
+        token = client.login_user(_wh_user4, "password123");
 
         api_key_response = client.post(
             "/api-key/create",
