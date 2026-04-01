@@ -39,7 +39,7 @@ impl IdentityStorage.create_user(
 
         if self.identity_taken(normalized) {
             return {
-                'error': f"{id_type.capitalize()} '{raw_value}' is already registered"
+                'error': f"{id_type.capitalize()} is already registered"
             };
         }
 

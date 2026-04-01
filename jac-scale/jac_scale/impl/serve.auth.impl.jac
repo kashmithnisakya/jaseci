@@ -147,20 +147,34 @@ impl JacAPIServerAuth.register_login_endpoint -> None {
                 meta=Meta(extra={'http_status': 400})
             );
         }
-        identity = body.get('identity', {});
-        credential = body.get('credential', {});
+        identity = body.get('identity');
+        credential = body.get('credential');
 
-        if not identity or not identity.get('value') {
+        if not identity or not isinstance(identity, dict) {
             return TransportResponse.fail(
                 code='VALIDATION_ERROR',
-                message='Identity with type and value is required',
+                message='"identity" must be an object with "type" and "value" fields',
                 meta=Meta(extra={'http_status': 400})
             );
         }
-        if not credential or not credential.get('password') {
+        if not credential or not isinstance(credential, dict) {
             return TransportResponse.fail(
                 code='VALIDATION_ERROR',
-                message='Credential with password is required',
+                message='"credential" must be an object with "type" and "password" fields',
+                meta=Meta(extra={'http_status': 400})
+            );
+        }
+        if not identity.get('value') {
+            return TransportResponse.fail(
+                code='VALIDATION_ERROR',
+                message='Identity "value" is required',
+                meta=Meta(extra={'http_status': 400})
+            );
+        }
+        if not credential.get('password') {
+            return TransportResponse.fail(
+                code='VALIDATION_ERROR',
+                message='Credential "password" is required',
                 meta=Meta(extra={'http_status': 400})
             );
         }
