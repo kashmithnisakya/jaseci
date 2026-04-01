@@ -557,6 +557,7 @@ impl JacAPIServerAdmin.admin_login(username: str, password: str) -> TransportRes
             meta=Meta(extra={'http_status': 403})
         );
     }
+    requires_reset = self.user_manager.requires_password_reset(user_id);
     token = self.user_manager.create_jwt_token(user_id);
     return TransportResponse.success(
         data={
@@ -564,7 +565,8 @@ impl JacAPIServerAdmin.admin_login(username: str, password: str) -> TransportRes
             'token': token,
             'user_id': user_id,
             'username': username,
-            'role': 'admin'
+            'role': 'admin',
+            'requires_password_reset': requires_reset
         },
         meta=Meta(extra={'http_status': 200})
     );

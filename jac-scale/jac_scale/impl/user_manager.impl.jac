@@ -557,6 +557,65 @@ impl JacScaleUserManager.is_admin(user_id: str) -> bool {
     return self.get_user_role(user_id) == 'admin';
 }
 
+"""Check if user needs to reset password (used by admin portal)."""
+impl JacScaleUserManager.requires_password_reset(user_id: str) -> bool {
+    if self._identity_storage {
+        user = self._identity_storage.get_user_by_id(user_id);
+        if not user {
+            user = self._identity_storage.find_user_by_identity(user_id);
+        }
+        return bool(user.get('requires_password_reset', False)) if user else False;
+    }
+    self._ensure_connection();
+    cursor = self._conn.execute(
+        "SELECT requires_password_reset FROM users WHERE username = ?", (user_id, )
+    );
+    row = cursor.fetchone();
+    return bool(row[0]) if row else False;
+}
+
+"""Set requires_password_reset flag (used by admin portal)."""
+impl JacScaleUserManager.set_requires_password_reset(
+    user_id: str, requires_reset: bool
+) -> dict[str, str] {
+    if self._identity_storage {
+        success = self._identity_storage.update_user_fields(
+            user_id, {'requires_password_reset': requires_reset}
+        );
+        if not success {
+            return {'error': 'User not found'};
+        }
+        return {'message': 'Password reset requirement updated', 'user_id': user_id};
+    }
+    self._ensure_connection();
+    cursor = self._conn.execute(
+        "UPDATE users SET requires_password_reset = ? WHERE username = ?",
+        (1 if requires_reset else 0, user_id)
+    );
+    self._conn.commit();
+    return {'error': 'User not found'}
+        if cursor.rowcount == 0
+        else {'message': 'Password reset requirement updated', 'user_id': user_id};
+}
+
+"""Check if password is required for user (used by admin portal)."""
+impl JacScaleUserManager.is_password_required(user_id: str) -> bool {
+    if self._identity_storage {
+        user = self._identity_storage.get_user_by_id(user_id);
+        if not user {
+            user = self._identity_storage.find_user_by_identity(user_id);
+        }
+        return True if not user else bool(user.get('is_password_required', True));
+    }
+    self._ensure_connection();
+    cursor = self._conn.execute(
+        "SELECT is_password_required FROM users WHERE username = ?", (user_id, )
+    );
+    row = cursor.fetchone();
+    if not row { return True; }
+    return bool(row[0]) if row[0] is not None else True;
+}
+
 impl JacScaleUserManager.list_all_users(
     limit: int = 100, offset: int = 0
 ) -> list[dict[str, Any]] {
@@ -623,6 +682,7 @@ impl JacScaleUserManager.bootstrap_admin_user -> dict[str, str] {
     }
     user_id = result.get('user_id', '');
     self.set_user_role(user_id, 'admin');
+    self.set_requires_password_reset(user_id, True);
 
     logger.warning(
         f"Admin user '{admin_username}' created with default password. Please change immediately!"
