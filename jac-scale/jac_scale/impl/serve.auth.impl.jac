@@ -9,7 +9,8 @@ import from jaclang.runtimelib.server { JsonValue }
 import from jaclang.cli.console { console }
 import from jac_scale.utils { extract_bearer_token }
 import from jac_scale.config_loader { get_scale_config }
-import from jac_scale.enums { IdentityType }
+import from jac_scale.auth_models { RegisterRequest, LoginRequest }
+import from pydantic { ValidationError }
 
 
 # ============================================================================
@@ -31,6 +32,13 @@ impl JacAPIServerAuth.register_register_endpoint -> None {
     async def register_handler(request: Request) -> TransportResponse {
         try {
             body = await request.json();
+            req = RegisterRequest(**body);
+        } except ValidationError as e {
+            return TransportResponse.fail(
+                code='VALIDATION_ERROR',
+                message=str(e.errors()[0].get('msg', 'Invalid request')),
+                meta=Meta(extra={'http_status': 400})
+            );
         } except Exception {
             return TransportResponse.fail(
                 code='VALIDATION_ERROR',
@@ -38,58 +46,8 @@ impl JacAPIServerAuth.register_register_endpoint -> None {
                 meta=Meta(extra={'http_status': 400})
             );
         }
-        if not isinstance(body, dict) {
-            return TransportResponse.fail(
-                code='VALIDATION_ERROR',
-                message='Request body must be a JSON object with "identities" and "credential" fields',
-                meta=Meta(extra={'http_status': 400})
-            );
-        }
-        identities = body.get('identities', []);
-        credential = body.get('credential', {});
-
-        # Validate at least one identity
-        if not identities {
-            return TransportResponse.fail(
-                code='VALIDATION_ERROR',
-                message='At least one identity is required',
-                meta=Meta(extra={'http_status': 400})
-            );
-        }
-        # Validate identity types
-        valid_types = [t.value for t in IdentityType];
-        for identity in identities {
-            if identity.get('type') not in valid_types {
-                return TransportResponse.fail(
-                    code='VALIDATION_ERROR',
-                    message=f"Invalid identity type: {identity.get(
-                        'type'
-                    )}. Must be one of: {valid_types}",
-                    meta=Meta(extra={'http_status': 400})
-                );
-            }
-            if not identity.get('value') {
-                return TransportResponse.fail(
-                    code='VALIDATION_ERROR',
-                    message=f"Identity value is required for type '{identity.get(
-                        'type'
-                    )}'",
-                    meta=Meta(extra={'http_status': 400})
-                );
-            }
-        }
-        # Validate credential
-        if (
-            not credential
-            or credential.get('type') != 'password'
-            or not credential.get('password')
-        ) {
-            return TransportResponse.fail(
-                code='VALIDATION_ERROR',
-                message='Password credential is required',
-                meta=Meta(extra={'http_status': 400})
-            );
-        }
+        identities = [i.model_dump(mode='json') for i in req.identities];
+        credential = req.credential.model_dump(mode='json');
         try {
             result = self.user_manager.create_user(identities, credential);
             if 'error' in result {
@@ -107,7 +65,7 @@ impl JacAPIServerAuth.register_register_endpoint -> None {
             console.print(f"Error in register: {e}\n{error_trace}");
             return TransportResponse.fail(
                 code='INTERNAL_ERROR',
-                message=f"Registration failed",
+                message='Registration failed',
                 meta=Meta(extra={'http_status': 500})
             );
         }
@@ -133,6 +91,13 @@ impl JacAPIServerAuth.register_login_endpoint -> None {
     async def login_handler(request: Request) -> TransportResponse {
         try {
             body = await request.json();
+            req = LoginRequest(**body);
+        } except ValidationError as e {
+            return TransportResponse.fail(
+                code='VALIDATION_ERROR',
+                message=str(e.errors()[0].get('msg', 'Invalid request')),
+                meta=Meta(extra={'http_status': 400})
+            );
         } except Exception {
             return TransportResponse.fail(
                 code='VALIDATION_ERROR',
@@ -140,47 +105,8 @@ impl JacAPIServerAuth.register_login_endpoint -> None {
                 meta=Meta(extra={'http_status': 400})
             );
         }
-        if not isinstance(body, dict) {
-            return TransportResponse.fail(
-                code='VALIDATION_ERROR',
-                message='Request body must be a JSON object with "identity" and "credential" fields',
-                meta=Meta(extra={'http_status': 400})
-            );
-        }
-        identity = body.get('identity');
-        credential = body.get('credential');
-
-        if not identity or not isinstance(identity, dict) {
-            return TransportResponse.fail(
-                code='VALIDATION_ERROR',
-                message='"identity" must be an object with "type" and "value" fields',
-                meta=Meta(extra={'http_status': 400})
-            );
-        }
-        if not credential or not isinstance(credential, dict) {
-            return TransportResponse.fail(
-                code='VALIDATION_ERROR',
-                message='"credential" must be an object with "type" and "password" fields',
-                meta=Meta(extra={'http_status': 400})
-            );
-        }
-        if not identity.get('value') {
-            return TransportResponse.fail(
-                code='VALIDATION_ERROR',
-                message='Identity "value" is required',
-                meta=Meta(extra={'http_status': 400})
-            );
-        }
-        if not credential.get('password') {
-            return TransportResponse.fail(
-                code='VALIDATION_ERROR',
-                message='Credential "password" is required',
-                meta=Meta(extra={'http_status': 400})
-            );
-        }
-
-        identifier = identity.get('value', '');
-        password = credential.get('password', '');
+        identifier = req.identity.value;
+        password = req.credential.password;
 
         result = self.user_manager.authenticate(identifier, password);
         if not result {

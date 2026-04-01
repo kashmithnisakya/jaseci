@@ -126,15 +126,6 @@ impl IdentityStorage.authenticate(
     return None;
 }
 
-"""Update user status (active, pending, disabled)."""
-impl IdentityStorage.update_user_status(user_id: str, status: str) -> bool {
-    result = self.users_col.update_one(
-        {'user_id': user_id},
-        {'$set': {'status': status, 'updated_at': datetime.now(UTC).isoformat()}}
-    );
-    return result.matched_count > 0;
-}
-
 """Set user role."""
 impl IdentityStorage.set_user_role(user_id: str, role: str) -> bool {
     result = self.users_col.update_one(
@@ -151,76 +142,6 @@ impl IdentityStorage.get_user_role(user_id: str) -> str | None {
         return None;
     }
     return user.get('role', 'user') or 'user';
-}
-
-"""Add an identity to an existing user."""
-impl IdentityStorage.add_identity(
-    user_id: str, identity: dict[str, Any]
-) -> dict[str, str] {
-    raw_value = identity.get('value', '');
-    normalized = raw_value.lower().strip();
-    id_type = identity.get('type', '');
-
-    if self.identity_taken(normalized) {
-        return {
-            'error': f"{id_type.capitalize()} '{raw_value}' is already registered"
-        };
-    }
-
-    identity_doc = {
-        'type': id_type,
-        'value_raw': raw_value,
-        'value_normalized': normalized,
-        'verified': False,
-        'is_recovery': (id_type == 'email')
-    };
-    result = self.users_col.update_one(
-        {'user_id': user_id},
-        {
-            '$push': {'identities': identity_doc},
-            '$set': {'updated_at': datetime.now(UTC).isoformat()}
-        }
-    );
-    if result.matched_count == 0 {
-        return {'error': 'User not found'};
-    }
-    return {'message': f'{id_type.capitalize()} added successfully'};
-}
-
-"""Remove an identity from a user (must keep at least one)."""
-impl IdentityStorage.remove_identity(
-    user_id: str, identity_type: str, value: str
-) -> dict[str, str] {
-    user = self.users_col.find_one({'user_id': user_id}, {'identities': 1, '_id': 0});
-    if not user {
-        return {'error': 'User not found'};
-    }
-    if len(user.get('identities', [])) <= 1 {
-        return {'error': 'Cannot remove the last identity'};
-    }
-    normalized = value.lower().strip();
-    result = self.users_col.update_one(
-        {'user_id': user_id},
-        {
-            '$pull': {
-                'identities': {'type': identity_type, 'value_normalized': normalized}
-            },
-            '$set': {'updated_at': datetime.now(UTC).isoformat()}
-        }
-    );
-    if result.modified_count == 0 {
-        return {'error': 'Identity not found'};
-    }
-    return {'message': 'Identity removed successfully'};
-}
-
-"""Get all identities for a user."""
-impl IdentityStorage.get_identities(user_id: str) -> list[dict[str, Any]] {
-    user = self.users_col.find_one({'user_id': user_id}, {'identities': 1, '_id': 0});
-    if not user {
-        return [];
-    }
-    return user.get('identities', []);
 }
 
 """Update password for a user (requires current password)."""
