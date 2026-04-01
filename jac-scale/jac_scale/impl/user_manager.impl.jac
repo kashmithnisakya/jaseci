@@ -380,7 +380,7 @@ impl JacScaleUserManager.sso_callback(
         if existing {
             user_id = existing.get('user_id', '');
             # Link SSO identity if not already linked
-            self.link_sso_account(user_id, platform, external_id, email);
+            self.link_sso_account(user_id, platform, external_id);
             token = self.create_jwt_token(user_id);
             return TransportResponse.success(
                 data={
@@ -407,7 +407,7 @@ impl JacScaleUserManager.sso_callback(
             }
             user_id = result.get('user_id', '');
             # Link SSO identity to the new user
-            self.link_sso_account(user_id, platform, external_id, email);
+            self.link_sso_account(user_id, platform, external_id);
             result['token'] = self.create_jwt_token(user_id);
             result['platform'] = platform;
             return TransportResponse.success(
@@ -427,11 +427,11 @@ impl JacScaleUserManager.sso_callback(
 # SSO Account Linking
 # ============================================================================
 impl JacScaleUserManager.link_sso_account(
-    user_id: str, platform: str, external_id: str, email: str
+    user_id: str, platform: str, external_id: str
 ) -> dict[str, str] {
     if self._identity_storage {
         return self._identity_storage.link_sso_account(
-            user_id, platform, external_id, email
+            user_id, platform, external_id
         );
     }
     # SQLite fallback
@@ -448,8 +448,8 @@ impl JacScaleUserManager.link_sso_account(
         return {'error': 'This SSO account is already linked to another user'};
     }
     self._conn.execute(
-        "INSERT INTO sso_accounts (user_id, platform, external_id, email) VALUES (?, ?, ?, ?)",
-        (user_id, platform, external_id, email)
+        "INSERT INTO sso_accounts (user_id, platform, external_id) VALUES (?, ?, ?)",
+        (user_id, platform, external_id)
     );
     self._conn.commit();
     return {

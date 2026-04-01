@@ -1,10 +1,3 @@
-"""Identity-based user storage implementation."""
-import hashlib;
-import uuid;
-import from datetime { datetime, UTC }
-import from typing { Any }
-import from jaclang.jac0core.constant { Constants as Con }
-
 """Create unique indexes for identity lookups."""
 impl IdentityStorage.ensure_indexes -> None {
     self.users_col.create_index('user_id', unique=True);
@@ -317,7 +310,7 @@ impl IdentityStorage.update_user_fields(user_id: str, fields: dict[str, Any]) ->
 
 """Link an SSO account by adding an identity with type=sso and provider field."""
 impl IdentityStorage.link_sso_account(
-    user_id: str, platform: str, external_id: str, email: str
+    user_id: str, platform: str, external_id: str
 ) -> dict[str, str] {
     # Check if this SSO external_id + provider is already linked to any user
     existing = self.users_col.find_one(

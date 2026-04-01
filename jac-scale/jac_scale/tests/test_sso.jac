@@ -707,9 +707,7 @@ test "link sso account success" {
         );
         user_manager._conn.commit();
 
-        result = user_manager.link_sso_account(
-            "user1", "google", "ext_123", "test@google.com"
-        );
+        result = user_manager.link_sso_account("user1", "google", "ext_123");
         assert result.get("message") == "SSO account linked successfully";
         assert result.get("user_id") == "user1";
 
@@ -737,16 +735,12 @@ test "link sso account duplicate" {
         );
         user_manager._conn.commit();
 
-        user_manager.link_sso_account("user1", "google", "ext_123", "test@google.com");
+        user_manager.link_sso_account("user1", "google", "ext_123");
 
-        result = user_manager.link_sso_account(
-            "user2", "google", "ext_123", "test@google.com"
-        );
+        result = user_manager.link_sso_account("user2", "google", "ext_123");
         assert "already linked to another user" in result.get("error", "");
 
-        result = user_manager.link_sso_account(
-            "user1", "google", "ext_123", "test@google.com"
-        );
+        result = user_manager.link_sso_account("user1", "google", "ext_123");
         assert "already linked to this user" in result.get("message", "");
     } finally {
         _teardown_user_manager(test_dir);
@@ -764,7 +758,7 @@ test "unlink sso account" {
         );
         user_manager._conn.commit();
 
-        user_manager.link_sso_account("user1", "google", "ext_123", "test@google.com");
+        user_manager.link_sso_account("user1", "google", "ext_123");
 
         result = user_manager.unlink_sso_account("user1", "google");
         assert result.get("message") == "SSO account unlinked successfully";
@@ -787,7 +781,7 @@ test "get user by sso" {
         );
         user_manager._conn.commit();
 
-        user_manager.link_sso_account("user1", "google", "ext_123", "test@google.com");
+        user_manager.link_sso_account("user1", "google", "ext_123");
 
         user = user_manager.get_user_by_sso("google", "ext_123");
         assert user is not None;

@@ -632,23 +632,15 @@ impl JacAPIServerAdmin.admin_list_users(
     if error {
         return error;
     }
-    raw_users = self.user_manager.list_all_users(limit, offset);
-    # Enrich with top-level username for admin UI compatibility
-    users: list = [];
-    for u in raw_users {
-        username = '';
-        for identity in u.get('identities', []) {
-            if identity.get('type') == 'username' {
-                username = identity.get('value_raw', '');
-                break;
-            }
-        }
-        if not username {
-            identities = u.get('identities', []);
-            username = identities[0].get('value_raw', '') if identities else '';
-        }
-        u['username'] = username;
-        users.append(u);
+    users = self.user_manager.list_all_users(limit, offset);
+    # Add top-level username for admin UI compatibility
+    for user in users {
+        identities = user.get('identities', []);
+        username = next(
+            (identity.get('value_raw', '') for identity in identities if identity.get('type') == 'username'),
+            identities[0].get('value_raw', '') if identities else ''
+        );
+        user['username'] = username;
     }
     return TransportResponse.success(
         data={'users': users, 'count': len(users), 'limit': limit, 'offset': offset},

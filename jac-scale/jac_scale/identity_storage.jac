@@ -7,6 +7,10 @@ are added. SSO accounts are stored as identities with type matching the
 platform (google, apple, github).
 """
 import from typing { Any }
+import hashlib;
+import uuid;
+import from datetime { datetime, UTC }
+import from jaclang.jac0core.constant { Constants as Con }
 
 obj IdentityStorage {
     has users_col: Any;
@@ -46,7 +50,7 @@ obj IdentityStorage {
     def update_user_fields(user_id: str, fields: dict[str, Any]) -> bool;
     # SSO (stored as identities with platform-specific types)
     def link_sso_account(
-        user_id: str, platform: str, external_id: str, email: str
+        user_id: str, platform: str, external_id: str
     ) -> dict[str, str];
 
     def unlink_sso_account(user_id: str, platform: str) -> dict[str, str];

@@ -65,7 +65,7 @@ obj JacScaleUserManager(UserManager) {
     async def sso_callback(request: Request, platform: str) -> TransportResponse;
     # SSO Account Linking
     def link_sso_account(
-        user_id: str, platform: str, external_id: str, email: str
+        user_id: str, platform: str, external_id: str
     ) -> dict[str, str];
 
     def unlink_sso_account(user_id: str, platform: str) -> dict[str, str];

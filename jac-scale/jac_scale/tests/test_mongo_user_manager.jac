@@ -124,9 +124,7 @@ require_password_reset = true
                 user2_id = result2["user_id"];
 
                 # Test: Link SSO account
-                link_result = um.link_sso_account(
-                    user_id, "google", "ext_123", "test@example.com"
-                );
+                link_result = um.link_sso_account(user_id, "google", "ext_123");
                 assert "message" in link_result;
                 assert "linked successfully" in link_result["message"];
 
