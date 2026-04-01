@@ -184,14 +184,18 @@ obj ScaleTestClient {
         return self._client.delete(path, headers=headers or {});
     }
 
-    """Register a user and return (username, token) tuple."""
+    """Register a user and return (user_id, message) tuple."""
     def register_user(username: str, password: str) -> tuple[str, str] {
         response = self.post(
-            "/user/register", json={"username": username, "password": password}
+            "/user/register",
+            json={
+                "identities": [{"type": "username", "value": username}],
+                "credential": {"type": "password", "password": password}
+            }
         );
         data = response.json();
         if data.get("ok") and data.get("data") {
-            return (data["data"]["username"], data["data"]["token"]);
+            return (data["data"].get("user_id", username), data["data"].get("message", ""));
         }
         raise RuntimeError(f"User registration failed: {data}");
     }
@@ -199,7 +203,11 @@ obj ScaleTestClient {
     """Login a user and return the token."""
     def login_user(username: str, password: str) -> str {
         response = self.post(
-            "/user/login", json={"username": username, "password": password}
+            "/user/login",
+            json={
+                "identity": {"type": "username", "value": username},
+                "credential": {"type": "password", "password": password}
+            }
         );
         data = response.json();
         if data.get("ok") and data.get("data") and "token" in data["data"] {
