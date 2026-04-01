@@ -109,6 +109,8 @@ obj JacAPIServerCore {
     def _register_client_error_endpoint -> None;
     # HMR support
     def enable_hmr(hot_reloader: Any) -> None;
+    def _register_endpoints -> None;
+    def _refresh_dev_endpoints -> None;
     def _setup_scheduler -> None;
     # Metrics endpoint wrapper for admin-only access
     def _create_admin_metrics_handler(
@@ -147,12 +149,6 @@ obj JacAPIServerEndpoints {
     def get_ws_manager -> WebSocketConnectionManager;
     def create_websocket_handler(walker_name: str) -> Callable;
     def register_websocket_endpoints -> None;
-    # Dynamic HMR endpoints
-    def register_dynamic_walker_endpoint -> None;
-    def register_dynamic_function_endpoint -> None;
-    def register_dynamic_introspection_endpoints -> None;
-    def register_dynamic_webhook_endpoint -> None;
-    def register_dynamic_websocket_endpoint -> None;
 }
 
 """Scheduler job management REST API endpoints."""
