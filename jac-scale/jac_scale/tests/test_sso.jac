@@ -791,7 +791,7 @@ test "get user by sso" {
 
         user = user_manager.get_user_by_sso("google", "ext_123");
         assert user is not None;
-        assert user["email"] == "user1";
+        assert user["user_id"] == "user1";
         assert user["token"] == "token_val";
         assert user["root_id"] == "root_val";
 

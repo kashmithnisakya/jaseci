@@ -1,12 +1,9 @@
 """Identity-based user storage implementation."""
 import hashlib;
 import uuid;
-import logging;
 import from datetime { datetime, UTC }
 import from typing { Any }
 import from jaclang.jac0core.constant { Constants as Con }
-
-glob logger = logging.getLogger(__name__);
 
 """Create unique indexes for identity lookups."""
 impl IdentityStorage.ensure_indexes -> None {
@@ -87,9 +84,7 @@ impl IdentityStorage.get_user_by_id(user_id: str) -> dict[str, Any] | None {
 
 """Check if a user exists by user_id."""
 impl IdentityStorage.user_exists_by_id(user_id: str) -> bool {
-    exists = self.users_col.count_documents({'user_id': user_id}, limit=1) > 0;
-    logger.info(f"user_exists_by_id({user_id}): {exists}");
-    return exists;
+    return self.users_col.count_documents({'user_id': user_id}, limit=1) > 0;
 }
 
 """Delete a user by user_id."""
@@ -286,11 +281,7 @@ impl IdentityStorage.list_all_users(
         limit
     );
 
-    users: list[dict[str, Any]] = [];
-    for doc in cursor {
-        users.append(doc);
-    }
-    return users;
+    return list(cursor);
 }
 
 """Get root_id for a user."""
@@ -328,9 +319,9 @@ impl IdentityStorage.update_user_fields(user_id: str, fields: dict[str, Any]) ->
 impl IdentityStorage.link_sso_account(
     user_id: str, platform: str, external_id: str, email: str
 ) -> dict[str, str] {
-    # Check if this SSO provider is already linked to any user
+    # Check if this SSO external_id + provider is already linked to any user
     existing = self.users_col.find_one(
-        {'identities': {'$elemMatch': {'type': 'sso', 'provider': platform}}},
+        {'identities': {'$elemMatch': {'type': 'sso', 'provider': platform, 'external_id': external_id}}},
         {'user_id': 1, '_id': 0}
     );
     if existing {
@@ -343,6 +334,7 @@ impl IdentityStorage.link_sso_account(
     identity_doc = {
         'type': 'sso',
         'provider': platform,
+        'external_id': external_id,
         'verified': True,
         'linked_at': now
     };
@@ -391,6 +383,7 @@ impl IdentityStorage.get_sso_accounts(user_id: str) -> list[dict[str, str]] {
             accounts.append(
                 {
                     'platform': identity.get('provider', ''),
+                    'external_id': identity.get('external_id', ''),
                     'linked_at': identity.get('linked_at', '')
                 }
             );
@@ -399,13 +392,13 @@ impl IdentityStorage.get_sso_accounts(user_id: str) -> list[dict[str, str]] {
     return accounts;
 }
 
-"""Find a user by SSO provider."""
+"""Find a user by SSO provider and external_id."""
 impl IdentityStorage.get_user_by_sso(
     platform: str, external_id: str
 ) -> dict[str, Any] | None {
     user = self.users_col.find_one(
         {
-            'identities': {'$elemMatch': {'type': 'sso', 'provider': platform}},
+            'identities': {'$elemMatch': {'type': 'sso', 'provider': platform, 'external_id': external_id}},
             'status': {'$ne': 'disabled'}
         },
         {'_id': 0, 'credentials': 0}

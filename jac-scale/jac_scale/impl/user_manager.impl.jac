@@ -508,7 +508,7 @@ impl JacScaleUserManager.get_user_by_sso(
         (platform, external_id)
     );
     row = cursor.fetchone();
-    return {'email': row[0], 'token': row[1], 'root_id': row[2]} if row else None;
+    return {'user_id': row[0], 'token': row[1], 'root_id': row[2]} if row else None;
 }
 
 # ============================================================================
@@ -713,7 +713,9 @@ impl JacScaleUserManager.create_user_as_admin(
     user_id = result.get('user_id', '');
 
     if self._identity_storage {
-        self._identity_storage.update_user_fields(user_id, {'role': role});
+        self._identity_storage.update_user_fields(
+            user_id, {'role': role, 'requires_password_reset': requires_password_reset}
+        );
     } else {
         self._ensure_connection();
         self._conn.execute(
