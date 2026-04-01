@@ -139,10 +139,14 @@ impl JacScaleUserManager.find_user_by_identity(value: str) -> dict[str, Any] | N
     return self.get_user(value);
 }
 
-"""Check if a user exists by user_id."""
+"""Check if a user exists by user_id or identity value."""
 impl JacScaleUserManager.user_exists(user_id: str) -> bool {
     if self._identity_storage {
-        return self._identity_storage.user_exists_by_id(user_id);
+        if self._identity_storage.user_exists_by_id(user_id) {
+            return True;
+        }
+        # Fallback: check by identity value (handles __guest__, __system__, etc.)
+        return self._identity_storage.find_user_by_identity(user_id) is not None;
     }
     return super.user_exists(user_id);
 }
@@ -155,10 +159,20 @@ impl JacScaleUserManager.get_user(user_id: str) -> dict[str, Any] | None {
     return super.get_user(user_id);
 }
 
-"""Get root_id by user_id."""
+"""Get root_id by user_id or identity value (for guest/system user fallback)."""
 impl JacScaleUserManager.get_root_id(user_id: str) -> str | None {
     if self._identity_storage {
-        return self._identity_storage.get_root_id(user_id);
+        # Try by user_id first
+        result = self._identity_storage.get_root_id(user_id);
+        if result {
+            return result;
+        }
+        # Fallback: look up by identity value (handles __guest__, __system__, etc.)
+        user = self._identity_storage.find_user_by_identity(user_id);
+        if user {
+            return user.get('root_id');
+        }
+        return None;
     }
     return super.get_root_id(user_id);
 }

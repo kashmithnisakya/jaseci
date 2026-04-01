@@ -78,6 +78,7 @@ def register_user(base_url: str, username: str, password: str = "password123") -
         },
         timeout=2
     );
+    assert login_res.status_code == 200 , f"Login failed: {login_res.status_code} - {login_res.text}";
     login_data = cast(dict[str, Any], extract_transport_response_data(login_res.json()));
     return login_data["token"];
 }
@@ -89,7 +90,7 @@ def post_request(base_url: str, path: str, payload: dict, token: str) -> dict[st
         headers={"Authorization": f"Bearer {token}"},
         timeout=2
     );
-    assert res.status_code == 200;
+    assert res.status_code == 200 , f"POST {path} failed: {res.status_code} - {res.text}";
     return cast(dict[str, Any], extract_transport_response_data(res.json()));
 }
 

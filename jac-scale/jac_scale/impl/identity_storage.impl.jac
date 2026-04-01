@@ -10,6 +10,7 @@ glob logger = logging.getLogger(__name__);
 
 """Create unique indexes for identity lookups."""
 impl IdentityStorage.ensure_indexes -> None {
+    self.users_col.create_index('user_id', unique=True);
     self.users_col.create_index('identities.value_normalized', unique=True, sparse=True);
     self.users_col.create_index('status');
 }
@@ -86,7 +87,9 @@ impl IdentityStorage.get_user_by_id(user_id: str) -> dict[str, Any] | None {
 
 """Check if a user exists by user_id."""
 impl IdentityStorage.user_exists_by_id(user_id: str) -> bool {
-    return self.users_col.count_documents({'user_id': user_id}, limit=1) > 0;
+    exists = self.users_col.count_documents({'user_id': user_id}, limit=1) > 0;
+    logger.info(f"user_exists_by_id({user_id}): {exists}");
+    return exists;
 }
 
 """Delete a user by user_id."""
