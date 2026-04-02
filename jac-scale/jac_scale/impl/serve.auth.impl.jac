@@ -1,18 +1,3 @@
-"""Auth endpoint implementations: register, login, token refresh, update password, SSO, API keys."""
-import logging;
-import traceback;
-import from urllib.parse { quote }
-import from fastapi { Request }
-import from fastapi.responses { RedirectResponse }
-import from jaclang.runtimelib.transport { TransportResponse, Meta }
-import from jaclang.runtimelib.server { JsonValue }
-import from jaclang.cli.console { console }
-import from jac_scale.utils { extract_bearer_token }
-import from jac_scale.config_loader { get_scale_config }
-import from jac_scale.auth_models { RegisterRequest, LoginRequest }
-import from pydantic { ValidationError }
-
-
 # ============================================================================
 # Entry point — registers all auth endpoints
 # ============================================================================
