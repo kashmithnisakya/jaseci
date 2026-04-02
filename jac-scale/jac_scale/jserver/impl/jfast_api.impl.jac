@@ -686,7 +686,9 @@ impl JFastApiServer._create_fastapi_route(
     self: JFastApiServer, method: HTTPMethod, endpoint: JEndPoint
 ) -> None {
     endpoint_func = self._create_endpoint_function(
-        endpoint.callback, (endpoint.parameters or []), [],
+        endpoint.callback,
+        (endpoint.parameters or []),
+        [],
         request_model=endpoint.request_model
     );
     route_kwargs: dict[(str, Any)] = {
