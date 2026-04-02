@@ -8,6 +8,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **Identity-based auth system**: Replaced flat username/password user model with a flexible identity + credential architecture. Users can register with multiple identities (username, email) and credentials (password), stored as arrays in MongoDB. Login accepts any identity type. SSO accounts are stored as identities (`type: sso`, `provider: google`) within the user document instead of a separate `sso_accounts` collection.
 - **JWT user_id claim**: JWT tokens now use `user_id` (UUID) instead of `username` as the primary claim, enabling identity changes without token invalidation.
 - 1 small refactor/change.
+- 2 small refactors/changes.
 
 ## jac-scale 0.2.11 (Latest Release)
 
