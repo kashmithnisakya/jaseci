@@ -14,25 +14,9 @@ impl JacAPIServerAuth.register_auth_endpoints -> None {
 # Register (identity-based)
 # ============================================================================
 impl JacAPIServerAuth.register_register_endpoint -> None {
-    async def register_handler(request: Request) -> TransportResponse {
-        try {
-            body = await request.json();
-            req = RegisterRequest(**body);
-        } except ValidationError as e {
-            return TransportResponse.fail(
-                code='VALIDATION_ERROR',
-                message=str(e.errors()[0].get('msg', 'Invalid request')),
-                meta=Meta(extra={'http_status': 400})
-            );
-        } except Exception {
-            return TransportResponse.fail(
-                code='VALIDATION_ERROR',
-                message='Request body must be valid JSON',
-                meta=Meta(extra={'http_status': 400})
-            );
-        }
-        identities = [i.model_dump(mode='json') for i in req.identities];
-        credential = req.credential.model_dump(mode='json');
+    def register_handler(body_data: RegisterRequest) -> TransportResponse {
+        identities = [i.model_dump(mode='json') for i in body_data.identities];
+        credential = body_data.credential.model_dump(mode='json');
         try {
             result = self.user_manager.create_user(identities, credential);
             if 'error' in result {
@@ -60,7 +44,7 @@ impl JacAPIServerAuth.register_register_endpoint -> None {
             method=HTTPMethod.POST,
             path='/user/register',
             callback=register_handler,
-            parameters=[],
+            request_model=RegisterRequest,
             response_model=None,
             tags=['User APIs'],
             summary='Register user',
@@ -73,25 +57,9 @@ impl JacAPIServerAuth.register_register_endpoint -> None {
 # Login (identity-based)
 # ============================================================================
 impl JacAPIServerAuth.register_login_endpoint -> None {
-    async def login_handler(request: Request) -> TransportResponse {
-        try {
-            body = await request.json();
-            req = LoginRequest(**body);
-        } except ValidationError as e {
-            return TransportResponse.fail(
-                code='VALIDATION_ERROR',
-                message=str(e.errors()[0].get('msg', 'Invalid request')),
-                meta=Meta(extra={'http_status': 400})
-            );
-        } except Exception {
-            return TransportResponse.fail(
-                code='VALIDATION_ERROR',
-                message='Request body must be valid JSON',
-                meta=Meta(extra={'http_status': 400})
-            );
-        }
-        identifier = req.identity.value;
-        password = req.credential.password;
+    def login_handler(body_data: LoginRequest) -> TransportResponse {
+        identifier = body_data.identity.value;
+        password = body_data.credential.password;
 
         result = self.user_manager.authenticate(identifier, password);
         if not result {
@@ -112,7 +80,7 @@ impl JacAPIServerAuth.register_login_endpoint -> None {
             method=HTTPMethod.POST,
             path='/user/login',
             callback=login_handler,
-            parameters=[],
+            request_model=LoginRequest,
             response_model=None,
             tags=['User APIs'],
             summary='User login',
