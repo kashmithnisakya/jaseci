@@ -670,11 +670,12 @@ impl JacAPIServerAdmin.admin_get_user(
             meta=Meta(extra={'http_status': 404})
         );
     }
+    user_id = user.get('user_id', username);
     # Get additional user info
-    role = self.user_manager.get_user_role(username);
-    requires_reset = self.user_manager.requires_password_reset(username);
-    is_pwd_required = self.user_manager.is_password_required(username);
-    sso_accounts = self.user_manager.get_sso_accounts(username);
+    role = self.user_manager.get_user_role(user_id);
+    requires_reset = self.user_manager.requires_password_reset(user_id);
+    is_pwd_required = self.user_manager.is_password_required(user_id);
+    sso_accounts = self.user_manager.get_sso_accounts(user_id);
     return TransportResponse.success(
         data={
             'username': username,
@@ -737,9 +738,10 @@ impl JacAPIServerAdmin.admin_update_user(
             meta=Meta(extra={'http_status': 404})
         );
     }
+    user_id = user.get('user_id', username);
     updates = [];
     if role is not None {
-        result = self.user_manager.set_user_role(username, role);
+        result = self.user_manager.set_user_role(user_id, role);
         if 'error' in result {
             return TransportResponse.fail(
                 code='UPDATE_FAILED',
@@ -751,7 +753,7 @@ impl JacAPIServerAdmin.admin_update_user(
     }
     if requires_password_reset is not None {
         result = self.user_manager.set_requires_password_reset(
-            username, requires_password_reset
+            user_id, requires_password_reset
         );
         if 'error' in result {
             return TransportResponse.fail(
@@ -783,7 +785,9 @@ impl JacAPIServerAdmin.admin_delete_user(
     if error {
         return error;
     }
-    result = self.user_manager.delete_user(username);
+    user = self.user_manager.get_user(username);
+    user_id = user.get('user_id', username) if user else username;
+    result = self.user_manager.delete_user(user_id);
     if 'error' in result {
         return TransportResponse.fail(
             code='DELETE_FAILED',
@@ -846,7 +850,8 @@ impl JacAPIServerAdmin.admin_get_user_sso_accounts(
             meta=Meta(extra={'http_status': 404})
         );
     }
-    accounts = self.user_manager.get_sso_accounts(username);
+    user_id = user.get('user_id', username);
+    accounts = self.user_manager.get_sso_accounts(user_id);
     return TransportResponse.success(
         data={'username': username, 'sso_accounts': accounts},
         meta=Meta(extra={'http_status': 200})

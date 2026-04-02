@@ -24,86 +24,22 @@ impl JacScaleUserManager.postinit -> None {
         self._identity_storage = IdentityStorage(users_col=db['users']);
         self._identity_storage.ensure_indexes();
     } else {
-        self._identity_storage = None;
-        super.postinit();
-        self._init_sqlite_schema();
-    }
-}
-
-"""Initialize SQLite schema for extended fields."""
-impl JacScaleUserManager._init_sqlite_schema -> None {
-    self._ensure_connection();
-    self._conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS sso_accounts (
-            user_id TEXT NOT NULL,
-            platform TEXT NOT NULL,
-            external_id TEXT NOT NULL,
-            email TEXT,
-            linked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (platform, external_id),
-            FOREIGN KEY (user_id) REFERENCES users(username) ON DELETE CASCADE
-        )
-    """
-    );
-    self._conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_sso_accounts_user_id ON sso_accounts(user_id)"
-    );
-    cursor = self._conn.execute("PRAGMA table_info(users)");
-    cols = {row[1] for row in cursor.fetchall()};
-    if 'role' not in cols {
-        self._conn.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'");
-    }
-    if 'requires_password_reset' not in cols {
-        self._conn.execute(
-            "ALTER TABLE users ADD COLUMN requires_password_reset INTEGER DEFAULT 0"
-        );
-    }
-    if 'is_password_required' not in cols {
-        self._conn.execute(
-            "ALTER TABLE users ADD COLUMN is_password_required INTEGER DEFAULT 1"
-        );
-    }
-    if 'user_id' not in cols {
-        self._conn.execute("ALTER TABLE users ADD COLUMN user_id TEXT");
-    }
-    self._conn.commit();
-}
-
-impl JacScaleUserManager._ensure_connection -> None {
-    if self._identity_storage is None {
-        super._ensure_connection();
+        import os;
+        data_dir = os.path.join(self.base_path, '.jac', 'data');
+        os.makedirs(data_dir, exist_ok=True);
+        db_path = os.path.join(data_dir, 'users.db');
+        self._identity_storage = SqliteIdentityStorage(db_path=db_path);
     }
 }
 
 # ============================================================================
 # Identity-based User CRUD
 # ============================================================================
-"""Create a user with identity-based model. Falls back to flat model for SQLite."""
+"""Create a user with identity-based model."""
 impl JacScaleUserManager.create_user(
     identities: list[dict[str, Any]], credential: dict[str, Any]
 ) -> dict[str, Any] {
-    if self._identity_storage {
-        return self._identity_storage.create_user(identities, credential);
-    }
-    # SQLite fallback: extract username from identities, password from credential
-    username = '';
-    for identity in identities {
-        if identity.get('type') == 'username' {
-            username = identity.get('value', '');
-            break;
-        }
-    }
-    if not username {
-        username = identities[0].get('value', '') if identities else '';
-    }
-    password = credential.get('password', '');
-    result = super.create_user(username, password);
-    if 'error' not in result {
-        result['user_id'] = result.get('username', username);
-        result['message'] = 'User registered successfully';
-    }
-    return result;
+    return self._identity_storage.create_user(identities, credential);
 }
 
 """Convenience method for creating internal users (guest, system, admin)."""
@@ -120,73 +56,56 @@ impl JacScaleUserManager.create_internal_user(
 impl JacScaleUserManager.authenticate(
     identifier: str, password: str
 ) -> dict[str, Any] | None {
-    if self._identity_storage {
-        return self._identity_storage.authenticate(identifier, password);
-    }
-    # SQLite fallback
-    result = super.authenticate(identifier, password);
-    if result {
-        result['user_id'] = result.get('username', identifier);
-    }
-    return result;
+    return self._identity_storage.authenticate(identifier, password);
 }
 
 """Find a user by any identity value."""
 impl JacScaleUserManager.find_user_by_identity(value: str) -> dict[str, Any] | None {
-    if self._identity_storage {
-        return self._identity_storage.find_user_by_identity(value);
-    }
-    return self.get_user(value);
+    return self._identity_storage.find_user_by_identity(value);
 }
 
 """Check if a user exists by user_id or identity value."""
 impl JacScaleUserManager.user_exists(user_id: str) -> bool {
-    if self._identity_storage {
-        if self._identity_storage.user_exists_by_id(user_id) {
-            return True;
-        }
-        # Fallback: check by identity value (handles __guest__, __system__, etc.)
-        return self._identity_storage.find_user_by_identity(user_id) is not None;
+    if self._identity_storage.user_exists_by_id(user_id) {
+        return True;
     }
-    return super.user_exists(user_id);
+    return self._identity_storage.find_user_by_identity(user_id) is not None;
 }
 
-"""Get user by user_id."""
+"""Get user by user_id or identity value."""
 impl JacScaleUserManager.get_user(user_id: str) -> dict[str, Any] | None {
-    if self._identity_storage {
-        return self._identity_storage.get_user_by_id(user_id);
+    user = self._identity_storage.get_user_by_id(user_id);
+    if not user {
+        user = self._identity_storage.find_user_by_identity(user_id);
     }
-    return super.get_user(user_id);
+    return user;
 }
 
 """Get root_id by user_id or identity value (for guest/system user fallback)."""
 impl JacScaleUserManager.get_root_id(user_id: str) -> str | None {
-    if self._identity_storage {
-        # Try by user_id first
-        result = self._identity_storage.get_root_id(user_id);
-        if result {
-            return result;
-        }
-        # Fallback: look up by identity value (handles __guest__, __system__, etc.)
-        user = self._identity_storage.find_user_by_identity(user_id);
-        if user {
-            return user.get('root_id');
-        }
-        return None;
+    # __system__ user gets the super root (full write access to all nodes)
+    if user_id == '__system__' {
+        return Con.SUPER_ROOT_UUID;
     }
-    return super.get_root_id(user_id);
+    result = self._identity_storage.get_root_id(user_id);
+    if result {
+        return result;
+    }
+    # Fallback: look up by identity value (handles __guest__, etc.)
+    user = self._identity_storage.find_user_by_identity(user_id);
+    if user {
+        return user.get('root_id');
+    }
+    return None;
 }
 
 """Update password by user_id."""
 impl JacScaleUserManager.update_password(
     user_id: str, current_password: str, new_password: str
 ) -> dict[str, str] {
-    if self._identity_storage {
-        return self._identity_storage.update_password(
-            user_id, current_password, new_password
-        );
-    }
-    return super.update_password(user_id, current_password, new_password);
+    return self._identity_storage.update_password(
+        user_id, current_password, new_password
+    );
 }
 
 impl JacScaleUserManager.validate_token(token: str) -> str | None {
@@ -197,10 +116,7 @@ impl JacScaleUserManager.close -> None { }
 
 """Get username from user_id."""
 impl JacScaleUserManager.get_username(user_id: str) -> str | None {
-    if self._identity_storage {
-        return self._identity_storage.get_username(user_id);
-    }
-    return user_id;
+    return self._identity_storage.get_username(user_id);
 }
 
 # ============================================================================
@@ -429,99 +345,38 @@ impl JacScaleUserManager.sso_callback(
 impl JacScaleUserManager.link_sso_account(
     user_id: str, platform: str, external_id: str
 ) -> dict[str, str] {
-    if self._identity_storage {
-        return self._identity_storage.link_sso_account(user_id, platform, external_id);
-    }
-    # SQLite fallback
-    self._ensure_connection();
-    cursor = self._conn.execute(
-        "SELECT user_id FROM sso_accounts WHERE platform = ? AND external_id = ?",
-        (platform, external_id)
-    );
-    existing = cursor.fetchone();
-    if existing {
-        if existing[0] == user_id {
-            return {'message': 'SSO account already linked to this user'};
-        }
-        return {'error': 'This SSO account is already linked to another user'};
-    }
-    self._conn.execute(
-        "INSERT INTO sso_accounts (user_id, platform, external_id) VALUES (?, ?, ?)",
-        (user_id, platform, external_id)
-    );
-    self._conn.commit();
-    return {
-        'message': 'SSO account linked successfully',
-        'user_id': user_id,
-        'platform': platform
-    };
+    return self._identity_storage.link_sso_account(user_id, platform, external_id);
 }
 
 impl JacScaleUserManager.unlink_sso_account(
     user_id: str, platform: str
 ) -> dict[str, str] {
-    if self._identity_storage {
-        return self._identity_storage.unlink_sso_account(user_id, platform);
-    }
-    self._ensure_connection();
-    cursor = self._conn.execute(
-        "DELETE FROM sso_accounts WHERE user_id = ? AND platform = ?",
-        (user_id, platform)
-    );
-    self._conn.commit();
-    if cursor.rowcount == 0 {
-        return {'error': 'SSO account not found'};
-    }
-    return {
-        'message': 'SSO account unlinked successfully',
-        'user_id': user_id,
-        'platform': platform
-    };
+    return self._identity_storage.unlink_sso_account(user_id, platform);
 }
 
 impl JacScaleUserManager.get_sso_accounts(user_id: str) -> list[dict[str, str]] {
-    if self._identity_storage {
-        return self._identity_storage.get_sso_accounts(user_id);
-    }
-    self._ensure_connection();
-    cursor = self._conn.execute(
-        "SELECT platform, external_id, email, linked_at FROM sso_accounts WHERE user_id = ? ORDER BY linked_at DESC",
-        (user_id, )
-    );
-    return [
-        {'platform': r[0], 'external_id': r[1], 'email': r[2], 'linked_at': r[3]}
-        for r in cursor.fetchall()
-    ];
+    return self._identity_storage.get_sso_accounts(user_id);
 }
 
 impl JacScaleUserManager.get_user_by_sso(
     platform: str, external_id: str
 ) -> dict[str, str] | None {
-    if self._identity_storage {
-        return self._identity_storage.get_user_by_sso(platform, external_id);
-    }
-    self._ensure_connection();
-    cursor = self._conn.execute(
-        "SELECT sa.user_id, u.token, u.root_id FROM sso_accounts sa JOIN users u ON sa.user_id = u.username WHERE sa.platform = ? AND sa.external_id = ?",
-        (platform, external_id)
-    );
-    row = cursor.fetchone();
-    return {'user_id': row[0], 'token': row[1], 'root_id': row[2]} if row else None;
+    return self._identity_storage.get_user_by_sso(platform, external_id);
 }
 
 # ============================================================================
 # User Role and Admin Management
 # ============================================================================
 impl JacScaleUserManager.get_user_role(user_id: str) -> str | None {
-    if self._identity_storage {
-        return self._identity_storage.get_user_role(user_id);
+    role = self._identity_storage.get_user_role(user_id);
+    if role is None {
+        # Fallback: resolve by identity value (admin portal passes username)
+        user = self._identity_storage.find_user_by_identity(user_id);
+        if user {
+            return user.get('role', 'user');
+        }
     }
-    self._ensure_connection();
-    cursor = self._conn.execute(
-        "SELECT role FROM users WHERE username = ?", (user_id, )
-    );
-    row = cursor.fetchone();
-    return (row[0] or 'user') if row else None;
+    return role;
 }
 
 impl JacScaleUserManager.set_user_role(user_id: str, role: str) -> dict[str, str] {
@@ -529,23 +384,8 @@ impl JacScaleUserManager.set_user_role(user_id: str, role: str) -> dict[str, str
     if role not in valid_roles {
         return {'error': f"Invalid role. Must be one of: {', '.join(valid_roles)}"};
     }
-    if self._identity_storage {
-        success = self._identity_storage.set_user_role(user_id, role);
-        if not success {
-            return {'error': 'User not found'};
-        }
-        return {
-            'message': f"Role updated to '{role}'",
-            'user_id': user_id,
-            'role': role
-        };
-    }
-    self._ensure_connection();
-    cursor = self._conn.execute(
-        "UPDATE users SET role = ? WHERE username = ?", (role, user_id)
-    );
-    self._conn.commit();
-    if cursor.rowcount == 0 {
+    success = self._identity_storage.set_user_role(user_id, role);
+    if not success {
         return {'error': 'User not found'};
     }
     return {'message': f"Role updated to '{role}'", 'user_id': user_id, 'role': role};
@@ -555,106 +395,48 @@ impl JacScaleUserManager.is_admin(user_id: str) -> bool {
     return self.get_user_role(user_id) == 'admin';
 }
 
-"""Check if user needs to reset password (used by admin portal)."""
+"""Check if user needs to reset password."""
 impl JacScaleUserManager.requires_password_reset(user_id: str) -> bool {
-    if self._identity_storage {
-        user = self._identity_storage.get_user_by_id(user_id);
-        if not user {
-            user = self._identity_storage.find_user_by_identity(user_id);
-        }
-        return bool(user.get('requires_password_reset', False)) if user else False;
+    user = self._identity_storage.get_user_by_id(user_id);
+    if not user {
+        user = self._identity_storage.find_user_by_identity(user_id);
     }
-    self._ensure_connection();
-    cursor = self._conn.execute(
-        "SELECT requires_password_reset FROM users WHERE username = ?", (user_id, )
-    );
-    row = cursor.fetchone();
-    return bool(row[0]) if row else False;
+    return bool(user.get('requires_password_reset', False)) if user else False;
 }
 
-"""Set requires_password_reset flag (used by admin portal)."""
+"""Set requires_password_reset flag."""
 impl JacScaleUserManager.set_requires_password_reset(
     user_id: str, requires_reset: bool
 ) -> dict[str, str] {
-    if self._identity_storage {
-        success = self._identity_storage.update_user_fields(
-            user_id, {'requires_password_reset': requires_reset}
-        );
-        if not success {
-            return {'error': 'User not found'};
-        }
-        return {'message': 'Password reset requirement updated', 'user_id': user_id};
-    }
-    self._ensure_connection();
-    cursor = self._conn.execute(
-        "UPDATE users SET requires_password_reset = ? WHERE username = ?",
-        (1 if requires_reset else 0, user_id)
+    success = self._identity_storage.update_user_fields(
+        user_id, {'requires_password_reset': requires_reset}
     );
-    self._conn.commit();
-    return {'error': 'User not found'}
-        if cursor.rowcount == 0
-        else {'message': 'Password reset requirement updated', 'user_id': user_id};
+    if not success {
+        return {'error': 'User not found'};
+    }
+    return {'message': 'Password reset requirement updated', 'user_id': user_id};
 }
 
-"""Check if password is required for user (used by admin portal)."""
+"""Check if password is required for user."""
 impl JacScaleUserManager.is_password_required(user_id: str) -> bool {
-    if self._identity_storage {
-        user = self._identity_storage.get_user_by_id(user_id);
-        if not user {
-            user = self._identity_storage.find_user_by_identity(user_id);
-        }
-        return True if not user else bool(user.get('is_password_required', True));
+    user = self._identity_storage.get_user_by_id(user_id);
+    if not user {
+        user = self._identity_storage.find_user_by_identity(user_id);
     }
-    self._ensure_connection();
-    cursor = self._conn.execute(
-        "SELECT is_password_required FROM users WHERE username = ?", (user_id, )
-    );
-    row = cursor.fetchone();
-    if not row {
-        return True;
-    }
-    return bool(row[0]) if row[0] is not None else True;
+    return True if not user else bool(user.get('is_password_required', True));
 }
 
 impl JacScaleUserManager.list_all_users(
     limit: int = 100, offset: int = 0
 ) -> list[dict[str, Any]] {
-    if self._identity_storage {
-        return self._identity_storage.list_all_users(limit, offset);
-    }
-    self._ensure_connection();
-    cursor = self._conn.execute(
-        "SELECT username, root_id, role, requires_password_reset, is_password_required, user_id FROM users WHERE username != ? ORDER BY username LIMIT ? OFFSET ?",
-        (Con.GUEST.value, limit, offset)
-    );
-    return [
-        {
-            'username': r[0] or '',
-            'root_id': r[1] or '',
-            'role': r[2] or 'user',
-            'requires_password_reset': bool(r[3]),
-            'is_password_required': bool(r[4]) if r[4] is not None else True,
-            'user_id': r[5]
-        } for r in cursor.fetchall()
-    ];
+    return self._identity_storage.list_all_users(limit, offset);
 }
 
 impl JacScaleUserManager.delete_user(user_id: str) -> dict[str, str] {
-    if self._identity_storage {
-        success = self._identity_storage.delete_user(user_id);
-        if not success {
-            return {'error': 'User not found'};
-        }
-        return {'message': 'User deleted successfully', 'user_id': user_id};
-    }
-    self._ensure_connection();
-    cursor = self._conn.execute("DELETE FROM users WHERE username = ?", (user_id, ));
-    self._conn.commit();
-    if cursor.rowcount == 0 {
+    success = self._identity_storage.delete_user(user_id);
+    if not success {
         return {'error': 'User not found'};
     }
-    self._conn.execute("DELETE FROM sso_accounts WHERE user_id = ?", (user_id, ));
-    self._conn.commit();
     return {'message': 'User deleted successfully', 'user_id': user_id};
 }
 
@@ -710,18 +492,10 @@ impl JacScaleUserManager.create_user_as_admin(
     }
     user_id = result.get('user_id', '');
 
-    if self._identity_storage {
-        self._identity_storage.update_user_fields(
-            user_id, {'role': role, 'requires_password_reset': requires_password_reset}
-        );
-    } else {
-        self._ensure_connection();
-        self._conn.execute(
-            "UPDATE users SET role = ?, requires_password_reset = ? WHERE username = ?",
-            (role, 1 if requires_password_reset else 0, username)
-        );
-        self._conn.commit();
-    }
+    self._identity_storage.update_user_fields(
+        user_id, {'role': role, 'requires_password_reset': requires_password_reset}
+    );
+    result['username'] = username;
     result['role'] = role;
     result['requires_password_reset'] = str(requires_password_reset);
     return result;

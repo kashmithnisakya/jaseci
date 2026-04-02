@@ -696,22 +696,30 @@ test "supported platforms initialization without jac toml credentials" {
 # ============================================================================
 # SSO Account Linking Tests
 # ============================================================================
+"""Setup user manager without mocked create_user/get_user for linking tests."""
+def _setup_real_user_manager -> tuple[str, JacScaleUserManager] {
+    test_dir = mkdtemp();
+    reset_scale_config();
+    mock_config = MockScaleConfig(mock_sso_config_with_credentials());
+    with unittest.mock.patch(
+        "jac_scale.user_manager.get_scale_config", return_value=mock_config
+    ) {
+        user_manager = JacScaleUserManager(base_path=test_dir);
+    }
+    return (test_dir, user_manager);
+}
+
 """Test linking an SSO account successfully."""
 test "link sso account success" {
-    (test_dir, user_manager) = _setup_user_manager();
+    (test_dir, user_manager) = _setup_real_user_manager();
     try {
-        user_manager._ensure_connection();
-        user_manager._conn.execute(
-            "INSERT INTO users (username, password_hash, token, root_id) VALUES (?, ?, ?, ?)",
-            ("user1", "hash", "token", "root")
-        );
-        user_manager._conn.commit();
+        user1 = user_manager.create_internal_user("user1", "pass1");
+        user1_id = user1.get("user_id", "user1");
 
-        result = user_manager.link_sso_account("user1", "google", "ext_123");
+        result = user_manager.link_sso_account(user1_id, "google", "ext_123");
         assert result.get("message") == "SSO account linked successfully";
-        assert result.get("user_id") == "user1";
 
-        accounts = user_manager.get_sso_accounts("user1");
+        accounts = user_manager.get_sso_accounts(user1_id);
         assert len(accounts) == 1;
         assert accounts[0]["platform"] == "google";
         assert accounts[0]["external_id"] == "ext_123";
@@ -722,25 +730,19 @@ test "link sso account success" {
 
 """Test preventing duplicate SSO account linking."""
 test "link sso account duplicate" {
-    (test_dir, user_manager) = _setup_user_manager();
+    (test_dir, user_manager) = _setup_real_user_manager();
     try {
-        user_manager._ensure_connection();
-        user_manager._conn.execute(
-            "INSERT INTO users (username, password_hash, token, root_id) VALUES (?, ?, ?, ?)",
-            ("user1", "hash", "token", "root")
-        );
-        user_manager._conn.execute(
-            "INSERT INTO users (username, password_hash, token, root_id) VALUES (?, ?, ?, ?)",
-            ("user2", "hash", "token2", "root2")
-        );
-        user_manager._conn.commit();
+        user1 = user_manager.create_internal_user("user1", "pass1");
+        user1_id = user1.get("user_id", "user1");
+        user2 = user_manager.create_internal_user("user2", "pass2");
+        user2_id = user2.get("user_id", "user2");
 
-        user_manager.link_sso_account("user1", "google", "ext_123");
+        user_manager.link_sso_account(user1_id, "google", "ext_123");
 
-        result = user_manager.link_sso_account("user2", "google", "ext_123");
+        result = user_manager.link_sso_account(user2_id, "google", "ext_123");
         assert "already linked to another user" in result.get("error", "");
 
-        result = user_manager.link_sso_account("user1", "google", "ext_123");
+        result = user_manager.link_sso_account(user1_id, "google", "ext_123");
         assert "already linked to this user" in result.get("message", "");
     } finally {
         _teardown_user_manager(test_dir);
@@ -749,21 +751,17 @@ test "link sso account duplicate" {
 
 """Test unlinking an SSO account."""
 test "unlink sso account" {
-    (test_dir, user_manager) = _setup_user_manager();
+    (test_dir, user_manager) = _setup_real_user_manager();
     try {
-        user_manager._ensure_connection();
-        user_manager._conn.execute(
-            "INSERT INTO users (username, password_hash, token, root_id) VALUES (?, ?, ?, ?)",
-            ("user1", "hash", "token", "root")
-        );
-        user_manager._conn.commit();
+        user1 = user_manager.create_internal_user("user1", "pass1");
+        user1_id = user1.get("user_id", "user1");
 
-        user_manager.link_sso_account("user1", "google", "ext_123");
+        user_manager.link_sso_account(user1_id, "google", "ext_123");
 
-        result = user_manager.unlink_sso_account("user1", "google");
+        result = user_manager.unlink_sso_account(user1_id, "google");
         assert result.get("message") == "SSO account unlinked successfully";
 
-        accounts = user_manager.get_sso_accounts("user1");
+        accounts = user_manager.get_sso_accounts(user1_id);
         assert len(accounts) == 0;
     } finally {
         _teardown_user_manager(test_dir);
@@ -772,22 +770,16 @@ test "unlink sso account" {
 
 """Test retrieving user by SSO credentials."""
 test "get user by sso" {
-    (test_dir, user_manager) = _setup_user_manager();
+    (test_dir, user_manager) = _setup_real_user_manager();
     try {
-        user_manager._ensure_connection();
-        user_manager._conn.execute(
-            "INSERT INTO users (username, password_hash, token, root_id) VALUES (?, ?, ?, ?)",
-            ("user1", "hash", "token_val", "root_val")
-        );
-        user_manager._conn.commit();
+        user1 = user_manager.create_internal_user("user1", "pass1");
+        user1_id = user1.get("user_id", "user1");
 
-        user_manager.link_sso_account("user1", "google", "ext_123");
+        user_manager.link_sso_account(user1_id, "google", "ext_123");
 
         user = user_manager.get_user_by_sso("google", "ext_123");
         assert user is not None;
-        assert user["user_id"] == "user1";
-        assert user["token"] == "token_val";
-        assert user["root_id"] == "root_val";
+        assert user["user_id"] == user1_id;
 
         user = user_manager.get_user_by_sso("google", "nonexistent");
         assert user is None;
