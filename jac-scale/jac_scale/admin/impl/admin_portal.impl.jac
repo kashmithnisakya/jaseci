@@ -616,6 +616,8 @@ impl JacAPIServerAdmin.reset_password(
             meta=Meta(extra={'http_status': 400})
         );
     }
+    # Clear password reset requirement
+    self.user_manager.set_requires_password_reset(user_id, False);
     # Generate new token
     new_token = self.user_manager.create_jwt_token(user_id);
     return TransportResponse.success(
