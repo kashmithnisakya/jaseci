@@ -337,7 +337,6 @@ impl IdentityStorage.get_user_by_sso(
 # ============================================================================
 # SqliteIdentityStorage implementation
 # ============================================================================
-
 impl SqliteIdentityStorage.postinit -> None {
     self._conn = sqlite3.connect(self.db_path, check_same_thread=False);
     self._conn.execute("PRAGMA journal_mode=WAL");
@@ -353,7 +352,8 @@ impl SqliteIdentityStorage._get_conn -> Any {
 
 impl SqliteIdentityStorage.ensure_indexes -> None {
     conn = self._get_conn();
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS identity_users (
             user_id TEXT PRIMARY KEY,
             status TEXT DEFAULT 'active',
@@ -365,8 +365,11 @@ impl SqliteIdentityStorage.ensure_indexes -> None {
             created_at TEXT,
             updated_at TEXT
         )
-    """);
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_identity_users_status ON identity_users(status)");
+    """
+    );
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_identity_users_status ON identity_users(status)"
+    );
     conn.commit();
 }
 
@@ -389,13 +392,15 @@ impl SqliteIdentityStorage.create_user(
             return {'error': f"{id_type.capitalize()} is already registered"};
         }
         is_verified = identity.get('verified', (id_type == 'username'));
-        normalized_identities.append({
-            'type': id_type,
-            'value_raw': raw_value,
-            'value_normalized': normalized,
-            'verified': is_verified,
-            'is_recovery': (id_type == 'email')
-        });
+        normalized_identities.append(
+            {
+                'type': id_type,
+                'value_raw': raw_value,
+                'value_normalized': normalized,
+                'verified': is_verified,
+                'is_recovery': (id_type == 'email')
+            }
+        );
     }
 
     credentials: list[dict[str, Any]] = [];
@@ -411,7 +416,16 @@ impl SqliteIdentityStorage.create_user(
 
     conn.execute(
         "INSERT INTO identity_users (user_id, status, identities, credentials, root_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (user_id, 'active', json.dumps(normalized_identities), json.dumps(credentials), root_id, 'user', now, now)
+        (
+            user_id,
+            'active',
+            json.dumps(normalized_identities),
+            json.dumps(credentials),
+            root_id,
+            'user',
+            now,
+            now
+        )
     );
     conn.commit();
     return {'user_id': user_id, 'message': 'User registered successfully'};
@@ -424,13 +438,18 @@ impl SqliteIdentityStorage.get_user_by_id(user_id: str) -> dict[str, Any] | None
         (user_id, )
     );
     row = cursor.fetchone();
-    if not row { return None; }
+    if not row {
+        return None;
+    }
     return {
-        'user_id': row[0], 'status': row[1],
+        'user_id': row[0],
+        'status': row[1],
         'identities': json.loads(row[2] or '[]'),
-        'root_id': row[3] or '', 'role': row[4] or 'user',
+        'root_id': row[3] or '',
+        'role': row[4] or 'user',
         'requires_password_reset': bool(row[5]),
-        'created_at': row[6], 'updated_at': row[7]
+        'created_at': row[6],
+        'updated_at': row[7]
     };
 }
 
@@ -458,8 +477,11 @@ impl SqliteIdentityStorage.find_user_by_identity(value: str) -> dict[str, Any] |
         for identity in identities {
             if identity.get('value_normalized') == normalized {
                 return {
-                    'user_id': row[0], 'status': row[1], 'identities': identities,
-                    'root_id': row[3] or '', 'role': row[4] or 'user',
+                    'user_id': row[0],
+                    'status': row[1],
+                    'identities': identities,
+                    'root_id': row[3] or '',
+                    'role': row[4] or 'user',
                     'requires_password_reset': bool(row[5])
                 };
             }
@@ -476,15 +498,26 @@ impl SqliteIdentityStorage.authenticate(
     identifier: str, password: str
 ) -> dict[str, Any] | None {
     user = self.find_user_by_identity(identifier);
-    if user is None { return None; }
+    if user is None {
+        return None;
+    }
     conn = self._get_conn();
-    cursor = conn.execute("SELECT credentials FROM identity_users WHERE user_id = ?", (user['user_id'], ));
+    cursor = conn.execute(
+        "SELECT credentials FROM identity_users WHERE user_id = ?", (user['user_id'], )
+    );
     row = cursor.fetchone();
-    if not row { return None; }
+    if not row {
+        return None;
+    }
     password_hash = hashlib.sha256(password.encode()).hexdigest();
     for cred in json.loads(row[0] or '[]') {
-        if cred.get('type') == 'password' and cred.get('password_hash') == password_hash {
-            return {'user_id': user['user_id'], 'root_id': user['root_id'], 'role': user.get('role', 'user')};
+        if cred.get('type') == 'password'
+        and cred.get('password_hash') == password_hash {
+            return {
+                'user_id': user['user_id'],
+                'root_id': user['root_id'],
+                'role': user.get('role', 'user')
+            };
         }
     }
     return None;
@@ -492,14 +525,19 @@ impl SqliteIdentityStorage.authenticate(
 
 impl SqliteIdentityStorage.set_user_role(user_id: str, role: str) -> bool {
     conn = self._get_conn();
-    cursor = conn.execute("UPDATE identity_users SET role = ?, updated_at = ? WHERE user_id = ?", (role, datetime.now(UTC).isoformat(), user_id));
+    cursor = conn.execute(
+        "UPDATE identity_users SET role = ?, updated_at = ? WHERE user_id = ?",
+        (role, datetime.now(UTC).isoformat(), user_id)
+    );
     conn.commit();
     return cursor.rowcount > 0;
 }
 
 impl SqliteIdentityStorage.get_user_role(user_id: str) -> str | None {
     conn = self._get_conn();
-    cursor = conn.execute("SELECT role FROM identity_users WHERE user_id = ?", (user_id, ));
+    cursor = conn.execute(
+        "SELECT role FROM identity_users WHERE user_id = ?", (user_id, )
+    );
     row = cursor.fetchone();
     return (row[0] or 'user') if row else None;
 }
@@ -508,29 +546,43 @@ impl SqliteIdentityStorage.update_password(
     user_id: str, current_password: str, new_password: str
 ) -> dict[str, str] {
     conn = self._get_conn();
-    cursor = conn.execute("SELECT credentials FROM identity_users WHERE user_id = ?", (user_id, ));
+    cursor = conn.execute(
+        "SELECT credentials FROM identity_users WHERE user_id = ?", (user_id, )
+    );
     row = cursor.fetchone();
-    if not row { return {'error': 'User not found'}; }
+    if not row {
+        return {'error': 'User not found'};
+    }
     credentials = json.loads(row[0] or '[]');
     current_hash = hashlib.sha256(current_password.encode()).hexdigest();
     found = False;
     for cred in credentials {
-        if cred.get('type') == 'password' and cred.get('password_hash') == current_hash {
+        if cred.get('type') == 'password'
+        and cred.get('password_hash') == current_hash {
             found = True;
             break;
         }
     }
-    if not found { return {'error': 'Current password is incorrect'}; }
+    if not found {
+        return {'error': 'Current password is incorrect'};
+    }
     new_hash = hashlib.sha256(new_password.encode()).hexdigest();
     for cred in credentials {
-        if cred.get('type') == 'password' { cred['password_hash'] = new_hash; }
+        if cred.get('type') == 'password' {
+            cred['password_hash'] = new_hash;
+        }
     }
-    conn.execute("UPDATE identity_users SET credentials = ?, updated_at = ? WHERE user_id = ?", (json.dumps(credentials), datetime.now(UTC).isoformat(), user_id));
+    conn.execute(
+        "UPDATE identity_users SET credentials = ?, updated_at = ? WHERE user_id = ?",
+        (json.dumps(credentials), datetime.now(UTC).isoformat(), user_id)
+    );
     conn.commit();
     return {'user_id': user_id, 'message': 'Password updated successfully'};
 }
 
-impl SqliteIdentityStorage.list_all_users(limit: int = 100, offset: int = 0) -> list[dict[str, Any]] {
+impl SqliteIdentityStorage.list_all_users(
+    limit: int = 100, offset: int = 0
+) -> list[dict[str, Any]] {
     conn = self._get_conn();
     cursor = conn.execute(
         "SELECT user_id, status, identities, root_id, role, requires_password_reset, created_at FROM identity_users ORDER BY created_at DESC LIMIT ? OFFSET ?",
@@ -540,38 +592,56 @@ impl SqliteIdentityStorage.list_all_users(limit: int = 100, offset: int = 0) -> 
     for row in cursor.fetchall() {
         identities = json.loads(row[2] or '[]');
         is_guest = any(i.get('value_normalized') == Con.GUEST.value for i in identities);
-        if is_guest { continue; }
-        users.append({
-            'user_id': row[0], 'status': row[1], 'identities': identities,
-            'root_id': row[3] or '', 'role': row[4] or 'user',
-            'requires_password_reset': bool(row[5]), 'created_at': row[6]
-        });
+        if is_guest {
+            continue;
+        }
+        users.append(
+            {
+                'user_id': row[0],
+                'status': row[1],
+                'identities': identities,
+                'root_id': row[3] or '',
+                'role': row[4] or 'user',
+                'requires_password_reset': bool(row[5]),
+                'created_at': row[6]
+            }
+        );
     }
     return users;
 }
 
 impl SqliteIdentityStorage.get_root_id(user_id: str) -> str | None {
     conn = self._get_conn();
-    cursor = conn.execute("SELECT root_id FROM identity_users WHERE user_id = ?", (user_id, ));
+    cursor = conn.execute(
+        "SELECT root_id FROM identity_users WHERE user_id = ?", (user_id, )
+    );
     row = cursor.fetchone();
     return row[0] if row else None;
 }
 
 impl SqliteIdentityStorage.get_username(user_id: str) -> str | None {
     conn = self._get_conn();
-    cursor = conn.execute("SELECT identities FROM identity_users WHERE user_id = ?", (user_id, ));
+    cursor = conn.execute(
+        "SELECT identities FROM identity_users WHERE user_id = ?", (user_id, )
+    );
     row = cursor.fetchone();
     if row {
         identities = json.loads(row[0] or '[]');
         for identity in identities {
-            if identity.get('type') == 'username' { return identity.get('value_raw'); }
+            if identity.get('type') == 'username' {
+                return identity.get('value_raw');
+            }
         }
-        if identities { return identities[0].get('value_raw'); }
+        if identities {
+            return identities[0].get('value_raw');
+        }
     }
     return None;
 }
 
-impl SqliteIdentityStorage.update_user_fields(user_id: str, fields: dict[str, Any]) -> bool {
+impl SqliteIdentityStorage.update_user_fields(
+    user_id: str, fields: dict[str, Any]
+) -> bool {
     conn = self._get_conn();
     set_parts: list[str] = [];
     values: list[Any] = [];
@@ -582,69 +652,138 @@ impl SqliteIdentityStorage.update_user_fields(user_id: str, fields: dict[str, An
     set_parts.append("updated_at = ?");
     values.append(datetime.now(UTC).isoformat());
     values.append(user_id);
-    cursor = conn.execute(f"UPDATE identity_users SET {', '.join(set_parts)} WHERE user_id = ?", tuple(values));
+    cursor = conn.execute(
+        f"UPDATE identity_users SET {', '.join(set_parts)} WHERE user_id = ?",
+        tuple(values)
+    );
     conn.commit();
     return cursor.rowcount > 0;
 }
 
-impl SqliteIdentityStorage.link_sso_account(user_id: str, platform: str, external_id: str) -> dict[str, str] {
+impl SqliteIdentityStorage.link_sso_account(
+    user_id: str, platform: str, external_id: str
+) -> dict[str, str] {
     conn = self._get_conn();
-    cursor = conn.execute("SELECT identities FROM identity_users WHERE user_id = ?", (user_id, ));
+    cursor = conn.execute(
+        "SELECT identities FROM identity_users WHERE user_id = ?", (user_id, )
+    );
     row = cursor.fetchone();
-    if not row { return {'error': 'User not found'}; }
+    if not row {
+        return {'error': 'User not found'};
+    }
     identities = json.loads(row[0] or '[]');
     # Check if already linked
     all_cursor = conn.execute("SELECT user_id, identities FROM identity_users");
     for r in all_cursor.fetchall() {
         for identity in json.loads(r[1] or '[]') {
-            if identity.get('type') == 'sso' and identity.get('provider') == platform and identity.get('external_id') == external_id {
-                if r[0] == user_id { return {'message': 'SSO account already linked to this user'}; }
+            if identity.get('type') == 'sso'
+            and identity.get('provider') == platform
+            and identity.get('external_id') == external_id {
+                if r[0] == user_id {
+                    return {'message': 'SSO account already linked to this user'};
+                }
                 return {'error': 'This SSO account is already linked to another user'};
             }
         }
     }
     now = datetime.now(UTC).isoformat();
-    identities.append({'type': 'sso', 'provider': platform, 'external_id': external_id, 'verified': True, 'linked_at': now});
-    conn.execute("UPDATE identity_users SET identities = ?, updated_at = ? WHERE user_id = ?", (json.dumps(identities), now, user_id));
+    identities.append(
+        {
+            'type': 'sso',
+            'provider': platform,
+            'external_id': external_id,
+            'verified': True,
+            'linked_at': now
+        }
+    );
+    conn.execute(
+        "UPDATE identity_users SET identities = ?, updated_at = ? WHERE user_id = ?",
+        (json.dumps(identities), now, user_id)
+    );
     conn.commit();
-    return {'message': 'SSO account linked successfully', 'user_id': user_id, 'platform': platform};
+    return {
+        'message': 'SSO account linked successfully',
+        'user_id': user_id,
+        'platform': platform
+    };
 }
 
-impl SqliteIdentityStorage.unlink_sso_account(user_id: str, platform: str) -> dict[str, str] {
+impl SqliteIdentityStorage.unlink_sso_account(
+    user_id: str, platform: str
+) -> dict[str, str] {
     conn = self._get_conn();
-    cursor = conn.execute("SELECT identities FROM identity_users WHERE user_id = ?", (user_id, ));
+    cursor = conn.execute(
+        "SELECT identities FROM identity_users WHERE user_id = ?", (user_id, )
+    );
     row = cursor.fetchone();
-    if not row { return {'error': 'User not found'}; }
+    if not row {
+        return {'error': 'User not found'};
+    }
     identities = json.loads(row[0] or '[]');
     original_len = len(identities);
-    identities = [i for i in identities if not (i.get('type') == 'sso' and i.get('provider') == platform)];
-    if len(identities) == original_len { return {'error': 'SSO account not found'}; }
-    conn.execute("UPDATE identity_users SET identities = ?, updated_at = ? WHERE user_id = ?", (json.dumps(identities), datetime.now(UTC).isoformat(), user_id));
+    identities = [
+        i
+        for i in identities
+        if not (i.get('type') == 'sso' and i.get('provider') == platform)
+    ];
+    if len(identities) == original_len {
+        return {'error': 'SSO account not found'};
+    }
+    conn.execute(
+        "UPDATE identity_users SET identities = ?, updated_at = ? WHERE user_id = ?",
+        (json.dumps(identities), datetime.now(UTC).isoformat(), user_id)
+    );
     conn.commit();
-    return {'message': 'SSO account unlinked successfully', 'user_id': user_id, 'platform': platform};
+    return {
+        'message': 'SSO account unlinked successfully',
+        'user_id': user_id,
+        'platform': platform
+    };
 }
 
 impl SqliteIdentityStorage.get_sso_accounts(user_id: str) -> list[dict[str, str]] {
     conn = self._get_conn();
-    cursor = conn.execute("SELECT identities FROM identity_users WHERE user_id = ?", (user_id, ));
+    cursor = conn.execute(
+        "SELECT identities FROM identity_users WHERE user_id = ?", (user_id, )
+    );
     row = cursor.fetchone();
-    if not row { return []; }
+    if not row {
+        return [];
+    }
     accounts: list[dict[str, str]] = [];
     for identity in json.loads(row[0] or '[]') {
         if identity.get('type') == 'sso' {
-            accounts.append({'platform': identity.get('provider', ''), 'external_id': identity.get('external_id', ''), 'linked_at': identity.get('linked_at', '')});
+            accounts.append(
+                {
+                    'platform': identity.get('provider', ''),
+                    'external_id': identity.get('external_id', ''),
+                    'linked_at': identity.get('linked_at', '')
+                }
+            );
         }
     }
     return accounts;
 }
 
-impl SqliteIdentityStorage.get_user_by_sso(platform: str, external_id: str) -> dict[str, Any] | None {
+impl SqliteIdentityStorage.get_user_by_sso(
+    platform: str, external_id: str
+) -> dict[str, Any] | None {
     conn = self._get_conn();
-    cursor = conn.execute("SELECT user_id, status, identities, root_id, role FROM identity_users WHERE status != 'disabled'");
+    cursor = conn.execute(
+        "SELECT user_id, status, identities, root_id, role FROM identity_users WHERE status != 'disabled'"
+    );
     for row in cursor.fetchall() {
         for identity in json.loads(row[2] or '[]') {
-            if identity.get('type') == 'sso' and identity.get('provider') == platform and identity.get('external_id') == external_id {
-                return {'user_id': row[0], 'status': row[1], 'identities': json.loads(row[2] or '[]'), 'root_id': row[3] or '', 'role': row[4] or 'user'};
+            if identity.get('type') == 'sso'
+            and identity.get('provider') == platform
+            and identity.get('external_id') == external_id {
+                return {
+                    'user_id': row[0],
+                    'status': row[1],
+                    'identities': json.loads(row[2] or '[]'),
+                    'root_id': row[3] or '',
+                    'role': row[4] or 'user'
+                };
             }
         }
     }

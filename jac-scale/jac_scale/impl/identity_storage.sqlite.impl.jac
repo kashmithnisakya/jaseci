@@ -17,7 +17,8 @@ impl SqliteIdentityStorage._get_conn -> Any {
 """Create schema."""
 impl SqliteIdentityStorage.ensure_indexes -> None {
     conn = self._get_conn();
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS identity_users (
             user_id TEXT PRIMARY KEY,
             status TEXT DEFAULT 'active',
@@ -29,8 +30,11 @@ impl SqliteIdentityStorage.ensure_indexes -> None {
             created_at TEXT,
             updated_at TEXT
         )
-    """);
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_identity_users_status ON identity_users(status)");
+    """
+    );
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_identity_users_status ON identity_users(status)"
+    );
     conn.commit();
 }
 
@@ -57,13 +61,15 @@ impl SqliteIdentityStorage.create_user(
         }
 
         is_verified = identity.get('verified', (id_type == 'username'));
-        normalized_identities.append({
-            'type': id_type,
-            'value_raw': raw_value,
-            'value_normalized': normalized,
-            'verified': is_verified,
-            'is_recovery': (id_type == 'email')
-        });
+        normalized_identities.append(
+            {
+                'type': id_type,
+                'value_raw': raw_value,
+                'value_normalized': normalized,
+                'verified': is_verified,
+                'is_recovery': (id_type == 'email')
+            }
+        );
     }
 
     # Hash credential
@@ -81,7 +87,16 @@ impl SqliteIdentityStorage.create_user(
 
     conn.execute(
         "INSERT INTO identity_users (user_id, status, identities, credentials, root_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (user_id, 'active', json.dumps(normalized_identities), json.dumps(credentials), root_id, 'user', now, now)
+        (
+            user_id,
+            'active',
+            json.dumps(normalized_identities),
+            json.dumps(credentials),
+            root_id,
+            'user',
+            now,
+            now
+        )
     );
     conn.commit();
 
@@ -168,8 +183,7 @@ impl SqliteIdentityStorage.authenticate(
     # Get credentials from DB
     conn = self._get_conn();
     cursor = conn.execute(
-        "SELECT credentials FROM identity_users WHERE user_id = ?",
-        (user['user_id'], )
+        "SELECT credentials FROM identity_users WHERE user_id = ?", (user['user_id'], )
     );
     row = cursor.fetchone();
     if not row {
@@ -178,7 +192,8 @@ impl SqliteIdentityStorage.authenticate(
 
     password_hash = hashlib.sha256(password.encode()).hexdigest();
     for cred in json.loads(row[0] or '[]') {
-        if cred.get('type') == 'password' and cred.get('password_hash') == password_hash {
+        if cred.get('type') == 'password'
+        and cred.get('password_hash') == password_hash {
             return {
                 'user_id': user['user_id'],
                 'root_id': user['root_id'],
@@ -230,7 +245,8 @@ impl SqliteIdentityStorage.update_password(
     current_hash = hashlib.sha256(current_password.encode()).hexdigest();
     found = False;
     for cred in credentials {
-        if cred.get('type') == 'password' and cred.get('password_hash') == current_hash {
+        if cred.get('type') == 'password'
+        and cred.get('password_hash') == current_hash {
             found = True;
             break;
         }
@@ -276,15 +292,17 @@ impl SqliteIdentityStorage.list_all_users(
         if is_guest {
             continue;
         }
-        users.append({
-            'user_id': row[0],
-            'status': row[1],
-            'identities': identities,
-            'root_id': row[3] or '',
-            'role': row[4] or 'user',
-            'requires_password_reset': bool(row[5]),
-            'created_at': row[6]
-        });
+        users.append(
+            {
+                'user_id': row[0],
+                'status': row[1],
+                'identities': identities,
+                'root_id': row[3] or '',
+                'role': row[4] or 'user',
+                'requires_password_reset': bool(row[5]),
+                'created_at': row[6]
+            }
+        );
     }
     return users;
 }
@@ -322,7 +340,9 @@ impl SqliteIdentityStorage.get_username(user_id: str) -> str | None {
 }
 
 """Generic field updater."""
-impl SqliteIdentityStorage.update_user_fields(user_id: str, fields: dict[str, Any]) -> bool {
+impl SqliteIdentityStorage.update_user_fields(
+    user_id: str, fields: dict[str, Any]
+) -> bool {
     conn = self._get_conn();
     set_parts: list[str] = [];
     values: list[Any] = [];
@@ -359,7 +379,9 @@ impl SqliteIdentityStorage.link_sso_account(
     all_cursor = conn.execute("SELECT user_id, identities FROM identity_users");
     for r in all_cursor.fetchall() {
         for identity in json.loads(r[1] or '[]') {
-            if identity.get('type') == 'sso' and identity.get('provider') == platform and identity.get('external_id') == external_id {
+            if identity.get('type') == 'sso'
+            and identity.get('provider') == platform
+            and identity.get('external_id') == external_id {
                 if r[0] == user_id {
                     return {'message': 'SSO account already linked to this user'};
                 }
@@ -369,23 +391,31 @@ impl SqliteIdentityStorage.link_sso_account(
     }
 
     now = datetime.now(UTC).isoformat();
-    identities.append({
-        'type': 'sso',
-        'provider': platform,
-        'external_id': external_id,
-        'verified': True,
-        'linked_at': now
-    });
+    identities.append(
+        {
+            'type': 'sso',
+            'provider': platform,
+            'external_id': external_id,
+            'verified': True,
+            'linked_at': now
+        }
+    );
     conn.execute(
         "UPDATE identity_users SET identities = ?, updated_at = ? WHERE user_id = ?",
         (json.dumps(identities), now, user_id)
     );
     conn.commit();
-    return {'message': 'SSO account linked successfully', 'user_id': user_id, 'platform': platform};
+    return {
+        'message': 'SSO account linked successfully',
+        'user_id': user_id,
+        'platform': platform
+    };
 }
 
 """Unlink an SSO account."""
-impl SqliteIdentityStorage.unlink_sso_account(user_id: str, platform: str) -> dict[str, str] {
+impl SqliteIdentityStorage.unlink_sso_account(
+    user_id: str, platform: str
+) -> dict[str, str] {
     conn = self._get_conn();
     cursor = conn.execute(
         "SELECT identities FROM identity_users WHERE user_id = ?", (user_id, )
@@ -396,7 +426,11 @@ impl SqliteIdentityStorage.unlink_sso_account(user_id: str, platform: str) -> di
     }
     identities = json.loads(row[0] or '[]');
     original_len = len(identities);
-    identities = [i for i in identities if not (i.get('type') == 'sso' and i.get('provider') == platform)];
+    identities = [
+        i
+        for i in identities
+        if not (i.get('type') == 'sso' and i.get('provider') == platform)
+    ];
     if len(identities) == original_len {
         return {'error': 'SSO account not found'};
     }
@@ -405,7 +439,11 @@ impl SqliteIdentityStorage.unlink_sso_account(user_id: str, platform: str) -> di
         (json.dumps(identities), datetime.now(UTC).isoformat(), user_id)
     );
     conn.commit();
-    return {'message': 'SSO account unlinked successfully', 'user_id': user_id, 'platform': platform};
+    return {
+        'message': 'SSO account unlinked successfully',
+        'user_id': user_id,
+        'platform': platform
+    };
 }
 
 """Get all SSO identities for a user."""
@@ -421,11 +459,13 @@ impl SqliteIdentityStorage.get_sso_accounts(user_id: str) -> list[dict[str, str]
     accounts: list[dict[str, str]] = [];
     for identity in json.loads(row[0] or '[]') {
         if identity.get('type') == 'sso' {
-            accounts.append({
-                'platform': identity.get('provider', ''),
-                'external_id': identity.get('external_id', ''),
-                'linked_at': identity.get('linked_at', '')
-            });
+            accounts.append(
+                {
+                    'platform': identity.get('provider', ''),
+                    'external_id': identity.get('external_id', ''),
+                    'linked_at': identity.get('linked_at', '')
+                }
+            );
         }
     }
     return accounts;
@@ -441,7 +481,9 @@ impl SqliteIdentityStorage.get_user_by_sso(
     );
     for row in cursor.fetchall() {
         for identity in json.loads(row[2] or '[]') {
-            if identity.get('type') == 'sso' and identity.get('provider') == platform and identity.get('external_id') == external_id {
+            if identity.get('type') == 'sso'
+            and identity.get('provider') == platform
+            and identity.get('external_id') == external_id {
                 return {
                     'user_id': row[0],
                     'status': row[1],

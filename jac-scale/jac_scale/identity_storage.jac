@@ -72,6 +72,7 @@ obj SqliteIdentityStorage {
     def create_user(
         identities: list[dict[str, Any]], credential: dict[str, Any]
     ) -> dict[str, Any];
+
     def get_user_by_id(user_id: str) -> dict[str, Any] | None;
     def user_exists_by_id(user_id: str) -> bool;
     def delete_user(user_id: str) -> bool;
@@ -83,6 +84,7 @@ obj SqliteIdentityStorage {
     def update_password(
         user_id: str, current_password: str, new_password: str
     ) -> dict[str, str];
+
     def list_all_users(limit: int = 100, offset: int = 0) -> list[dict[str, Any]];
     def get_root_id(user_id: str) -> str | None;
     def get_username(user_id: str) -> str | None;
@@ -90,6 +92,7 @@ obj SqliteIdentityStorage {
     def link_sso_account(
         user_id: str, platform: str, external_id: str
     ) -> dict[str, str];
+
     def unlink_sso_account(user_id: str, platform: str) -> dict[str, str];
     def get_sso_accounts(user_id: str) -> list[dict[str, str]];
     def get_user_by_sso(platform: str, external_id: str) -> dict[str, Any] | None;
