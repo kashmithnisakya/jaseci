@@ -885,7 +885,6 @@ impl TypeEvaluator._get_special_form_type(
     is_special_form = (
         isinstance(symbol_type, types.ClassType)
         and self.prefetch.callable_class
-        and isinstance(self.prefetch.callable_class, types.ClassType)
         and symbol_type.shared == self.prefetch.callable_class.shared
     );
 
@@ -976,8 +975,7 @@ impl TypeEvaluator.create_self_type(
     if not isinstance(symbol_type, types.ClassType) {
         return None;
     }
-    if not self.prefetch.callable_class
-    or not isinstance(self.prefetch.callable_class, types.ClassType) {
+    if not self.prefetch.callable_class {
         return None;
     }
     # Check if it's a _SpecialForm
@@ -1060,7 +1058,7 @@ impl TypeEvaluator._create_special_builtin_type(
         mro=[],
         is_builtin_class=True
     );
-    special_type = types.ClassType(shared=shared);
+    special_type = types.ClassType(shared=shared, flags=base_class.flags);
     # Compute MRO: [SpecialType, BaseClass, ...]
     special_type.shared.mro = [special_type] + base_class.shared.mro;
     return special_type;
@@ -1209,7 +1207,7 @@ impl TypeEvaluator.validate_typevar_variance(func: uni.Ability) -> None {
     }
 
     # Helper to check variance - only direct TypeVar, not in unions for params
-    def check_expr(expr: uni.Expr, is_return: bool) -> None {
+    def check_expr(expr: uni.Expr, is_return: bool) {
         if isinstance(expr, uni.Name) {
             resolved = self.get_type_of_expression(expr);
             if isinstance(resolved, types.TypeVarType)
