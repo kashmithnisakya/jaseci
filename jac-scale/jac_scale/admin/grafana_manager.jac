@@ -9,6 +9,11 @@ import json;
 import from typing { Any }
 import from jac_scale.config_loader { get_scale_config }
 import from jac_scale.db { Db, get_mongo_client }
+import base64;
+import datetime;
+import from urllib.request { Request as HttpRequest, urlopen }
+import from urllib.error { URLError, HTTPError }
+import from jac_scale.utils { generate_random_password }
 
 glob _grafana_manager: (GrafanaManager | None) = None,
      logger = logging.getLogger(__name__);
@@ -25,7 +30,6 @@ obj GrafanaManager {
         _in_memory_store: dict[str, Any] = {},
         _initialized: bool = False;
 
-    def postinit -> None;
     static def instance -> GrafanaManager;
     def setup(
         admin_password: str,

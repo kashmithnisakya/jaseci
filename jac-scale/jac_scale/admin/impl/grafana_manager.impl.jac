@@ -1,23 +1,3 @@
-"""Grafana credential manager implementation.
-
-Uses the Grafana HTTP API to manage users and sync credentials.
-Follows the same singleton + DB persistence pattern as JacScaleScheduler.
-"""
-import json;
-import base64;
-import datetime;
-import from typing { Any }
-import from urllib.request { Request as HttpRequest, urlopen }
-import from urllib.error { URLError, HTTPError }
-import from jac_scale.config_loader { get_scale_config }
-import from jac_scale.db { Db, get_mongo_client }
-import from jac_scale.utils { generate_random_password }
-
-"""Initialise instance with its own in-memory store."""
-impl GrafanaManager.postinit -> None {
-    self._in_memory_store = {};
-}
-
 """Return or create the module-level singleton GrafanaManager."""
 impl GrafanaManager.instance -> GrafanaManager {
     global _grafana_manager;
