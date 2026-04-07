@@ -7,7 +7,8 @@ impl SqliteIdentityStorage.postinit -> None {
     self._engine = create_engine(f"sqlite:///{self.db_path}", echo=False);
     metadata = MetaData();
     self._table = Table(
-        'identity_users', metadata,
+        'identity_users',
+        metadata,
         Column('user_id', String, primary_key=True),
         Column('status', String, default='active'),
         Column('identities', JSON, default=[]),
