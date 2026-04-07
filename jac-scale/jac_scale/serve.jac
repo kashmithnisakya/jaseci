@@ -44,7 +44,11 @@ import from jaclang.jac0core.constant { Constants as Con }
 import traceback;
 import from urllib.parse { quote }
 import from jac_scale.utils { extract_bearer_token }
-import from jac_scale.auth_models { RegisterRequest, LoginRequest }
+import from jac_scale.auth_models {
+    RegisterRequest,
+    LoginRequest,
+    UpdatePasswordRequest
+}
 import from pydantic { ValidationError }
 
 # Load configuration from jac.toml with env var overrides

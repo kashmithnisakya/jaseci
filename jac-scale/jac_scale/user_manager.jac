@@ -50,6 +50,7 @@ obj JacScaleUserManager(UserManager) {
     def create_internal_user(
         username: str, password: str, role: str = 'user'
     ) -> dict[str, Any];
+
     def authenticate(identifier: str, password: str) -> dict[str, Any] | None;
     def find_user_by_identity(value: str) -> dict[str, Any] | None;
     def user_exists(user_id: str) -> bool;

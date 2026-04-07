@@ -145,7 +145,7 @@ impl JacAPIServerAuth.register_refresh_token_endpoint -> None {
 # ============================================================================
 impl JacAPIServerAuth.register_update_password_endpoint -> None {
     async def update_password_handler(
-        request: Request, current_password: str, new_password: str
+        request: Request, body_data: UpdatePasswordRequest
     ) -> TransportResponse {
         authorization = request.headers.get('Authorization');
         user_id = extract_bearer_token(authorization, self.user_manager);
@@ -156,15 +156,8 @@ impl JacAPIServerAuth.register_update_password_endpoint -> None {
                 meta=Meta(extra={'http_status': 401})
             );
         }
-        if not current_password or not new_password {
-            return TransportResponse.fail(
-                code='VALIDATION_ERROR',
-                message='Current password and new password are required',
-                meta=Meta(extra={'http_status': 400})
-            );
-        }
         result = self.user_manager.update_password(
-            user_id, current_password, new_password
+            user_id, body_data.current_password, body_data.new_password
         );
         if 'error' in result {
             return TransportResponse.fail(
@@ -182,24 +175,7 @@ impl JacAPIServerAuth.register_update_password_endpoint -> None {
             method=HTTPMethod.PUT,
             path='/user/password',
             callback=update_password_handler,
-            parameters=[
-                APIParameter(
-                    name='current_password',
-                    data_type='string',
-                    required=True,
-                    default=None,
-                    description='Current password',
-                    type=ParameterType.BODY
-                ),
-                APIParameter(
-                    name='new_password',
-                    data_type='string',
-                    required=True,
-                    default=None,
-                    description='New password',
-                    type=ParameterType.BODY
-                )
-            ],
+            request_model=UpdatePasswordRequest,
             response_model=None,
             tags=['User APIs'],
             summary='Update password',
