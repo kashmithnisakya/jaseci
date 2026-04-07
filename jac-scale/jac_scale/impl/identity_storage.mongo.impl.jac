@@ -18,9 +18,7 @@ impl MongoIdentityStorage._store_user(user_doc: dict[str, Any]) -> None {
 
 """Find a user by user_id (excludes credentials)."""
 impl MongoIdentityStorage._find_by_id(user_id: str) -> dict[str, Any] | None {
-    return self.users_col.find_one(
-        {'user_id': user_id}, {'_id': 0, 'credentials': 0}
-    );
+    return self.users_col.find_one({'user_id': user_id}, {'_id': 0, 'credentials': 0});
 }
 
 """Find a user by any identity value (excludes credentials)."""
@@ -48,17 +46,13 @@ impl MongoIdentityStorage._delete_by_id(user_id: str) -> bool {
 
 """Update arbitrary fields on a user document."""
 impl MongoIdentityStorage._update_fields(user_id: str, fields: dict[str, Any]) -> bool {
-    result = self.users_col.update_one(
-        {'user_id': user_id}, {'$set': fields}
-    );
+    result = self.users_col.update_one({'user_id': user_id}, {'$set': fields});
     return result.matched_count > 0;
 }
 
 """Get the credentials array for a user."""
 impl MongoIdentityStorage._get_credentials(user_id: str) -> list[dict[str, Any]] {
-    user = self.users_col.find_one(
-        {'user_id': user_id}, {'credentials': 1, '_id': 0}
-    );
+    user = self.users_col.find_one({'user_id': user_id}, {'credentials': 1, '_id': 0});
     if not user {
         return [];
     }
@@ -71,15 +65,18 @@ impl MongoIdentityStorage._update_credentials(
 ) -> None {
     self.users_col.update_one(
         {'user_id': user_id},
-        {'$set': {'credentials': credentials, 'updated_at': datetime.now(UTC).isoformat()}}
+        {
+            '$set': {
+                'credentials': credentials,
+                'updated_at': datetime.now(UTC).isoformat()
+            }
+        }
     );
 }
 
 """Get the identities array for a user."""
 impl MongoIdentityStorage._get_identities(user_id: str) -> list[dict[str, Any]] {
-    user = self.users_col.find_one(
-        {'user_id': user_id}, {'identities': 1, '_id': 0}
-    );
+    user = self.users_col.find_one({'user_id': user_id}, {'identities': 1, '_id': 0});
     if not user {
         return [];
     }
@@ -87,7 +84,9 @@ impl MongoIdentityStorage._get_identities(user_id: str) -> list[dict[str, Any]] 
 }
 
 """Append an identity document to a user's identities array."""
-impl MongoIdentityStorage._add_identity(user_id: str, identity: dict[str, Any]) -> bool {
+impl MongoIdentityStorage._add_identity(
+    user_id: str, identity: dict[str, Any]
+) -> bool {
     result = self.users_col.update_one(
         {'user_id': user_id},
         {

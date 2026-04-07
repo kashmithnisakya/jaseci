@@ -308,28 +308,27 @@ impl JacScaleUserManager.sso_callback(
                 },
                 meta=Meta(extra={'http_status': 200})
             );
-        } else {
-            # Create user with verified email identity (provider already verified it)
-            result = self.create_user(
-                identities=[{'type': 'email', 'value': email, 'verified': True}],
-                credential={'type': 'password', 'password': generate_random_password()}
-            );
-            if 'error' in result {
-                return TransportResponse.fail(
-                    code='USER_CREATION_FAILED',
-                    message=result.get('error', 'User creation failed'),
-                    meta=Meta(extra={'http_status': 400})
-                );
-            }
-            user_id = result.get('user_id', '');
-            # Link SSO identity to the new user
-            self.link_sso_account(user_id, platform, external_id);
-            result['token'] = self.create_jwt_token(user_id);
-            result['platform'] = platform;
-            return TransportResponse.success(
-                data=result, meta=Meta(extra={'http_status': 201})
+        }
+        # Create user with verified email identity (provider already verified it)
+        result = self.create_user(
+            identities=[{'type': 'email', 'value': email, 'verified': True}],
+            credential={'type': 'password', 'password': generate_random_password()}
+        );
+        if 'error' in result {
+            return TransportResponse.fail(
+                code='USER_CREATION_FAILED',
+                message=result.get('error', 'User creation failed'),
+                meta=Meta(extra={'http_status': 400})
             );
         }
+        user_id = result.get('user_id', '');
+        # Link SSO identity to the new user
+        self.link_sso_account(user_id, platform, external_id);
+        result['token'] = self.create_jwt_token(user_id);
+        result['platform'] = platform;
+        return TransportResponse.success(
+            data=result, meta=Meta(extra={'http_status': 201})
+        );
     } except Exception as e {
         return TransportResponse.fail(
             code='AUTHENTICATION_FAILED',

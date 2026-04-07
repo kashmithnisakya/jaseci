@@ -6,11 +6,15 @@ MongoIdentityStorage and SqliteIdentityStorage.
 """
 
 impl IdentityStorage.hash_password(password: str) -> str {
-    return str(bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'));
+    return str(
+        bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    );
 }
 
 impl IdentityStorage.verify_password(password: str, password_hash: str) -> bool {
-    return bool(bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8')));
+    return bool(
+        bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
+    );
 }
 
 """Create a new user with identities and a credential."""
@@ -149,7 +153,9 @@ impl IdentityStorage.update_password(
     found = False;
     for cred in credentials {
         if cred.get('type') == 'password'
-        and IdentityStorage.verify_password(current_password, cred.get('password_hash', '')) {
+        and IdentityStorage.verify_password(
+            current_password, cred.get('password_hash', '')
+        ) {
             found = True;
             break;
         }

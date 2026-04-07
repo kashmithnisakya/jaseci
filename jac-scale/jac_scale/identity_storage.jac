@@ -15,8 +15,21 @@ import from typing { Any }
 import bcrypt;
 import uuid;
 import json;
-import sqlite3;
 import from datetime { datetime, UTC }
+import from sqlalchemy {
+    create_engine,
+    MetaData,
+    Table,
+    Column,
+    String,
+    Integer,
+    JSON,
+    select,
+    delete,
+    update,
+    insert,
+    text
+}
 import from jaclang.jac0core.constant { Constants as Con }
 
 """Abstract base for identity storage backends.
@@ -28,7 +41,6 @@ obj IdentityStorage {
     # Password helpers
     static def hash_password(password: str) -> str;
     static def verify_password(password: str, password_hash: str) -> bool;
-
     # Abstract storage primitives (subclasses must implement)
     def _store_user(user_doc: dict[str, Any]) -> None;
     def _find_by_id(user_id: str) -> dict[str, Any] | None;
@@ -45,7 +57,6 @@ obj IdentityStorage {
     def _find_user_by_sso(platform: str, external_id: str) -> dict[str, Any] | None;
     def _list_user_docs(limit: int, offset: int) -> list[dict[str, Any]];
     def ensure_indexes -> None;
-
     # Concrete public methods (shared business logic)
     def create_user(
         identities: list[dict[str, Any]], credential: dict[str, Any]
@@ -100,11 +111,10 @@ obj MongoIdentityStorage(IdentityStorage) {
 """SQLite-backed identity storage."""
 obj SqliteIdentityStorage(IdentityStorage) {
     has db_path: str,
-        _conn: (Any | None) = None;
+        _engine: Any by postinit,
+        _table: Any by postinit;
 
     def postinit -> None;
-    def _get_conn -> Any;
-
     def _store_user(user_doc: dict[str, Any]) -> None;
     def _find_by_id(user_id: str) -> dict[str, Any] | None;
     def _find_by_identity(value: str) -> dict[str, Any] | None;
