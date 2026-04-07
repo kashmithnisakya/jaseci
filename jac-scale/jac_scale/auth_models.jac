@@ -28,6 +28,8 @@ class LoginRequest(BaseModel) {
 }
 
 class UpdatePasswordRequest(BaseModel) {
-    has current_password: str = Field(..., min_length=1, description='Current password'),
+    has current_password: str = Field(
+        ..., min_length=1, description='Current password'
+    ),
         new_password: str = Field(..., min_length=1, description='New password');
 }
