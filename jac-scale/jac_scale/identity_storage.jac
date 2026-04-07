@@ -18,6 +18,14 @@ import sqlite3;
 import from datetime { datetime, UTC }
 import from jaclang.jac0core.constant { Constants as Con }
 
+def hash_password(password: str) -> str {
+    return str(bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'));
+}
+
+def verify_password(password: str, password_hash: str) -> bool {
+    return bool(bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8')));
+}
+
 obj IdentityStorage {
     has users_col: Any;
 

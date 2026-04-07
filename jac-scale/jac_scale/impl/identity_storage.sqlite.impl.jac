@@ -75,7 +75,7 @@ impl SqliteIdentityStorage.create_user(
     # Hash credential
     credentials: list[dict[str, Any]] = [];
     if credential.get('type') == 'password' {
-        password_hash = bcrypt.hashpw(credential['password'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8');
+        password_hash = hash_password(credential['password']);
         credentials.append({'type': 'password', 'password_hash': password_hash});
     }
 
@@ -192,7 +192,7 @@ impl SqliteIdentityStorage.authenticate(
 
     for cred in json.loads(row[0] or '[]') {
         if cred.get('type') == 'password'
-        and bcrypt.checkpw(password.encode('utf-8'), cred.get('password_hash', '').encode('utf-8')) {
+        and verify_password(password, cred.get('password_hash', '')) {
             return {
                 'user_id': user['user_id'],
                 'root_id': user['root_id'],
@@ -244,7 +244,7 @@ impl SqliteIdentityStorage.update_password(
     found = False;
     for cred in credentials {
         if cred.get('type') == 'password'
-        and bcrypt.checkpw(current_password.encode('utf-8'), cred.get('password_hash', '').encode('utf-8')) {
+        and verify_password(current_password, cred.get('password_hash', '')) {
             found = True;
             break;
         }
@@ -253,7 +253,7 @@ impl SqliteIdentityStorage.update_password(
         return {'error': 'Current password is incorrect'};
     }
 
-    new_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8');
+    new_hash = hash_password(new_password);
     for cred in credentials {
         if cred.get('type') == 'password' {
             cred['password_hash'] = new_hash;
