@@ -24,11 +24,12 @@ import from sqlalchemy {
     String,
     Integer,
     JSON,
+    ForeignKey,
+    PrimaryKeyConstraint,
     select,
     delete,
     update,
-    insert,
-    text
+    insert
 }
 import from jaclang.jac0core.constant { Constants as Con }
 
@@ -109,7 +110,9 @@ obj MongoIdentityStorage(IdentityStorage) {
 obj SqliteIdentityStorage(IdentityStorage) {
     has db_path: str,
         _engine: Any by postinit,
-        _table: Any by postinit;
+        _table: Any by postinit,
+        _identity_lookups: Any by postinit,
+        _sso_lookups: Any by postinit;
 
     def postinit -> None;
     # Abstract primitives

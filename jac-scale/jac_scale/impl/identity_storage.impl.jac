@@ -156,7 +156,7 @@ impl IdentityStorage.update_password(
 """Get root_id for a user."""
 impl IdentityStorage.get_root_id(user_id: str) -> str | None {
     user = self.get_user_by_id(user_id);
-    return user.get('root_id') if user else None;
+    return (user.get('root_id') or None) if user else None;
 }
 
 """Get the username identity for a user (first username type, or first identity value)."""
@@ -212,8 +212,11 @@ impl IdentityStorage.link_sso_account(
 
 """Unlink an SSO account by removing the sso identity matching the provider."""
 impl IdentityStorage.unlink_sso_account(user_id: str, platform: str) -> dict[str, str] {
+    if not self.user_exists_by_id(user_id) {
+        return {'error': 'User not found'};
+    }
     if not self._remove_sso_identity(user_id, platform) {
-        return {'error': 'SSO account not found'};
+        return {'error': 'SSO account not found for this provider'};
     }
     return {
         'message': 'SSO account unlinked successfully',

@@ -109,7 +109,7 @@ impl MongoIdentityStorage._remove_sso_identity(user_id: str, platform: str) -> b
     return result.modified_count > 0;
 }
 
-"""Find which user (if any) has a specific SSO link. Returns {user_id} or None."""
+"""Find which active user (if any) has a specific SSO link. Returns {user_id} or None."""
 impl MongoIdentityStorage._find_sso_link(
     platform: str, external_id: str
 ) -> dict[str, Any] | None {
@@ -121,7 +121,8 @@ impl MongoIdentityStorage._find_sso_link(
                     'provider': platform,
                     'external_id': external_id
                 }
-            }
+            },
+            'status': {'$ne': 'disabled'}
         },
         {'user_id': 1, '_id': 0}
     );
