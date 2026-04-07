@@ -9,7 +9,7 @@ import from jac_scale.enums { Platforms, Operations }
 import from jac_scale.utils { generate_random_password }
 import from jac_scale.config_loader { get_scale_config }
 import from jac_scale.sso.provider { SSOProvider, SSOUserInfo }
-import from jac_scale.identity_storage { IdentityStorage, SqliteIdentityStorage }
+import from jac_scale.identity_storage { IdentityStorage, MongoIdentityStorage, SqliteIdentityStorage }
 import from jaclang.jac0core.constant { Constants as Con }
 
 # Load configuration
@@ -30,7 +30,7 @@ enum UserRole {
 obj JacScaleUserManager(UserManager) {
     has SUPPORTED_PLATFORMS: dict = {},
         ADMIN_USER_ID: str = '00000000-0000-0000-0000-000000000000',
-        _identity_storage: Any by postinit;
+        _identity_storage: IdentityStorage by postinit;
 
     def postinit -> None;
     # Identity-based user CRUD
