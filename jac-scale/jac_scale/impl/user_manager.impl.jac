@@ -44,12 +44,16 @@ impl JacScaleUserManager.create_user(
 
 """Convenience method for creating internal users (guest, system, admin)."""
 impl JacScaleUserManager.create_internal_user(
-    username: str, password: str
+    username: str, password: str, role: str = 'user'
 ) -> dict[str, Any] {
-    return self.create_user(
+    result = self.create_user(
         identities=[{'type': 'username', 'value': username}],
         credential={'type': 'password', 'password': password}
     );
+    if result.get('user_id') and role != 'user' {
+        self.set_user_role(result['user_id'], role);
+    }
+    return result;
 }
 
 """Authenticate by any identity value (username or email) + password."""
@@ -432,10 +436,18 @@ impl JacScaleUserManager.list_all_users(
 }
 
 impl JacScaleUserManager.delete_user(user_id: str) -> dict[str, str] {
-    success = self._identity_storage.delete_user(user_id);
-    if not success {
+    role = self._identity_storage.get_user_role(user_id);
+    if role is None {
         return {'error': 'User not found'};
     }
+    if is_protected_role(role) {
+        return {'error': f"Cannot delete account with role: {role}"};
+    }
+    username = self._identity_storage.get_username(user_id);
+    if username == Con.GUEST.value {
+        return {'error': 'Cannot delete guest account'};
+    }
+    self._identity_storage.delete_user(user_id);
     return {'message': 'User deleted successfully', 'user_id': user_id};
 }
 

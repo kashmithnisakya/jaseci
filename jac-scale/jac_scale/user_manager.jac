@@ -28,7 +28,12 @@ glob _jwt_config = get_scale_config().get_jwt_config(),
 """User roles enum."""
 enum UserRole {
     ADMIN = 'admin',
+    SYSTEM = 'system',
     USER = 'user',
+}
+
+def is_protected_role(role: str) -> bool {
+    return role in {UserRole.ADMIN.value,UserRole.SYSTEM.value};
 }
 
 obj JacScaleUserManager(UserManager) {
@@ -42,7 +47,9 @@ obj JacScaleUserManager(UserManager) {
         identities: list[dict[str, Any]], credential: dict[str, Any]
     ) -> dict[str, Any];
 
-    def create_internal_user(username: str, password: str) -> dict[str, Any];
+    def create_internal_user(
+        username: str, password: str, role: str = 'user'
+    ) -> dict[str, Any];
     def authenticate(identifier: str, password: str) -> dict[str, Any] | None;
     def find_user_by_identity(value: str) -> dict[str, Any] | None;
     def user_exists(user_id: str) -> bool;

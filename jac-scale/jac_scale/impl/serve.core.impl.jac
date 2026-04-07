@@ -494,7 +494,9 @@ impl JacAPIServerCore._setup_scheduler -> None {
     scheduler_config = get_scale_config().get_scheduler_config();
     system_password = scheduler_config.get('system_user_password', 'system_secret');
     try {
-        self.user_manager.create_internal_user('__system__', system_password);
+        self.user_manager.create_internal_user(
+            '__system__', system_password, role='system'
+        );
     } except Exception { }
     system_token = self.user_manager.create_jwt_token('__system__');
 
