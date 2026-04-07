@@ -17,12 +17,12 @@ impl MongoIdentityStorage._store_user(user_doc: dict[str, Any]) -> None {
 }
 
 """Find a user by user_id (excludes credentials)."""
-impl MongoIdentityStorage._find_by_id(user_id: str) -> dict[str, Any] | None {
+impl MongoIdentityStorage.get_user_by_id(user_id: str) -> dict[str, Any] | None {
     return self.users_col.find_one({'user_id': user_id}, {'_id': 0, 'credentials': 0});
 }
 
 """Find a user by any identity value (excludes credentials)."""
-impl MongoIdentityStorage._find_by_identity(value: str) -> dict[str, Any] | None {
+impl MongoIdentityStorage.find_user_by_identity(value: str) -> dict[str, Any] | None {
     normalized = value.lower().strip();
     return self.users_col.find_one(
         {'identities.value_normalized': normalized, 'status': {'$ne': 'disabled'}},
@@ -31,7 +31,7 @@ impl MongoIdentityStorage._find_by_identity(value: str) -> dict[str, Any] | None
 }
 
 """Check if any identity with this normalized value exists."""
-impl MongoIdentityStorage._identity_exists(value: str) -> bool {
+impl MongoIdentityStorage.identity_taken(value: str) -> bool {
     normalized = value.lower().strip();
     return self.users_col.count_documents(
         {'identities.value_normalized': normalized}, limit=1
@@ -39,7 +39,7 @@ impl MongoIdentityStorage._identity_exists(value: str) -> bool {
 }
 
 """Delete a user by user_id."""
-impl MongoIdentityStorage._delete_by_id(user_id: str) -> bool {
+impl MongoIdentityStorage.delete_user(user_id: str) -> bool {
     result = self.users_col.delete_one({'user_id': user_id});
     return result.deleted_count > 0;
 }
@@ -128,7 +128,7 @@ impl MongoIdentityStorage._find_sso_link(
 }
 
 """Find a user by SSO provider and external_id (excludes credentials, skips disabled)."""
-impl MongoIdentityStorage._find_user_by_sso(
+impl MongoIdentityStorage.get_user_by_sso(
     platform: str, external_id: str
 ) -> dict[str, Any] | None {
     return self.users_col.find_one(
@@ -147,7 +147,7 @@ impl MongoIdentityStorage._find_user_by_sso(
 }
 
 """List user documents excluding guest users and credentials."""
-impl MongoIdentityStorage._list_user_docs(
+impl MongoIdentityStorage.list_all_users(
     limit: int, offset: int
 ) -> list[dict[str, Any]] {
     cursor = self.users_col.find(

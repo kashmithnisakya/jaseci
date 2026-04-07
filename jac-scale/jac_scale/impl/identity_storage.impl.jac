@@ -1,8 +1,7 @@
 """Shared business logic for IdentityStorage base class.
 
-All concrete public methods live here. They delegate storage operations
-to abstract primitives (_store_user, _find_by_id, etc.) implemented by
-MongoIdentityStorage and SqliteIdentityStorage.
+Concrete public methods live here. They call abstract primitives and
+public methods implemented by MongoIdentityStorage / SqliteIdentityStorage.
 """
 
 impl IdentityStorage.hash_password(password: str) -> str {
@@ -34,7 +33,7 @@ impl IdentityStorage.create_user(
         raw_value = identity.get('value', '');
         normalized = raw_value.lower().strip();
 
-        if self._identity_exists(normalized) {
+        if self.identity_taken(normalized) {
             return {'error': f"{id_type.capitalize()} is already registered"};
         }
 
@@ -78,36 +77,16 @@ impl IdentityStorage.create_user(
     return {'user_id': user_id, 'message': 'User registered successfully'};
 }
 
-"""Find a user by user_id."""
-impl IdentityStorage.get_user_by_id(user_id: str) -> dict[str, Any] | None {
-    return self._find_by_id(user_id);
-}
-
 """Check if a user exists by user_id."""
 impl IdentityStorage.user_exists_by_id(user_id: str) -> bool {
-    return self._find_by_id(user_id) is not None;
-}
-
-"""Delete a user by user_id."""
-impl IdentityStorage.delete_user(user_id: str) -> bool {
-    return self._delete_by_id(user_id);
-}
-
-"""Find a user by any identity value (username, email, etc.)."""
-impl IdentityStorage.find_user_by_identity(value: str) -> dict[str, Any] | None {
-    return self._find_by_identity(value);
-}
-
-"""Check if any identity with this normalized value is already taken."""
-impl IdentityStorage.identity_taken(value: str) -> bool {
-    return self._identity_exists(value);
+    return self.get_user_by_id(user_id) is not None;
 }
 
 """Authenticate by looking up any identity matching identifier, then checking password."""
 impl IdentityStorage.authenticate(
     identifier: str, password: str
 ) -> dict[str, Any] | None {
-    user = self._find_by_identity(identifier);
+    user = self.find_user_by_identity(identifier);
     if user is None {
         return None;
     }
@@ -134,7 +113,7 @@ impl IdentityStorage.set_user_role(user_id: str, role: str) -> bool {
 
 """Get user role by user_id."""
 impl IdentityStorage.get_user_role(user_id: str) -> str | None {
-    user = self._find_by_id(user_id);
+    user = self.get_user_by_id(user_id);
     if not user {
         return None;
     }
@@ -174,16 +153,9 @@ impl IdentityStorage.update_password(
     return {'user_id': user_id, 'message': 'Password updated successfully'};
 }
 
-"""List all users (excluding internal guest user), without credentials."""
-impl IdentityStorage.list_all_users(
-    limit: int = 100, offset: int = 0
-) -> list[dict[str, Any]] {
-    return self._list_user_docs(limit, offset);
-}
-
 """Get root_id for a user."""
 impl IdentityStorage.get_root_id(user_id: str) -> str | None {
-    user = self._find_by_id(user_id);
+    user = self.get_user_by_id(user_id);
     return user.get('root_id') if user else None;
 }
 
@@ -211,7 +183,6 @@ impl IdentityStorage.update_user_fields(user_id: str, fields: dict[str, Any]) ->
 impl IdentityStorage.link_sso_account(
     user_id: str, platform: str, external_id: str
 ) -> dict[str, str] {
-    # Check if this SSO external_id + provider is already linked to any user
     existing = self._find_sso_link(platform, external_id);
     if existing {
         if existing.get('user_id') == user_id {
@@ -267,11 +238,4 @@ impl IdentityStorage.get_sso_accounts(user_id: str) -> list[dict[str, str]] {
         }
     }
     return accounts;
-}
-
-"""Find a user by SSO provider and external_id."""
-impl IdentityStorage.get_user_by_sso(
-    platform: str, external_id: str
-) -> dict[str, Any] | None {
-    return self._find_user_by_sso(platform, external_id);
 }

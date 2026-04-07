@@ -43,10 +43,6 @@ obj IdentityStorage {
     static def verify_password(password: str, password_hash: str) -> bool;
     # Abstract storage primitives (subclasses must implement)
     def _store_user(user_doc: dict[str, Any]) -> None;
-    def _find_by_id(user_id: str) -> dict[str, Any] | None;
-    def _find_by_identity(value: str) -> dict[str, Any] | None;
-    def _identity_exists(value: str) -> bool;
-    def _delete_by_id(user_id: str) -> bool;
     def _update_fields(user_id: str, fields: dict[str, Any]) -> bool;
     def _get_credentials(user_id: str) -> list[dict[str, Any]];
     def _update_credentials(user_id: str, credentials: list[dict[str, Any]]) -> None;
@@ -54,19 +50,20 @@ obj IdentityStorage {
     def _add_identity(user_id: str, identity: dict[str, Any]) -> bool;
     def _remove_sso_identity(user_id: str, platform: str) -> bool;
     def _find_sso_link(platform: str, external_id: str) -> dict[str, Any] | None;
-    def _find_user_by_sso(platform: str, external_id: str) -> dict[str, Any] | None;
-    def _list_user_docs(limit: int, offset: int) -> list[dict[str, Any]];
     def ensure_indexes -> None;
-    # Concrete public methods (shared business logic)
+    # Public methods implemented by subclasses directly
+    def get_user_by_id(user_id: str) -> dict[str, Any] | None;
+    def delete_user(user_id: str) -> bool;
+    def find_user_by_identity(value: str) -> dict[str, Any] | None;
+    def identity_taken(value: str) -> bool;
+    def list_all_users(limit: int = 100, offset: int = 0) -> list[dict[str, Any]];
+    def get_user_by_sso(platform: str, external_id: str) -> dict[str, Any] | None;
+    # Concrete public methods (shared business logic in base impl)
     def create_user(
         identities: list[dict[str, Any]], credential: dict[str, Any]
     ) -> dict[str, Any];
 
-    def get_user_by_id(user_id: str) -> dict[str, Any] | None;
     def user_exists_by_id(user_id: str) -> bool;
-    def delete_user(user_id: str) -> bool;
-    def find_user_by_identity(value: str) -> dict[str, Any] | None;
-    def identity_taken(value: str) -> bool;
     def authenticate(identifier: str, password: str) -> dict[str, Any] | None;
     def set_user_role(user_id: str, role: str) -> bool;
     def get_user_role(user_id: str) -> str | None;
@@ -74,7 +71,6 @@ obj IdentityStorage {
         user_id: str, current_password: str, new_password: str
     ) -> dict[str, str];
 
-    def list_all_users(limit: int = 100, offset: int = 0) -> list[dict[str, Any]];
     def get_root_id(user_id: str) -> str | None;
     def get_username(user_id: str) -> str | None;
     def update_user_fields(user_id: str, fields: dict[str, Any]) -> bool;
@@ -84,18 +80,14 @@ obj IdentityStorage {
 
     def unlink_sso_account(user_id: str, platform: str) -> dict[str, str];
     def get_sso_accounts(user_id: str) -> list[dict[str, str]];
-    def get_user_by_sso(platform: str, external_id: str) -> dict[str, Any] | None;
 }
 
 """MongoDB-backed identity storage."""
 obj MongoIdentityStorage(IdentityStorage) {
     has users_col: Any;
 
+    # Abstract primitives
     def _store_user(user_doc: dict[str, Any]) -> None;
-    def _find_by_id(user_id: str) -> dict[str, Any] | None;
-    def _find_by_identity(value: str) -> dict[str, Any] | None;
-    def _identity_exists(value: str) -> bool;
-    def _delete_by_id(user_id: str) -> bool;
     def _update_fields(user_id: str, fields: dict[str, Any]) -> bool;
     def _get_credentials(user_id: str) -> list[dict[str, Any]];
     def _update_credentials(user_id: str, credentials: list[dict[str, Any]]) -> None;
@@ -103,9 +95,14 @@ obj MongoIdentityStorage(IdentityStorage) {
     def _add_identity(user_id: str, identity: dict[str, Any]) -> bool;
     def _remove_sso_identity(user_id: str, platform: str) -> bool;
     def _find_sso_link(platform: str, external_id: str) -> dict[str, Any] | None;
-    def _find_user_by_sso(platform: str, external_id: str) -> dict[str, Any] | None;
-    def _list_user_docs(limit: int, offset: int) -> list[dict[str, Any]];
     def ensure_indexes -> None;
+    # Public methods implemented directly
+    def get_user_by_id(user_id: str) -> dict[str, Any] | None;
+    def delete_user(user_id: str) -> bool;
+    def find_user_by_identity(value: str) -> dict[str, Any] | None;
+    def identity_taken(value: str) -> bool;
+    def list_all_users(limit: int = 100, offset: int = 0) -> list[dict[str, Any]];
+    def get_user_by_sso(platform: str, external_id: str) -> dict[str, Any] | None;
 }
 
 """SQLite-backed identity storage."""
@@ -115,11 +112,8 @@ obj SqliteIdentityStorage(IdentityStorage) {
         _table: Any by postinit;
 
     def postinit -> None;
+    # Abstract primitives
     def _store_user(user_doc: dict[str, Any]) -> None;
-    def _find_by_id(user_id: str) -> dict[str, Any] | None;
-    def _find_by_identity(value: str) -> dict[str, Any] | None;
-    def _identity_exists(value: str) -> bool;
-    def _delete_by_id(user_id: str) -> bool;
     def _update_fields(user_id: str, fields: dict[str, Any]) -> bool;
     def _get_credentials(user_id: str) -> list[dict[str, Any]];
     def _update_credentials(user_id: str, credentials: list[dict[str, Any]]) -> None;
@@ -127,7 +121,12 @@ obj SqliteIdentityStorage(IdentityStorage) {
     def _add_identity(user_id: str, identity: dict[str, Any]) -> bool;
     def _remove_sso_identity(user_id: str, platform: str) -> bool;
     def _find_sso_link(platform: str, external_id: str) -> dict[str, Any] | None;
-    def _find_user_by_sso(platform: str, external_id: str) -> dict[str, Any] | None;
-    def _list_user_docs(limit: int, offset: int) -> list[dict[str, Any]];
     def ensure_indexes -> None;
+    # Public methods implemented directly
+    def get_user_by_id(user_id: str) -> dict[str, Any] | None;
+    def delete_user(user_id: str) -> bool;
+    def find_user_by_identity(value: str) -> dict[str, Any] | None;
+    def identity_taken(value: str) -> bool;
+    def list_all_users(limit: int = 100, offset: int = 0) -> list[dict[str, Any]];
+    def get_user_by_sso(platform: str, external_id: str) -> dict[str, Any] | None;
 }

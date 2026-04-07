@@ -49,7 +49,7 @@ impl SqliteIdentityStorage._store_user(user_doc: dict[str, Any]) -> None {
 }
 
 """Find a user by user_id (excludes credentials)."""
-impl SqliteIdentityStorage._find_by_id(user_id: str) -> dict[str, Any] | None {
+impl SqliteIdentityStorage.get_user_by_id(user_id: str) -> dict[str, Any] | None {
     t = self._table;
     with self._engine.connect() as conn {
         row = conn.execute(select(t).where(t.c.user_id == user_id)).first();
@@ -61,7 +61,7 @@ impl SqliteIdentityStorage._find_by_id(user_id: str) -> dict[str, Any] | None {
 }
 
 """Find a user by any identity value (excludes credentials)."""
-impl SqliteIdentityStorage._find_by_identity(value: str) -> dict[str, Any] | None {
+impl SqliteIdentityStorage.find_user_by_identity(value: str) -> dict[str, Any] | None {
     normalized = value.lower().strip();
     t = self._table;
     with self._engine.connect() as conn {
@@ -78,12 +78,12 @@ impl SqliteIdentityStorage._find_by_identity(value: str) -> dict[str, Any] | Non
 }
 
 """Check if any identity with this normalized value exists."""
-impl SqliteIdentityStorage._identity_exists(value: str) -> bool {
+impl SqliteIdentityStorage.identity_taken(value: str) -> bool {
     return self._find_by_identity(value) is not None;
 }
 
 """Delete a user by user_id."""
-impl SqliteIdentityStorage._delete_by_id(user_id: str) -> bool {
+impl SqliteIdentityStorage.delete_user(user_id: str) -> bool {
     t = self._table;
     with self._engine.begin() as conn {
         result = conn.execute(delete(t).where(t.c.user_id == user_id));
@@ -216,7 +216,7 @@ impl SqliteIdentityStorage._find_sso_link(
 }
 
 """Find a user by SSO provider and external_id (excludes credentials, skips disabled)."""
-impl SqliteIdentityStorage._find_user_by_sso(
+impl SqliteIdentityStorage.get_user_by_sso(
     platform: str, external_id: str
 ) -> dict[str, Any] | None {
     t = self._table;
@@ -236,7 +236,7 @@ impl SqliteIdentityStorage._find_user_by_sso(
 }
 
 """List user documents excluding guest users and credentials."""
-impl SqliteIdentityStorage._list_user_docs(
+impl SqliteIdentityStorage.list_all_users(
     limit: int, offset: int
 ) -> list[dict[str, Any]] {
     t = self._table;
