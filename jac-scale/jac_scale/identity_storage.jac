@@ -11,7 +11,7 @@ Two implementations:
 - SqliteIdentityStorage: SQLite-backed (uses db_path file path)
 """
 import from typing { Any }
-import hashlib;
+import bcrypt;
 import uuid;
 import json;
 import sqlite3;
