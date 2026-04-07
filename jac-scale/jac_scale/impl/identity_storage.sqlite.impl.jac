@@ -79,7 +79,7 @@ impl SqliteIdentityStorage.find_user_by_identity(value: str) -> dict[str, Any] |
 
 """Check if any identity with this normalized value exists."""
 impl SqliteIdentityStorage.identity_taken(value: str) -> bool {
-    return self._find_by_identity(value) is not None;
+    return self.find_user_by_identity(value) is not None;
 }
 
 """Delete a user by user_id."""
