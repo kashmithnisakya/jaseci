@@ -79,6 +79,22 @@ obj IdentityStorage {
 """MongoDB-backed identity storage."""
 obj MongoIdentityStorage(IdentityStorage) {
     has users_col: Any;
+
+    def _store_user(user_doc: dict[str, Any]) -> None;
+    def _find_by_id(user_id: str) -> dict[str, Any] | None;
+    def _find_by_identity(value: str) -> dict[str, Any] | None;
+    def _identity_exists(value: str) -> bool;
+    def _delete_by_id(user_id: str) -> bool;
+    def _update_fields(user_id: str, fields: dict[str, Any]) -> bool;
+    def _get_credentials(user_id: str) -> list[dict[str, Any]];
+    def _update_credentials(user_id: str, credentials: list[dict[str, Any]]) -> None;
+    def _get_identities(user_id: str) -> list[dict[str, Any]];
+    def _add_identity(user_id: str, identity: dict[str, Any]) -> bool;
+    def _remove_sso_identity(user_id: str, platform: str) -> bool;
+    def _find_sso_link(platform: str, external_id: str) -> dict[str, Any] | None;
+    def _find_user_by_sso(platform: str, external_id: str) -> dict[str, Any] | None;
+    def _list_user_docs(limit: int, offset: int) -> list[dict[str, Any]];
+    def ensure_indexes -> None;
 }
 
 """SQLite-backed identity storage."""
@@ -88,4 +104,20 @@ obj SqliteIdentityStorage(IdentityStorage) {
 
     def postinit -> None;
     def _get_conn -> Any;
+
+    def _store_user(user_doc: dict[str, Any]) -> None;
+    def _find_by_id(user_id: str) -> dict[str, Any] | None;
+    def _find_by_identity(value: str) -> dict[str, Any] | None;
+    def _identity_exists(value: str) -> bool;
+    def _delete_by_id(user_id: str) -> bool;
+    def _update_fields(user_id: str, fields: dict[str, Any]) -> bool;
+    def _get_credentials(user_id: str) -> list[dict[str, Any]];
+    def _update_credentials(user_id: str, credentials: list[dict[str, Any]]) -> None;
+    def _get_identities(user_id: str) -> list[dict[str, Any]];
+    def _add_identity(user_id: str, identity: dict[str, Any]) -> bool;
+    def _remove_sso_identity(user_id: str, platform: str) -> bool;
+    def _find_sso_link(platform: str, external_id: str) -> dict[str, Any] | None;
+    def _find_user_by_sso(platform: str, external_id: str) -> dict[str, Any] | None;
+    def _list_user_docs(limit: int, offset: int) -> list[dict[str, Any]];
+    def ensure_indexes -> None;
 }
