@@ -32,10 +32,6 @@ enum UserRole {
     USER = 'user',
 }
 
-def is_protected_role(role: str) -> bool {
-    return role in {UserRole.ADMIN.value,UserRole.SYSTEM.value};
-}
-
 obj JacScaleUserManager(UserManager) {
     has SUPPORTED_PLATFORMS: dict = {},
         ADMIN_USER_ID: str = '00000000-0000-0000-0000-000000000000',

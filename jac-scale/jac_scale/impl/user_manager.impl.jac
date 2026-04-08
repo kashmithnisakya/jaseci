@@ -436,16 +436,20 @@ impl JacScaleUserManager.list_all_users(
 }
 
 impl JacScaleUserManager.delete_user(user_id: str) -> dict[str, str] {
-    role = self._identity_storage.get_user_role(user_id);
-    if role is None {
+    if user_id == self.ADMIN_USER_ID {
+        return {'error': 'Cannot delete the bootstrap admin account'};
+    }
+    user = self._identity_storage.get_user_by_id(user_id);
+    if user is None {
         return {'error': 'User not found'};
     }
-    if is_protected_role(role) {
-        return {'error': f"Cannot delete account with role: {role}"};
+    if user.get('role') == UserRole.SYSTEM.value {
+        return {'error': 'Cannot delete system account'};
     }
-    username = self._identity_storage.get_username(user_id);
-    if username == Con.GUEST.value {
-        return {'error': 'Cannot delete guest account'};
+    for identity in user.get('identities', []) {
+        if identity.get('value_normalized') == Con.GUEST.value {
+            return {'error': 'Cannot delete guest account'};
+        }
     }
     self._identity_storage.delete_user(user_id);
     return {'message': 'User deleted successfully', 'user_id': user_id};
