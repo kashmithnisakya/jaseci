@@ -21,7 +21,7 @@ impl JacAPIServerAuth.register_register_endpoint -> None {
             result = self.user_manager.create_user(identities, credential);
             if 'error' in result {
                 return TransportResponse.fail(
-                    code='IDENTITY_TAKEN',
+                    code=result.get('code', 'REGISTRATION_FAILED'),
                     message=result.get('error', 'Registration failed'),
                     meta=Meta(extra={'http_status': 400})
                 );

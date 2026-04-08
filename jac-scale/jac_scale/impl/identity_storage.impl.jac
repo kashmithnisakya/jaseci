@@ -23,6 +23,25 @@ impl IdentityStorage.create_user(
     import from jaclang.jac0core.constructs { Root }
     import from jaclang { JacRuntime as Jac }
 
+    # Validate identity types: only username, email allowed; max one of each
+    type_counts: dict[str, int] = {};
+    for identity in identities {
+        id_type = identity.get('type', '');
+        if id_type not in {'username','email'} {
+            return {
+                'error': f"Invalid identity type: {id_type}. Only 'username' and 'email' are allowed",
+                'code': 'VALIDATION_ERROR'
+            };
+        }
+        type_counts[id_type] = type_counts.get(id_type, 0) + 1;
+        if type_counts[id_type] > 1 {
+            return {
+                'error': f"Duplicate identity type: {id_type}. Only one {id_type} is allowed",
+                'code': 'VALIDATION_ERROR'
+            };
+        }
+    }
+
     user_id = str(uuid.uuid4());
     now = datetime.now(UTC).isoformat();
 
@@ -34,7 +53,10 @@ impl IdentityStorage.create_user(
         normalized = raw_value.lower().strip();
 
         if self.identity_taken(normalized) {
-            return {'error': f"{id_type.capitalize()} is already registered"};
+            return {
+                'error': f"{id_type.capitalize()} is already registered",
+                'code': 'IDENTITY_TAKEN'
+            };
         }
 
         is_verified = identity.get('verified', (id_type == 'username'));
@@ -114,7 +136,6 @@ impl IdentityStorage.authenticate(
             continue;
         }
         # --- END LEGACY SHA256 MIGRATION ---
-
         if IdentityStorage.verify_password(password, pw_hash) {
             return {
                 'user_id': user_id,

@@ -221,3 +221,164 @@ require_password_reset = true
         }
     }
 }
+
+"""Test legacy user migration and progressive password rehashing."""
+test "legacy user migration and progressive rehashing" {
+    import from testcontainers.mongodb { MongoDbContainer }
+    import from pymongo { MongoClient }
+    import hashlib;
+    import tempfile;
+
+    with MongoDbContainer("mongo:7.0") as mongo {
+        mongo_uri = mongo.get_connection_url();
+        with tempfile.TemporaryDirectory() as tmpdir {
+            toml_path = os.path.join(tmpdir, "jac.toml");
+            with open(toml_path, 'w') as f {
+                f.write(
+                    "[project]\nname = \"test-migration\"\nversion = \"1.0.0\"\n"
+                    "[plugins.scale.jwt]\nsecret = \"test_secret\"\n"
+                    "[plugins.scale.sso]\nhost = \"http://localhost:8000\"\n"
+                    "[plugins.scale.admin]\nenabled = false\n"
+                );
+            }
+            # Insert old-format users directly into MongoDB
+            client = MongoClient(mongo_uri);
+            db = client['jac_db'];
+            old_password = "test_password";
+            sha256_hash = hashlib.sha256(old_password.encode()).hexdigest();
+            db.users.insert_many(
+                [
+                    {
+                        'username': 'olduser1',
+                        'password_hash': sha256_hash,
+                        'token': 'token1',
+                        'root_id': 'root1',
+                        'role': 'user',
+                        'user_id': None
+                    },
+                    {
+                        'username': 'admin@example.com',
+                        'password_hash': sha256_hash,
+                        'token': 'token2',
+                        'root_id': 'root2',
+                        'role': 'admin',
+                        'user_id': None
+                    },
+                    {
+                        'username': 'nopassword_user',
+                        'password_hash': '',
+                        'token': 'token3',
+                        'root_id': 'root3',
+                        'role': 'user',
+                        'user_id': None
+                    }
+                ]
+            );
+            # Add old-schema indexes to simulate real DB
+            db.users.create_index('username', unique=True);
+            db.users.create_index('token', unique=True, sparse=True);
+            assert db.users.count_documents({}) == 3;
+            old_mongodb_uri = os.environ.get('MONGODB_URI');
+            os.environ['MONGODB_URI'] = mongo_uri;
+            try {
+                reset_scale_config();
+                # Creating user manager triggers migration in postinit
+                um = JacScaleUserManager(base_path=tmpdir);
+
+                # --- Migration tests ---
+
+                # Verify migration ran
+                migration_record = db['_migrations'].find_one(
+                    {'name': 'legacy_user_migration'}
+                );
+                assert migration_record is not None , "Migration record should exist";
+                assert migration_record['count'] == 3 , f"Should migrate 3 users, got {migration_record[
+                    'count'
+                ]}";
+
+                # Verify docs are in new format
+                for doc in db.users.find() {
+                    assert 'identities' in doc , f"Doc {doc.get(
+                        '_id'
+                    )} missing identities";
+                    assert 'credentials' in doc , f"Doc {doc.get(
+                        '_id'
+                    )} missing credentials";
+                    assert doc.get('user_id') is not None , f"Doc {doc.get(
+                        '_id'
+                    )} has null user_id";
+                    assert doc.get('status') == 'active';
+                    # Old fields should be gone
+                    assert 'username' not in doc , f"Doc {doc.get(
+                        '_id'
+                    )} still has username field";
+                    assert 'token' not in doc , f"Doc {doc.get(
+                        '_id'
+                    )} still has token field";
+                }
+
+                # Verify email identity type detection
+                email_user = um.find_user_by_identity('admin@example.com');
+                assert email_user is not None , "Email user should be findable";
+                email_identity = email_user['identities'][0];
+                assert email_identity['type'] == 'email' , "Should detect email type";
+
+                username_user = um.find_user_by_identity('olduser1');
+                assert username_user is not None , "Username user should be findable";
+                assert username_user['identities'][0]['type'] == 'username';
+
+                # Verify roles preserved
+                assert email_user.get('role') == 'admin' , "Admin role should be preserved";
+
+                # Verify no-password user migrated
+                no_pw_user = um.find_user_by_identity('nopassword_user');
+                assert no_pw_user is not None;
+
+                # --- Progressive rehashing tests ---
+
+                # Authenticate with old SHA256 password — should work
+                auth = um.authenticate('olduser1', old_password);
+                assert auth is not None , "SHA256 login should succeed";
+                assert 'user_id' in auth;
+
+                # Verify credential was rehashed to bcrypt
+                migrated_doc = db.users.find_one({'user_id': auth['user_id']});
+                cred = migrated_doc['credentials'][0];
+                assert 'algorithm' not in cred , "algorithm tag should be removed after rehash";
+                assert cred['password_hash'].startswith('$2b$') , f"Should be bcrypt hash, got: {cred[
+                    'password_hash'
+                ][:10]}";
+
+                # Authenticate again — now uses bcrypt directly
+                auth2 = um.authenticate('olduser1', old_password);
+                assert auth2 is not None , "Bcrypt login should succeed after rehash";
+
+                # Wrong password should still fail
+                auth_fail = um.authenticate('olduser1', 'wrong_password');
+                assert auth_fail is None , "Wrong password should fail";
+
+                # --- Migration idempotency test ---
+
+                # Creating another user manager should NOT re-run migration
+                reset_scale_config();
+                um2 = JacScaleUserManager(base_path=tmpdir);
+                # Count should still be 3 from first run
+                migration_record2 = db['_migrations'].find_one(
+                    {'name': 'legacy_user_migration'}
+                );
+                assert migration_record2['count'] == 3 , "Migration should not re-run";
+
+                um.close();
+                um2.close();
+            } finally {
+                if old_mongodb_uri is not None {
+                    os.environ['MONGODB_URI'] = old_mongodb_uri;
+                } else {
+                    os.environ.pop('MONGODB_URI', None);
+                }
+                reset_scale_config();
+                client.close();
+            }
+        }
+    }
+}

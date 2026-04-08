@@ -205,15 +205,18 @@ impl MongoIdentityStorage.migrate_legacy_users -> None {
         normalized = username.lower().strip();
         old_hash = doc.get('password_hash', '');
 
-        self.users_col.replace_one({'_id': doc['_id']}, {
-            'user_id': str(uuid.uuid4()),
+        # Preserve existing user_id if set (e.g., admin has a fixed UUID)
+        existing_user_id = doc.get('user_id');
+        new_user_id = existing_user_id if existing_user_id else str(uuid.uuid4());
+
+        new_doc: dict[str, Any] = {
+            'user_id': new_user_id,
             'status': 'active',
             'identities': [{
                 'type': 'email' if is_email else 'username',
                 'value_raw': username,
                 'value_normalized': normalized,
-                'verified': True,
-                'is_recovery': is_email
+                'verified': True
             }],
             'credentials': [
                 {'type': 'password', 'password_hash': old_hash, 'algorithm': 'sha256'}
@@ -222,12 +225,21 @@ impl MongoIdentityStorage.migrate_legacy_users -> None {
             'role': doc.get('role') or 'user',
             'created_at': now,
             'updated_at': now
-        });
+        };
+
+        # Preserve admin-specific fields if present
+        if 'requires_password_reset' in doc {
+            new_doc['requires_password_reset'] = doc['requires_password_reset'];
+        }
+
+        self.users_col.replace_one({'_id': doc['_id']}, new_doc);
         migrated += 1;
     }
 
     migrations_col.insert_one(
         {'name': 'legacy_user_migration', 'completed_at': now, 'count': migrated}
     );
-    logger.info(f"Legacy user migration complete: {migrated}/{len(legacy_docs)} users migrated");
+    logger.info(
+        f"Legacy user migration complete: {migrated}/{len(legacy_docs)} users migrated"
+    );
 }
