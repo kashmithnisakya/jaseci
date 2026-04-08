@@ -14,7 +14,6 @@ Architecture:
 import from typing { Any }
 import bcrypt;
 import uuid;
-import json;
 import from datetime { datetime, UTC }
 import from sqlalchemy {
     create_engine,
@@ -35,7 +34,7 @@ import from jaclang.jac0core.constant { Constants as Con }
 
 """Abstract base for identity storage backends.
 
-Subclasses implement storage primitives (_store_user, _find_by_id, etc.).
+Subclasses implement storage primitives (_store_user, _update_fields, etc.).
 Shared business logic (create_user, authenticate, etc.) lives here.
 """
 obj IdentityStorage {

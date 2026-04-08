@@ -117,13 +117,16 @@ impl SqliteIdentityStorage.find_user_by_identity(value: str) -> dict[str, Any] |
     }
 }
 
-"""Check if any identity with this normalized value exists using indexed lookup."""
+"""Check if any active identity with this normalized value exists using indexed lookup."""
 impl SqliteIdentityStorage.identity_taken(value: str) -> bool {
     normalized = value.lower().strip();
+    t = self._table;
     lk = self._identity_lookups;
     with self._engine.connect() as conn {
         row = conn.execute(
-            select(lk.c.value_normalized).where(lk.c.value_normalized == normalized)
+            select(lk.c.value_normalized).join(t, lk.c.user_id == t.c.user_id).where(
+                lk.c.value_normalized == normalized, t.c.status != 'disabled'
+            )
         ).first();
         return row is not None;
     }

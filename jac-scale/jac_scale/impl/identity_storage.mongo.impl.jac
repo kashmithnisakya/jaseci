@@ -30,11 +30,12 @@ impl MongoIdentityStorage.find_user_by_identity(value: str) -> dict[str, Any] | 
     );
 }
 
-"""Check if any identity with this normalized value exists."""
+"""Check if any active identity with this normalized value exists."""
 impl MongoIdentityStorage.identity_taken(value: str) -> bool {
     normalized = value.lower().strip();
     return self.users_col.count_documents(
-        {'identities.value_normalized': normalized}, limit=1
+        {'identities.value_normalized': normalized, 'status': {'$ne': 'disabled'}},
+        limit=1
     ) > 0;
 }
 
