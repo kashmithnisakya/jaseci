@@ -70,25 +70,30 @@ def _row_to_dict(row: Any) -> dict[str, Any] {
 
 """Insert a user document and sync lookup tables."""
 impl SqliteIdentityStorage._store_user(user_doc: dict[str, Any]) -> None {
+    user_id = user_doc['user_id'];
+    id_rows: list[dict[str, str]] = [];
+    sso_rows: list[dict[str, str]] = [];
+    for identity in user_doc.get('identities', []) {
+        if identity.get('type') == 'sso' and identity.get('provider') {
+            sso_rows.append({
+                'provider': identity['provider'],
+                'external_id': identity.get('external_id', ''),
+                'user_id': user_id
+            });
+        } elif identity.get('value_normalized') {
+            id_rows.append({
+                'value_normalized': identity['value_normalized'],
+                'user_id': user_id
+            });
+        }
+    }
     with self._engine.begin() as conn {
         conn.execute(self._table.insert().values(**user_doc));
-        user_id = user_doc['user_id'];
-        for identity in user_doc.get('identities', []) {
-            if identity.get('type') == 'sso' and identity.get('provider') {
-                conn.execute(
-                    self._sso_lookups.insert().prefix_with('OR IGNORE').values(
-                        provider=identity['provider'],
-                        external_id=identity.get('external_id', ''),
-                        user_id=user_id
-                    )
-                );
-            } elif identity.get('value_normalized') {
-                conn.execute(
-                    self._identity_lookups.insert().prefix_with('OR IGNORE').values(
-                        value_normalized=identity['value_normalized'], user_id=user_id
-                    )
-                );
-            }
+        if id_rows {
+            conn.execute(self._identity_lookups.insert().prefix_with('OR IGNORE'), id_rows);
+        }
+        if sso_rows {
+            conn.execute(self._sso_lookups.insert().prefix_with('OR IGNORE'), sso_rows);
         }
     }
 }
