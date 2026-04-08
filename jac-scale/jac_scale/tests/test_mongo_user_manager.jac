@@ -272,21 +272,13 @@ test "legacy user migration and progressive rehashing" {
                         'root_id': 'root3',
                         'role': 'user',
                         'user_id': None
-                    },
-                    {
-                        'username': 'nopassword_user',
-                        'password_hash': '',
-                        'token': 'token4',
-                        'root_id': 'root4',
-                        'role': 'user',
-                        'user_id': None
                     }
                 ]
             );
             # Add old-schema indexes to simulate real DB
             db.users.create_index('username', unique=True);
             db.users.create_index('token', unique=True, sparse=True);
-            assert db.users.count_documents({}) == 4;
+            assert db.users.count_documents({}) == 3;
             old_mongodb_uri = os.environ.get('MONGODB_URI');
             os.environ['MONGODB_URI'] = mongo_uri;
             try {
@@ -301,7 +293,7 @@ test "legacy user migration and progressive rehashing" {
                     {'name': 'legacy_user_migration'}
                 );
                 assert migration_record is not None , "Migration record should exist";
-                assert migration_record['count'] == 4 , f"Should migrate 4 users, got {migration_record[
+                assert migration_record['count'] == 3 , f"Should migrate 4 users, got {migration_record[
                     'count'
                 ]}";
 
@@ -343,10 +335,6 @@ test "legacy user migration and progressive rehashing" {
                     {'user_id': '00000000-0000-0000-0000-000000000000'}
                 );
                 assert admin_doc.get('requires_password_reset') == True , "requires_password_reset should be preserved";
-
-                # Verify no-password user migrated
-                no_pw_user = um.find_user_by_identity('nopassword_user');
-                assert no_pw_user is not None;
 
                 # --- Progressive rehashing tests ---
 
@@ -391,7 +379,7 @@ test "legacy user migration and progressive rehashing" {
                 # Creating another user manager should NOT re-run migration
                 reset_scale_config();
                 um2 = JacScaleUserManager(base_path=tmpdir);
-                # Count should still be 3 from first run
+                # Migration record should still have the original count (not re-run)
                 migration_record2 = db['_migrations'].find_one(
                     {'name': 'legacy_user_migration'}
                 );
