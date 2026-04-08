@@ -207,20 +207,24 @@ impl MongoIdentityStorage.migrate_legacy_users -> None {
 
         # Preserve existing user_id if set (e.g., admin has a fixed UUID)
         existing_user_id = doc.get('user_id');
-        new_user_id = existing_user_id if existing_user_id else str(uuid.uuid4());
+        new_user_id = existing_user_id or str(uuid.uuid4());
 
         new_doc: dict[str, Any] = {
             'user_id': new_user_id,
             'status': 'active',
-            'identities': [{
-                'type': 'email' if is_email else 'username',
-                'value_raw': username,
-                'value_normalized': normalized,
-                'verified': True
-            }],
+            'identities': [
+                {
+                    'type': 'email' if is_email else 'username',
+                    'value_raw': username,
+                    'value_normalized': normalized,
+                    'verified': True
+                }
+            ],
             'credentials': [
                 {'type': 'password', 'password_hash': old_hash, 'algorithm': 'sha256'}
-            ] if old_hash else [],
+            ]
+                if old_hash
+                else [],
             'root_id': doc.get('root_id', ''),
             'role': doc.get('role') or 'user',
             'created_at': now,

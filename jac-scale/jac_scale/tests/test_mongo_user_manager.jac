@@ -257,18 +257,27 @@ test "legacy user migration and progressive rehashing" {
                         'user_id': None
                     },
                     {
-                        'username': 'admin@example.com',
+                        'username': 'admin',
                         'password_hash': sha256_hash,
                         'token': 'token2',
                         'root_id': 'root2',
                         'role': 'admin',
+                        'requires_password_reset': True,
+                        'user_id': '00000000-0000-0000-0000-000000000000'
+                    },
+                    {
+                        'username': 'user@example.com',
+                        'password_hash': sha256_hash,
+                        'token': 'token3',
+                        'root_id': 'root3',
+                        'role': 'user',
                         'user_id': None
                     },
                     {
                         'username': 'nopassword_user',
                         'password_hash': '',
-                        'token': 'token3',
-                        'root_id': 'root3',
+                        'token': 'token4',
+                        'root_id': 'root4',
                         'role': 'user',
                         'user_id': None
                     }
@@ -277,7 +286,7 @@ test "legacy user migration and progressive rehashing" {
             # Add old-schema indexes to simulate real DB
             db.users.create_index('username', unique=True);
             db.users.create_index('token', unique=True, sparse=True);
-            assert db.users.count_documents({}) == 3;
+            assert db.users.count_documents({}) == 4;
             old_mongodb_uri = os.environ.get('MONGODB_URI');
             os.environ['MONGODB_URI'] = mongo_uri;
             try {
@@ -292,7 +301,7 @@ test "legacy user migration and progressive rehashing" {
                     {'name': 'legacy_user_migration'}
                 );
                 assert migration_record is not None , "Migration record should exist";
-                assert migration_record['count'] == 3 , f"Should migrate 3 users, got {migration_record[
+                assert migration_record['count'] == 4 , f"Should migrate 4 users, got {migration_record[
                     'count'
                 ]}";
 
@@ -308,7 +317,6 @@ test "legacy user migration and progressive rehashing" {
                         '_id'
                     )} has null user_id";
                     assert doc.get('status') == 'active';
-                    # Old fields should be gone
                     assert 'username' not in doc , f"Doc {doc.get(
                         '_id'
                     )} still has username field";
@@ -318,17 +326,23 @@ test "legacy user migration and progressive rehashing" {
                 }
 
                 # Verify email identity type detection
-                email_user = um.find_user_by_identity('admin@example.com');
+                email_user = um.find_user_by_identity('user@example.com');
                 assert email_user is not None , "Email user should be findable";
-                email_identity = email_user['identities'][0];
-                assert email_identity['type'] == 'email' , "Should detect email type";
+                assert email_user['identities'][0]['type'] == 'email' , "Should detect email type";
 
                 username_user = um.find_user_by_identity('olduser1');
                 assert username_user is not None , "Username user should be findable";
                 assert username_user['identities'][0]['type'] == 'username';
 
-                # Verify roles preserved
-                assert email_user.get('role') == 'admin' , "Admin role should be preserved";
+                # Verify admin-specific fields preserved
+                admin_user = um.find_user_by_identity('admin');
+                assert admin_user is not None , "Admin should be findable";
+                assert admin_user.get('role') == 'admin' , "Admin role should be preserved";
+                assert admin_user.get('user_id') == '00000000-0000-0000-0000-000000000000' , "Admin user_id should be preserved";
+                admin_doc = db.users.find_one(
+                    {'user_id': '00000000-0000-0000-0000-000000000000'}
+                );
+                assert admin_doc.get('requires_password_reset') == True , "requires_password_reset should be preserved";
 
                 # Verify no-password user migrated
                 no_pw_user = um.find_user_by_identity('nopassword_user');
@@ -356,6 +370,21 @@ test "legacy user migration and progressive rehashing" {
                 # Wrong password should still fail
                 auth_fail = um.authenticate('olduser1', 'wrong_password');
                 assert auth_fail is None , "Wrong password should fail";
+
+                # --- Protected deletion tests ---
+
+                # Cannot delete bootstrap admin
+                del_result = um.delete_user('00000000-0000-0000-0000-000000000000');
+                assert 'error' in del_result , "Should not delete bootstrap admin";
+                assert 'bootstrap admin' in del_result['error'].lower();
+
+                # Cannot delete guest account
+                guest = um.find_user_by_identity('__guest__');
+                if guest {
+                    del_result = um.delete_user(guest['user_id']);
+                    assert 'error' in del_result , "Should not delete guest";
+                    assert 'guest' in del_result['error'].lower();
+                }
 
                 # --- Migration idempotency test ---
 

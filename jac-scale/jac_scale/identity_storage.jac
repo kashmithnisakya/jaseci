@@ -29,8 +29,7 @@ import from sqlalchemy {
     PrimaryKeyConstraint,
     select,
     delete,
-    update,
-    insert
+    update
 }
 import from jaclang.jac0core.constant { Constants as Con }
 
