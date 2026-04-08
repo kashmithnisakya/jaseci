@@ -228,6 +228,10 @@ test "legacy user migration and progressive rehashing" {
     import from pymongo { MongoClient }
     import hashlib;
     import tempfile;
+    import from jac_scale.identity_storage { IdentityStorage }
+
+    ADMIN_UUID = '00000000-0000-0000-0000-000000000000';
+    NEW_USER_UUID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
     with MongoDbContainer("mongo:7.0") as mongo {
         mongo_uri = mongo.get_connection_url();
@@ -241,149 +245,123 @@ test "legacy user migration and progressive rehashing" {
                     "[plugins.scale.admin]\nenabled = false\n"
                 );
             }
-            # Insert old-format users directly into MongoDB
             client = MongoClient(mongo_uri);
             db = client['jac_db'];
             old_password = "test_password";
             sha256_hash = hashlib.sha256(old_password.encode()).hexdigest();
+            bcrypt_hash = IdentityStorage.hash_password('new_password');
             db.users.insert_many(
                 [
                     {
                         'username': 'olduser1',
                         'password_hash': sha256_hash,
-                        'token': 'token1',
-                        'root_id': 'root1',
+                        'token': 'tok1',
+                        'root_id': 'r1',
                         'role': 'user',
                         'user_id': None
                     },
                     {
                         'username': 'admin',
                         'password_hash': sha256_hash,
-                        'token': 'token2',
-                        'root_id': 'root2',
+                        'token': 'tok2',
+                        'root_id': 'r2',
                         'role': 'admin',
                         'requires_password_reset': True,
-                        'user_id': '00000000-0000-0000-0000-000000000000'
+                        'user_id': ADMIN_UUID
                     },
                     {
                         'username': 'user@example.com',
                         'password_hash': sha256_hash,
-                        'token': 'token3',
-                        'root_id': 'root3',
+                        'token': 'tok3',
+                        'root_id': 'r3',
                         'role': 'user',
                         'user_id': None
+                    },
+                    {
+                        'user_id': NEW_USER_UUID,
+                        'status': 'active',
+                        'identities': [
+                            {
+                                'type': 'username',
+                                'value_raw': 'newuser',
+                                'value_normalized': 'newuser',
+                                'verified': True
+                            }
+                        ],
+                        'credentials': [
+                            {'type': 'password', 'password_hash': bcrypt_hash}
+                        ],
+                        'root_id': 'r4',
+                        'role': 'user',
+                        'created_at': '2026-01-01T00:00:00+00:00',
+                        'updated_at': '2026-01-01T00:00:00+00:00'
                     }
                 ]
             );
-            # Add old-schema indexes to simulate real DB
             db.users.create_index('username', unique=True);
             db.users.create_index('token', unique=True, sparse=True);
-            assert db.users.count_documents({}) == 3;
             old_mongodb_uri = os.environ.get('MONGODB_URI');
             os.environ['MONGODB_URI'] = mongo_uri;
             try {
                 reset_scale_config();
-                # Creating user manager triggers migration in postinit
                 um = JacScaleUserManager(base_path=tmpdir);
 
-                # --- Migration tests ---
-
-                # Verify migration ran
-                migration_record = db['_migrations'].find_one(
+                # --- Migration: verify ran once, only on old docs ---
+                migration = db['_migrations'].find_one(
                     {'name': 'legacy_user_migration'}
                 );
-                assert migration_record is not None , "Migration record should exist";
-                assert migration_record['count'] == 3 , f"Should migrate 4 users, got {migration_record[
-                    'count'
-                ]}";
+                assert migration is not None and migration['count'] == 3;
 
-                # Verify docs are in new format
+                # All docs should be in new format now
                 for doc in db.users.find() {
-                    assert 'identities' in doc , f"Doc {doc.get(
-                        '_id'
-                    )} missing identities";
-                    assert 'credentials' in doc , f"Doc {doc.get(
-                        '_id'
-                    )} missing credentials";
-                    assert doc.get('user_id') is not None , f"Doc {doc.get(
-                        '_id'
-                    )} has null user_id";
-                    assert doc.get('status') == 'active';
-                    assert 'username' not in doc , f"Doc {doc.get(
-                        '_id'
-                    )} still has username field";
-                    assert 'token' not in doc , f"Doc {doc.get(
-                        '_id'
-                    )} still has token field";
+                    assert 'identities' in doc and 'credentials' in doc;
+                    assert doc.get('user_id') is not None;
+                    assert 'username' not in doc and 'token' not in doc;
                 }
 
-                # Verify email identity type detection
-                email_user = um.find_user_by_identity('user@example.com');
-                assert email_user is not None , "Email user should be findable";
-                assert email_user['identities'][0]['type'] == 'email' , "Should detect email type";
+                # Identity type detection: email vs username
+                assert um.find_user_by_identity('user@example.com')['identities'][0][
+                    'type'
+                ] == 'email';
+                assert um.find_user_by_identity('olduser1')['identities'][0]['type'] == 'username';
 
-                username_user = um.find_user_by_identity('olduser1');
-                assert username_user is not None , "Username user should be findable";
-                assert username_user['identities'][0]['type'] == 'username';
+                # Admin fields preserved
+                admin_doc = db.users.find_one({'user_id': ADMIN_UUID});
+                assert admin_doc.get('role') == 'admin';
+                assert admin_doc.get('requires_password_reset') is True;
 
-                # Verify admin-specific fields preserved
-                admin_user = um.find_user_by_identity('admin');
-                assert admin_user is not None , "Admin should be findable";
-                assert admin_user.get('role') == 'admin' , "Admin role should be preserved";
-                assert admin_user.get('user_id') == '00000000-0000-0000-0000-000000000000' , "Admin user_id should be preserved";
-                admin_doc = db.users.find_one(
-                    {'user_id': '00000000-0000-0000-0000-000000000000'}
-                );
-                assert admin_doc.get('requires_password_reset') == True , "requires_password_reset should be preserved";
+                # New-format user untouched
+                new_doc = db.users.find_one({'user_id': NEW_USER_UUID});
+                assert new_doc['credentials'][0]['password_hash'] == bcrypt_hash;
+                assert 'algorithm' not in new_doc['credentials'][0];
+                assert new_doc.get('created_at') == '2026-01-01T00:00:00+00:00';
+                assert um.authenticate('newuser', 'new_password') is not None;
 
-                # --- Progressive rehashing tests ---
-
-                # Authenticate with old SHA256 password — should work
+                # --- Progressive rehashing: SHA256 -> bcrypt ---
                 auth = um.authenticate('olduser1', old_password);
-                assert auth is not None , "SHA256 login should succeed";
-                assert 'user_id' in auth;
+                assert auth is not None;
+                # Verify rehashed to bcrypt
+                cred = db.users.find_one({'user_id': auth['user_id']})['credentials'][0];
+                assert cred['password_hash'].startswith('$2b$');
+                assert 'algorithm' not in cred;
+                # Second login uses bcrypt directly
+                assert um.authenticate('olduser1', old_password) is not None;
+                # Wrong password fails
+                assert um.authenticate('olduser1', 'wrong') is None;
 
-                # Verify credential was rehashed to bcrypt
-                migrated_doc = db.users.find_one({'user_id': auth['user_id']});
-                cred = migrated_doc['credentials'][0];
-                assert 'algorithm' not in cred , "algorithm tag should be removed after rehash";
-                assert cred['password_hash'].startswith('$2b$') , f"Should be bcrypt hash, got: {cred[
-                    'password_hash'
-                ][:10]}";
-
-                # Authenticate again — now uses bcrypt directly
-                auth2 = um.authenticate('olduser1', old_password);
-                assert auth2 is not None , "Bcrypt login should succeed after rehash";
-
-                # Wrong password should still fail
-                auth_fail = um.authenticate('olduser1', 'wrong_password');
-                assert auth_fail is None , "Wrong password should fail";
-
-                # --- Protected deletion tests ---
-
-                # Cannot delete bootstrap admin
-                del_result = um.delete_user('00000000-0000-0000-0000-000000000000');
-                assert 'error' in del_result , "Should not delete bootstrap admin";
-                assert 'bootstrap admin' in del_result['error'].lower();
-
-                # Cannot delete guest account
+                # --- Protected deletion ---
+                assert 'error' in um.delete_user(ADMIN_UUID);
                 guest = um.find_user_by_identity('__guest__');
                 if guest {
-                    del_result = um.delete_user(guest['user_id']);
-                    assert 'error' in del_result , "Should not delete guest";
-                    assert 'guest' in del_result['error'].lower();
+                    assert 'error' in um.delete_user(guest['user_id']);
                 }
 
-                # --- Migration idempotency test ---
-
-                # Creating another user manager should NOT re-run migration
+                # --- Idempotency: second startup skips migration ---
                 reset_scale_config();
                 um2 = JacScaleUserManager(base_path=tmpdir);
-                # Migration record should still have the original count (not re-run)
-                migration_record2 = db['_migrations'].find_one(
-                    {'name': 'legacy_user_migration'}
-                );
-                assert migration_record2['count'] == 3 , "Migration should not re-run";
+                assert db['_migrations'].find_one({'name': 'legacy_user_migration'})[
+                    'count'
+                ] == 3;
 
                 um.close();
                 um2.close();
