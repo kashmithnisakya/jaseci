@@ -164,3 +164,70 @@ impl MongoIdentityStorage.list_all_users(
     );
     return list(cursor);
 }
+
+"""Migrate old-schema users (username/password_hash) to identity-based format.
+--- LEGACY MIGRATION (removable) ---"""
+impl MongoIdentityStorage.migrate_legacy_users -> None {
+    migrations_col = self.users_col.database['_migrations'];
+    if migrations_col.find_one({'name': 'legacy_user_migration'}) {
+        return;
+    }
+
+    legacy_query = {'username': {'$exists': True}, 'identities': {'$exists': False}};
+    legacy_docs = list(self.users_col.find(legacy_query));
+    now = datetime.now(UTC).isoformat();
+
+    # Drop old-schema indexes that conflict with new format
+    for idx_name in ['username_1', 'user_id_1', 'token_1'] {
+        try {
+            self.users_col.drop_index(idx_name);
+            logger.info(f"Dropped old index: {idx_name}");
+        } except Exception { }
+    }
+
+    if not legacy_docs {
+        migrations_col.insert_one(
+            {'name': 'legacy_user_migration', 'completed_at': now, 'count': 0}
+        );
+        return;
+    }
+
+    logger.info(f"Starting legacy user migration: {len(legacy_docs)} users found");
+    migrated = 0;
+    for doc in legacy_docs {
+        username = doc.get('username');
+        if not username {
+            logger.warning(f"Skipping doc {doc.get('_id')}: missing username");
+            continue;
+        }
+
+        is_email = '@' in username;
+        normalized = username.lower().strip();
+        old_hash = doc.get('password_hash', '');
+
+        self.users_col.replace_one({'_id': doc['_id']}, {
+            'user_id': str(uuid.uuid4()),
+            'status': 'active',
+            'identities': [{
+                'type': 'email' if is_email else 'username',
+                'value_raw': username,
+                'value_normalized': normalized,
+                'verified': True,
+                'is_recovery': is_email
+            }],
+            'credentials': [
+                {'type': 'password', 'password_hash': old_hash, 'algorithm': 'sha256'}
+            ] if old_hash else [],
+            'root_id': doc.get('root_id', ''),
+            'role': doc.get('role') or 'user',
+            'created_at': now,
+            'updated_at': now
+        });
+        migrated += 1;
+    }
+
+    migrations_col.insert_one(
+        {'name': 'legacy_user_migration', 'completed_at': now, 'count': migrated}
+    );
+    logger.info(f"Legacy user migration complete: {migrated}/{len(legacy_docs)} users migrated");
+}

@@ -13,7 +13,9 @@ Architecture:
 """
 import from typing { Any }
 import bcrypt;
+import hashlib;
 import uuid;
+import logging;
 import from datetime { datetime, UTC }
 import from sqlalchemy {
     create_engine,
@@ -31,6 +33,8 @@ import from sqlalchemy {
     insert
 }
 import from jaclang.jac0core.constant { Constants as Con }
+
+glob logger = logging.getLogger(__name__);
 
 """Abstract base for identity storage backends.
 
@@ -103,6 +107,8 @@ obj MongoIdentityStorage(IdentityStorage) {
     def identity_taken(value: str) -> bool;
     def list_all_users(limit: int = 100, offset: int = 0) -> list[dict[str, Any]];
     def get_user_by_sso(platform: str, external_id: str) -> dict[str, Any] | None;
+    # Migration
+    def migrate_legacy_users -> None;
 }
 
 """SQLite-backed identity storage."""
