@@ -1354,6 +1354,8 @@ impl PyastGenPass.exit_ability(nd: uni.Ability) -> None {
                         posonlyargs=[],
                         args=[self.sync(ast3.arg(arg='self', annotation=None))]
                             if nd.is_method
+                            and not nd.is_static
+                            and not nd.is_classmethod
                             else [],
                         vararg=None,
                         kwonlyargs=[],
@@ -2440,6 +2442,11 @@ impl PyastGenPass.exit_compare_expr(nd: uni.CompareExpr) -> None {
             )
         )
     ];
+}
+
+"""CfgExpr: propagate inner expression's generated Python AST."""
+impl PyastGenPass.exit_cfg_expr(nd: uni.CfgExpr) -> None {
+    nd.gen.py_ast = nd.expr.gen.py_ast;
 }
 
 impl PyastGenPass.exit_bool_expr(nd: uni.BoolExpr) -> None {

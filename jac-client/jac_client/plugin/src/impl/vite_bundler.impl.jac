@@ -323,7 +323,14 @@ impl ViteBundler._format_define_entries(
 ) -> str {
     # Vite define values must be valid JS expressions.
     # _to_js_expr() converts any Python/TOML value to a valid JS expression.
-    entries = ["    '" + JAC_API_BASE_URL_KEY + "': " + _to_js_expr(api_base_url)];
+    entries = [];
+    # Only add API base URL if explicitly set - skip for desktop builds where
+    # Tauri injects it at runtime via initialization_script
+    if api_base_url {
+        entries.append(
+            "    '" + JAC_API_BASE_URL_KEY + "': " + _to_js_expr(api_base_url)
+        );
+    }
     for (key, value) in custom_defines.items() {
         entries.append("    '" + key + "': " + _to_js_expr(value));
     }
@@ -1022,7 +1029,7 @@ def _forward_vite_output(
     ready_event: "threading.Event",
     sys_module: Any,
     output_buffer: list[str]
-) -> None {
+) {
     try {
         for line in iter(proc.stdout.readline, '') {
             if not line {

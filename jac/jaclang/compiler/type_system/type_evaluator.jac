@@ -170,6 +170,29 @@ obj NarrowingPredicate {
         is_inverted: bool = False;
 }
 
+"""Classification of a leaf narrowing condition."""
+enum NarrowingKind {
+    ISINSTANCE = "isinstance",
+    CALLABLE = "callable",
+    NONE_IS = "none_is",
+    NONE_IS_NOT = "none_is_not",
+    TRUTHINESS = "truthiness",
+    LITERAL_EQ = "literal_eq",
+    LITERAL_NE = "literal_ne"
+}
+
+"""Result of classifying a leaf condition node.
+
+Captures the narrowing-kind-specific info extracted from the AST.
+Structural wrappers (parens, NOT, AND, OR) are handled by callers
+before reaching classification.
+"""
+obj ConditionInfo {
+    has kind: NarrowingKind,
+        key: str,
+        narrow_type: (TypeBase | None) = None;
+}
+
 """Type evaluator for JacLang."""
 obj TypeEvaluator {
     has program: "JacProgram",
@@ -198,13 +221,10 @@ obj TypeEvaluator {
         prefetch: PrefetchedTypes by postinit,
         _pass: object | None = None,
         builtins_module: uni.Module | None = None,
-        # Type narrowing
-        _narrowing_cache: dict[tuple, types.TypeBase | None] = {},
-        _narrowing_scope_stack: list[dict[str, types.TypeBase]] = [],
-        _in_ternary_expr_depth: int = 0,
-        _in_bool_expr_narrowing_depth: int = 0,
-        _narrowing_in_progress: set[int] by postinit,
-        _narrowing_in_progress_keys: set[str] by postinit,
+        # Type narrowing (CFG-based only — no scope stack)
+        _flow_node_type_cache: dict[tuple, types.TypeBase | None] = {},
+        _flow_pending_symbols: set[int] by postinit,
+        _flow_pending_keys: set[str] by postinit,
         _module_type_cache: dict[str, types.ModuleType] = {},
         # Stub modules - initialized in postinit
         typing_module: uni.Module by postinit,
@@ -412,6 +432,7 @@ obj TypeEvaluator {
         expr: uni.FuncCall, method_type: TypeBase
     ) -> types.FunctionType | None;
 
+    def _strip_implicit_self_cls(method: types.FunctionType) -> types.FunctionType;
     def _get_method_with_overloads(
         method_member: Any, caller_type: types.ClassType
     ) -> TypeBase;
@@ -479,24 +500,17 @@ obj TypeEvaluator {
     #    find narrowing conditions. Used for flow-sensitive analysis.
     # -------------------------------------------------------------------------
 
-    # --- Scope-based narrowing (forward traversal) ---
-    def push_narrowing_scope -> None;
-    def pop_narrowing_scope -> None;
-    def add_scope_narrowing(key: str, narrowed_type: types.TypeBase) -> None;
-    def get_scope_narrowing(key: str) -> types.TypeBase | None;
-    def get_narrowing_key(expr: uni.Expr) -> str | None;
-    def _find_symbol_by_key(key: str, condition: uni.Expr) -> uni.Symbol | None;
-    def process_condition(condition: uni.Expr) -> None;
-    def process_negated_condition(condition: uni.Expr) -> None;
-    def promote_inverted_narrowings(condition: uni.Expr) -> None;
     # --- CFG-based narrowing (backward traversal) ---
+    def create_key_for_reference(expr: uni.Expr) -> str | None;
+    def _find_symbol_by_key(key: str, condition: uni.Expr) -> uni.Symbol | None;
+    def classify_condition(condition: uni.Expr) -> ConditionInfo | None;
     def get_narrowed_type(symbol: uni.Symbol, at_node: uni.UniNode) -> TypeBase | None;
     def get_narrowed_type_for_expr(
         expr: uni.Expr, declared_type: TypeBase, at_node: uni.UniNode
     ) -> TypeBase | None;
 
-    def _compute_narrowed_at(
-        target: NarrowingTarget, stmt: uni.UniCFGNode, visited: set
+    def _get_type_from_flow_node(
+        target: NarrowingTarget, flow_node: uni.UniCFGNode, visited: set
     ) -> TypeBase | None;
 
     def _classify_edge(pred: uni.IfStmt, succ: uni.UniCFGNode) -> str;
@@ -526,5 +540,21 @@ obj TypeEvaluator {
     def _get_type_from_match_pattern(pattern: uni.MatchPattern) -> TypeBase | None;
     def _union_contains_none(union_type: TypeBase) -> bool;
     def _extract_isinstance_info(condition: uni.Expr) -> tuple[str, TypeBase] | None;
+    def _extract_callable_info(condition: uni.Expr) -> str | None;
+    def _is_callable_type(t: TypeBase) -> bool;
+    def _filter_union_to_callables(union_type: TypeBase) -> TypeBase;
+    def _filter_union_to_non_callables(union_type: TypeBase) -> TypeBase;
     def _is_ellipsis_only_body(body: list[uni.CodeBlockStmt]) -> bool;
+    def _is_type_alias_annotation(
+        annotation_type: TypeBase, tag_expr: uni.Expr
+    ) -> bool;
+
+    def _resolve_type_alias_rhs(value: uni.Expr) -> TypeBase;
+    def _resolve_string_type_expr(
+        type_str: str, scope: uni.UniScopeNode
+    ) -> TypeBase | None;
+
+    def _resolve_py_ast_type_node(
+        ast_node: object, scope: uni.UniScopeNode
+    ) -> TypeBase | None;
 }
