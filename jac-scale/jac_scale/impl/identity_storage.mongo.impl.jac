@@ -193,7 +193,11 @@ impl MongoIdentityStorage.migrate_legacy_users -> None {
     }
 
     logger.info(f"Starting legacy user migration: {len(legacy_docs)} users found");
+
+    # Track normalized values to detect case-collisions (e.g., "User" and "USER" both -> "user")
+    seen_normalized: set[str] = set();
     migrated = 0;
+    duplicates = 0;
     for doc in legacy_docs {
         username = doc.get('username');
         if not username {
@@ -204,19 +208,29 @@ impl MongoIdentityStorage.migrate_legacy_users -> None {
         is_email = '@' in username;
         normalized = username.lower().strip();
         old_hash = doc.get('password_hash', '');
-
-        # Preserve existing user_id if set (e.g., admin has a fixed UUID)
         existing_user_id = doc.get('user_id');
         new_user_id = existing_user_id or str(uuid.uuid4());
 
+        # Handle case-collision: disable duplicate, keep original value for reference
+        is_duplicate = normalized in seen_normalized;
+        if is_duplicate {
+            logger.warning(
+                f"Case-collision: '{username}' conflicts with existing '{normalized}', marking as disabled"
+            );
+            duplicates += 1;
+        }
+        seen_normalized.add(normalized);
+
         new_doc: dict[str, Any] = {
             'user_id': new_user_id,
-            'status': 'active',
+            'status': 'disabled' if is_duplicate else 'active',
             'identities': [
                 {
                     'type': 'email' if is_email else 'username',
                     'value_raw': username,
-                    'value_normalized': normalized,
+                    'value_normalized': f"__dup_{new_user_id[:8]}_{normalized}"
+                        if is_duplicate
+                        else normalized,
                     'verified': True
                 }
             ],
@@ -231,13 +245,16 @@ impl MongoIdentityStorage.migrate_legacy_users -> None {
             'updated_at': now
         };
 
-        # Preserve admin-specific fields if present
         if 'requires_password_reset' in doc {
             new_doc['requires_password_reset'] = doc['requires_password_reset'];
         }
 
         self.users_col.replace_one({'_id': doc['_id']}, new_doc);
         migrated += 1;
+    }
+
+    if duplicates {
+        logger.warning(f"{duplicates} duplicate(s) found and marked as disabled");
     }
 
     migrations_col.insert_one(
