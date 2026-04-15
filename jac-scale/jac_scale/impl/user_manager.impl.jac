@@ -169,14 +169,77 @@ impl JacScaleUserManager.get_jwt_claims(token: str) -> (dict | None) {
 }
 
 impl JacScaleUserManager.validate_jwt_token(token: str) -> (str | None) {
+    result = self.validate_jwt_token_detail(token);
+    return result.get('username') if result.get('status') == 'ok' else None;
+}
+
+"""Validate a JWT token and return structured detail.
+
+Result shape:
+    {"status": one of "ok"|"missing"|"expired"|"invalid"|"unknown_user",
+     "username": str | None,
+     "exp": float | None,
+     "reason": str | None}
+
+This exists because callers (notably the WebSocket handler) need to distinguish
+between a missing token, an expired one, and an outright-invalid one so they can
+surface actionable errors and close with specific close codes.
+"""
+impl JacScaleUserManager.validate_jwt_token_detail(token: (str | None)) -> dict[str, Any] {
+    if not token {
+        return {
+            'status': 'missing',
+            'username': None,
+            'exp': None,
+            'reason': 'No token provided'
+        };
+    }
     try {
-        decoded = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM]);
-        username = decoded['username'];
-        return username if self.user_exists(username) else None;
+        decoded = jwt.decode(
+            token,
+            JWT_SECRET,
+            algorithms=[JWT_ALGORITHM],
+            options={"verify_exp": True}
+        );
+    } except jwt.ExpiredSignatureError as e {
+        return {
+            'status': 'expired',
+            'username': None,
+            'exp': None,
+            'reason': 'Token expired'
+        };
     } except Exception as e {
         logger.debug(f"Failed to validate JWT token: {str(e)}");
-        return None;
+        return {
+            'status': 'invalid',
+            'username': None,
+            'exp': None,
+            'reason': 'Token invalid'
+        };
     }
+    username = decoded.get('username');
+    if not username {
+        return {
+            'status': 'invalid',
+            'username': None,
+            'exp': None,
+            'reason': 'Token missing username claim'
+        };
+    }
+    if not self.user_exists(username) {
+        return {
+            'status': 'unknown_user',
+            'username': None,
+            'exp': decoded.get('exp'),
+            'reason': f"User '{username}' does not exist"
+        };
+    }
+    return {
+        'status': 'ok',
+        'username': username,
+        'exp': decoded.get('exp'),
+        'reason': None
+    };
 }
 
 impl JacScaleUserManager.refresh_jwt_token(token: str) -> (str | None) {

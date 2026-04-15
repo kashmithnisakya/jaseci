@@ -233,6 +233,30 @@ impl JacAPIServerCore.start(
     }
     self.user_manager.create_user(Con.GUEST.value, '__no_password__');
     self._setup_scheduler();
+    # Initialize WebSocket Prometheus metrics (no-op if prometheus_client missing).
+    try {
+        import from jac_scale.ws_metrics { setup_ws_metrics }
+        monitoring_cfg = get_scale_config().get_monitoring_config();
+        setup_ws_metrics(
+            enabled=bool(monitoring_cfg.get('enabled', False)),
+            namespace=str(monitoring_cfg.get('namespace', 'jac_scale'))
+        );
+    } except Exception as e {
+        logger.debug(f"WS metrics setup skipped: {e}");
+    }
+    # Graceful WebSocket shutdown: close the backplane and let clients disconnect.
+    _self_ws = self;
+    @self.server.app.on_event("shutdown")
+    async def _ws_shutdown_hook -> None {
+        try {
+            mgr = _self_ws._ws_manager;
+            if mgr is not None {
+                await mgr.shutdown();
+            }
+        } except Exception as e {
+            logger.debug(f"WS shutdown hook exception: {e}");
+        }
+    }
     # Find an available port (may differ from requested if port is in use)
     original_port = self.port;
     self.port = _find_available_port(self.port);

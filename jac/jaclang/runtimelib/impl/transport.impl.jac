@@ -141,32 +141,108 @@ impl StreamTransport.close -> None {
     }
 }
 
-"""Accept the WebSocket connection."""
-impl WebSocketTransport.connect -> None {
-# In real async usage: await self.websocket.accept()
-# For now, assume websocket is already accepted
+"""Serialize a TransportResponse into the standard envelope dict.
+
+Kept in this module so every transport sends the same shape on the wire.
+"""
+def serialize_transport_response(resp: TransportResponse) -> dict {
+    body = {'ok': resp.ok, 'type': resp.type, 'data': resp.data, 'error': None};
+    if not resp.ok and resp.error {
+        error_obj = {};
+        if resp.error.code {
+            error_obj['code'] = resp.error.code;
+        }
+        if resp.error.message {
+            error_obj['message'] = resp.error.message;
+        }
+        if resp.error.details is not None {
+            error_obj['details'] = resp.error.details;
+        }
+        body['error'] = error_obj;
+    }
+    if resp.meta {
+        meta_dict = {};
+        if resp.meta.request_id {
+            meta_dict['request_id'] = resp.meta.request_id;
+        }
+        if resp.meta.trace_id {
+            meta_dict['trace_id'] = resp.meta.trace_id;
+        }
+        if resp.meta.timestamp {
+            meta_dict['timestamp'] = resp.meta.timestamp;
+        }
+        if resp.meta.extra {
+            meta_dict['extra'] = resp.meta.extra;
+        }
+        if meta_dict {
+            body['meta'] = meta_dict;
+        }
+    }
+    return body;
 }
 
-"""Send JSON data through WebSocket."""
-impl WebSocketTransport.send(data: Any) -> None {
-    # In real async usage: await self.websocket.send_json(data)
+"""Accept the WebSocket connection (idempotent for already-accepted sockets)."""
+impl WebSocketTransport.connect -> None {
+    if self.websocket is None {
+        return;
+    }
     try {
-        json_data = json.dumps(data);
-        # Placeholder for actual websocket send
-        if self.on_message {
-            self.on_message(data);
-        }
+        await self.websocket.accept();
     } except Exception as e {
-        if self.on_error {
-            self.on_error(e);
+        # Already accepted, or client disappeared; either way surface to caller.
+        cb = self.on_error;
+        if cb {
+            cb(e);
         }
     }
 }
 
-"""Close the WebSocket connection."""
+"""Send an envelope or raw JSON message over the WebSocket.
+
+Accepts a TransportResponse (serialized via the shared envelope helper), a
+dict (sent as-is), or any JSON-serializable value.
+"""
+impl WebSocketTransport.send(data: Any) -> None {
+    if self.websocket is None {
+        err_cb = self.on_error;
+        if err_cb {
+            err_cb(RuntimeError('WebSocketTransport has no websocket'));
+        }
+        return;
+    }
+    payload = (
+        serialize_transport_response(data)
+        if isinstance(data, TransportResponse)
+        else data
+    );
+    try {
+        await self.websocket.send_json(payload);
+        msg_cb = self.on_message;
+        if msg_cb {
+            msg_cb(payload);
+        }
+    } except Exception as e {
+        err_cb = self.on_error;
+        if err_cb {
+            err_cb(e);
+        }
+    }
+}
+
+"""Close the underlying WebSocket connection."""
 impl WebSocketTransport.close -> None {
-    # In real async usage: await self.websocket.close()
-    if self.on_close {
-        self.on_close();
+    if self.websocket is not None {
+        try {
+            await self.websocket.close();
+        } except Exception as e {
+            err_cb = self.on_error;
+            if err_cb {
+                err_cb(e);
+            }
+        }
+    }
+    close_cb = self.on_close;
+    if close_cb {
+        close_cb();
     }
 }

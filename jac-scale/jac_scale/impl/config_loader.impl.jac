@@ -110,7 +110,20 @@ impl JacScaleConfig.get_default_config(self: JacScaleConfig) -> dict[str, Any] {
             'system_user_password': 'system_secret',
             'collection': 'scheduled_jobs'
         },
-        'telemetry': {'max_traces': 1000}
+        'telemetry': {'max_traces': 1000},
+        'websocket': {
+            'max_message_bytes': 65536,
+            'max_connections_per_target': 5000,
+            'max_connections_per_user': 10,
+            'heartbeat_seconds': 30,
+            'heartbeat_timeout_missed': 2,
+            'target_timeout_seconds': 30,
+            'messages_per_second': 20,
+            'send_timeout_seconds': 5,
+            'auth_handshake_timeout_seconds': 10,
+            'backplane': 'memory',
+            'redis_url': None
+        }
     };
 }
 
@@ -318,6 +331,44 @@ impl JacScaleConfig.get_scheduler_config(self: JacScaleConfig) -> dict[str, Any]
         'system_user_password': os.environ.get('SYSTEM_USER_PASSWORD')
         or scheduler_config.get('system_user_password', 'system_secret'),
         'collection': scheduler_config.get('collection', 'scheduled_jobs')
+    };
+}
+
+"""Get WebSocket configuration from jac.toml.
+
+Controls connection caps, heartbeat/ping, message size limits, rate limits and
+per-connection timeouts for the /ws endpoints.
+"""
+impl JacScaleConfig.get_websocket_config(self: JacScaleConfig) -> dict[str, Any] {
+    config = self.load();
+    ws_config = config.get('websocket', {});
+    db_raw = config.get('database');
+    db_section = db_raw if isinstance(db_raw, dict) else {};
+    return {
+        'max_message_bytes': int(ws_config.get('max_message_bytes', 65536)),
+        'max_connections_per_target': int(
+            ws_config.get('max_connections_per_target', 5000)
+        ),
+        'max_connections_per_user': int(
+            ws_config.get('max_connections_per_user', 10)
+        ),
+        'heartbeat_seconds': int(ws_config.get('heartbeat_seconds', 30)),
+        'heartbeat_timeout_missed': int(
+            ws_config.get('heartbeat_timeout_missed', 2)
+        ),
+        'target_timeout_seconds': int(
+            ws_config.get('target_timeout_seconds', 30)
+        ),
+        'messages_per_second': int(ws_config.get('messages_per_second', 20)),
+        'send_timeout_seconds': int(ws_config.get('send_timeout_seconds', 5)),
+        'auth_handshake_timeout_seconds': int(
+            ws_config.get('auth_handshake_timeout_seconds', 10)
+        ),
+        'backplane': ws_config.get('backplane', 'memory'),
+        'redis_url': os.environ.get('WS_REDIS_URL')
+        or ws_config.get('redis_url')
+        or db_section.get('redis_url')
+        or os.environ.get('REDIS_URL')
     };
 }
 
