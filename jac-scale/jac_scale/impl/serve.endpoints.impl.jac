@@ -474,13 +474,7 @@ impl JacAPIServerEndpoints.register_webhook_endpoints -> None {
 # ============================================================================
 # WebSocket Endpoints
 # ============================================================================
-"""Get or lazily initialize the WebSocket connection manager.
-
-Caps (max_connections_per_target, max_connections_per_user, send_timeout) are
-seeded from `[plugins.scale.websocket]` in jac.toml, and a pub/sub backplane
-(Memory or Redis) is built from the same section so broadcasts work across
-workers.
-"""
+"""Get or lazily initialize the WebSocket connection manager."""
 impl JacAPIServerEndpoints.get_ws_manager -> WebSocketConnectionManager {
     import from jac_scale.ws_backplane { build_backplane }
     if not self._ws_manager {
@@ -505,16 +499,7 @@ def _ws_error_frame(code: str, message: str, reason: (str | None) = None) -> dic
     return {'ok': False, 'error': err};
 }
 
-"""Authenticate a WS connection.
-
-Back-compat: accepts token via `?token=...` query param OR embedded in the
-first inbound message. Returns (auth_detail, first_data).
-
-* `auth_detail` is a dict as produced by `validate_jwt_token_detail` for the
-  resolved token, or `{'status': 'missing', ...}` if no token is usable.
-* `first_data` is the first message payload IF the token came from it (so the
-  caller can still process that message after stripping the token), else None.
-"""
+"""Authenticate a WS connection."""
 async def _ws_authenticate(
     websocket: WebSocket,
     user_manager: Any,
@@ -649,12 +634,7 @@ async def _ws_reject_capacity(websocket: WebSocket, rejection: str) -> None {
     }
 }
 
-"""Receive one JSON frame from the socket.
-
-Returns ('ok', data) for a valid message, ('close', None) if the caller should
-break the loop (oversized -> connection closed), or ('skip', None) if the
-payload was malformed and an error was already sent (caller should 'continue').
-"""
+"""Receive one JSON frame from the socket."""
 async def _ws_receive_frame(
     websocket: WebSocket, max_bytes: int
 ) -> (str, dict | None) {
@@ -685,13 +665,7 @@ async def _ws_receive_frame(
     return ('ok', data);
 }
 
-"""Handle ping/pong, token refresh, expiry enforcement and rate limiting.
-
-Returns one of:
-* 'proceed'  — message is app-level, caller should dispatch it
-* 'continue' — handled internally (pong, refresh ack, rate-limited, ping)
-* 'break'    — connection should be closed (auth expired, refresh failed)
-"""
+"""Handle ping/pong, token refresh, expiry enforcement and rate limiting."""
 async def _ws_handle_control(
     websocket: WebSocket,
     ctx: ConnectionContext,
@@ -896,12 +870,7 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
     return websocket_handler;
 }
 
-"""Create a WebSocket handler for a specific def/function.
-
-Mirrors the walker handler but targets `execute_function`, binds typed kwargs
-from each message, and supports `streaming=True` in restspec — the function
-receives a `WebSocketTransport` parameter and can emit `CHUNK`/`DONE` frames.
-"""
+"""Create a WebSocket handler for a specific def/function."""
 impl JacAPIServerEndpoints.create_websocket_function_handler(
     func_name: str
 ) -> Callable {

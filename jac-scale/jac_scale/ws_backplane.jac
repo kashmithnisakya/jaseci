@@ -1,18 +1,4 @@
-"""Pluggable WebSocket pub/sub backplane.
-
-Why this exists: before this, `WebSocketConnectionManager.broadcast()` only
-reached sockets owned by the process that handled the message. Under any
-multi-worker deploy (Gunicorn, multi-pod K8s) broadcasts silently dropped on
-every other worker. A backplane gives every worker a way to publish a message
-once and have every other worker fan it out to its own local connections.
-
-Two implementations ship:
-* `MemoryBackplane` — in-process only. Loudly logged as non-scalable; default
-  when Redis isn't configured so tests and dev still work.
-* `RedisBackplane` — `redis.asyncio` pub/sub. Each worker subscribes to a
-  per-target channel (`ws:walker:{name}`, `ws:fn:{name}`) and fans out to
-  its local sockets only.
-"""
+"""Pluggable WebSocket pub/sub backplane."""
 import asyncio;
 import json;
 import logging;
@@ -20,11 +6,7 @@ import from typing { Any, Callable }
 
 glob logger = logging.getLogger(__name__);
 
-"""Protocol-agnostic backplane interface.
-
-Implementations are expected to be thread-safe and idempotent on
-subscribe/unsubscribe.
-"""
+"""Protocol-agnostic backplane interface."""
 obj BaseBackplane {
     async def start -> None;
     async def publish(channel: str, message: dict) -> None;
@@ -81,12 +63,6 @@ obj MemoryBackplane(BaseBackplane) {
     }
 }
 
-"""Redis pub/sub backplane using `redis.asyncio`.
-
-Uses a single connection and a single reader task for all channels — each
-message is dispatched to the channel's registered handlers. Loads redis lazily
-so the import is not required unless this backplane is actually selected.
-"""
 obj RedisBackplane(BaseBackplane) {
     has url: str,
         _client: (Any | None) = None,
@@ -235,11 +211,6 @@ obj RedisBackplane(BaseBackplane) {
     }
 }
 
-"""Factory: pick a backplane based on config.
-
-`backplane='redis'` + `redis_url=...` uses RedisBackplane; anything else (or
-missing config) falls back to MemoryBackplane with a warning.
-"""
 def build_backplane(cfg: dict) -> BaseBackplane {
     kind = (cfg.get('backplane') or 'memory').lower();
     if kind == 'redis' {

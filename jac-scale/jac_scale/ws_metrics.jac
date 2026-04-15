@@ -1,16 +1,4 @@
-"""Prometheus metrics for the WebSocket layer.
-
-Degrades gracefully: if `prometheus_client` isn't installed, every call is a
-no-op so deployments without Prometheus pay no cost beyond a function call.
-
-Metrics exposed (when enabled):
-* `ws_connections_active{kind,name}`   (Gauge)
-* `ws_broadcasts_total{kind,name}`     (Counter)
-* `ws_auth_failures_total{reason}`     (Counter)
-
-More metrics (message counts, target duration, send-queue depth) can be added
-as the handler grows; keeping the surface small today avoids dead handles.
-"""
+"""Prometheus metrics for the WebSocket layer."""
 import logging;
 import from typing { Any }
 

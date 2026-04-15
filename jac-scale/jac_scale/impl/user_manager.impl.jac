@@ -173,18 +173,7 @@ impl JacScaleUserManager.validate_jwt_token(token: str) -> (str | None) {
     return result.get('username') if result.get('status') == 'ok' else None;
 }
 
-"""Validate a JWT token and return structured detail.
-
-Result shape:
-    {"status": one of "ok"|"missing"|"expired"|"invalid"|"unknown_user",
-     "username": str | None,
-     "exp": float | None,
-     "reason": str | None}
-
-This exists because callers (notably the WebSocket handler) need to distinguish
-between a missing token, an expired one, and an outright-invalid one so they can
-surface actionable errors and close with specific close codes.
-"""
+"""Validate a JWT token and return structured detail."""
 impl JacScaleUserManager.validate_jwt_token_detail(token: (str | None)) -> dict[str, Any] {
     if not token {
         return {

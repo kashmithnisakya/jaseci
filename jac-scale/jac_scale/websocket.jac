@@ -1,10 +1,4 @@
-"""WebSocket support for Jac Scale.
-
-Connection management for walkers and functions configured with
-@restspec(protocol=APIProtocol.WEBSOCKET). Provides per-target and per-user
-connection caps, parallel broadcast fan-out with per-send timeouts, and
-a token-bucket rate limiter.
-"""
+"""WebSocket support for Jac Scale."""
 import asyncio;
 import logging;
 import time;
@@ -56,17 +50,7 @@ obj ConnectionContext {
     }
 }
 
-"""Connection manager: tracks active WS contexts per (kind:name) and per user.
-
-Keyed by `f"{kind}:{name}"` (e.g. `walker:EchoMessage`, `fn:Stream`) so walker
-and function targets of the same name do not collide.
-
-A `BaseBackplane` handles cross-worker broadcast. The manager subscribes to a
-target's channel on first registration and unsubscribes on last deregistration,
-so idle targets do not hold backplane subscriptions. The publishing worker also
-receives its own published message via the backplane and fans out to its local
-sockets — so every worker (including the publisher) delivers exactly once.
-"""
+"""Connection manager: tracks active WS contexts per (kind:name) and per user."""
 obj WebSocketConnectionManager {
     has _by_target: dict[str, dict[str, ConnectionContext]] = {},
         _by_user: dict[str, int] = {},
