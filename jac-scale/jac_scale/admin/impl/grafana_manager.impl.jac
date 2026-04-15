@@ -404,7 +404,9 @@ impl GrafanaManager._decrypt_persisted_admin_password -> (str | None) {
     if encrypted_pw {
         try {
             import jwt;
-            jwt_secret: str = str(get_scale_config().get_jwt_config().get('secret', ''));
+            jwt_secret: str = str(
+                get_scale_config().get_jwt_config().get('secret', '')
+            );
             if jwt_secret {
                 decoded: dict = dict(
                     jwt.decode(encrypted_pw, jwt_secret, algorithms=['HS256'])
