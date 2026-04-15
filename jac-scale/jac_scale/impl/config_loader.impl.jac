@@ -329,13 +329,7 @@ impl JacScaleConfig.get_scheduler_config(self: JacScaleConfig) -> dict[str, Any]
     };
 }
 
-"""Get WebSocket configuration from jac.toml.
-
-Exposes only the knobs deployments actually tune per-environment (caps, timeouts,
-rate limit, backplane). Internal timings (heartbeat, send timeout, handshake
-timeout) live as constants in `jac_scale.websocket` — expose them only if a
-real need emerges.
-"""
+"""Get WebSocket configuration from jac.toml."""
 impl JacScaleConfig.get_websocket_config(self: JacScaleConfig) -> dict[str, Any] {
     config = self.load();
     ws_config = config.get('websocket', {});
@@ -354,8 +348,6 @@ impl JacScaleConfig.get_websocket_config(self: JacScaleConfig) -> dict[str, Any]
         ),
         'messages_per_second': int(ws_config.get('messages_per_second', 20)),
         'backplane': ws_config.get('backplane', 'memory'),
-        # Redis URL is always sourced from [plugins.scale.database] / env so
-        # there's one place to configure it for the whole plugin.
         'redis_url': os.environ.get('REDIS_URL') or db_section.get('redis_url')
     };
 }
