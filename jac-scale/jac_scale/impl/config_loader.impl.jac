@@ -121,8 +121,7 @@ impl JacScaleConfig.get_default_config(self: JacScaleConfig) -> dict[str, Any] {
             'messages_per_second': 20,
             'send_timeout_seconds': 5,
             'auth_handshake_timeout_seconds': 10,
-            'backplane': 'memory',
-            'redis_url': None
+            'backplane': 'memory'
         }
     };
 }
@@ -365,10 +364,9 @@ impl JacScaleConfig.get_websocket_config(self: JacScaleConfig) -> dict[str, Any]
             ws_config.get('auth_handshake_timeout_seconds', 10)
         ),
         'backplane': ws_config.get('backplane', 'memory'),
-        'redis_url': os.environ.get('WS_REDIS_URL')
-        or ws_config.get('redis_url')
-        or db_section.get('redis_url')
-        or os.environ.get('REDIS_URL')
+        # Redis URL is always sourced from [plugins.scale.database] / env so
+        # there's one place to configure it for the whole plugin.
+        'redis_url': os.environ.get('REDIS_URL') or db_section.get('redis_url')
     };
 }
 
