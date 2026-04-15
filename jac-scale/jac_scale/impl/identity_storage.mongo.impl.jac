@@ -7,7 +7,9 @@ Business logic lives in the base IdentityStorage (identity_storage.impl.jac).
 """Create unique indexes for identity lookups."""
 impl MongoIdentityStorage.ensure_indexes -> None {
     self.users_col.create_index('user_id', unique=True);
-    self.users_col.create_index('identities.value_normalized', unique=True, sparse=True);
+    self.users_col.create_index(
+        'identities.value_normalized', unique=True, sparse=True
+    );
     self.users_col.create_index('status');
 }
 

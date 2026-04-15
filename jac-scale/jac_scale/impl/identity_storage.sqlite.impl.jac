@@ -184,7 +184,9 @@ impl SqliteIdentityStorage._update_fields(
 impl SqliteIdentityStorage._get_credentials(user_id: str) -> list[dict[str, Any]] {
     t = self._table;
     with self._engine.connect() as conn {
-        row = conn.execute(select(t.c.credentials).where(t.c.user_id == user_id)).first();
+        row = conn.execute(
+            select(t.c.credentials).where(t.c.user_id == user_id)
+        ).first();
         return (row[0] or []) if row else [];
     }
 }
@@ -208,7 +210,9 @@ impl SqliteIdentityStorage._update_credentials(
 impl SqliteIdentityStorage._get_identities(user_id: str) -> list[dict[str, Any]] {
     t = self._table;
     with self._engine.connect() as conn {
-        row = conn.execute(select(t.c.identities).where(t.c.user_id == user_id)).first();
+        row = conn.execute(
+            select(t.c.identities).where(t.c.user_id == user_id)
+        ).first();
         return (row[0] or []) if row else [];
     }
 }
@@ -219,7 +223,9 @@ impl SqliteIdentityStorage._add_identity(
 ) -> bool {
     t = self._table;
     with self._engine.begin() as conn {
-        row = conn.execute(select(t.c.identities).where(t.c.user_id == user_id)).first();
+        row = conn.execute(
+            select(t.c.identities).where(t.c.user_id == user_id)
+        ).first();
         if not row {
             return False;
         }
@@ -256,7 +262,9 @@ impl SqliteIdentityStorage._remove_sso_identity(user_id: str, platform: str) -> 
     t = self._table;
     sl = self._sso_lookups;
     with self._engine.begin() as conn {
-        row = conn.execute(select(t.c.identities).where(t.c.user_id == user_id)).first();
+        row = conn.execute(
+            select(t.c.identities).where(t.c.user_id == user_id)
+        ).first();
         if not row {
             return False;
         }
