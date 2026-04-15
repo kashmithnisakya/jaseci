@@ -489,7 +489,7 @@ impl JacAPIServerEndpoints.get_ws_manager -> WebSocketConnectionManager {
         self._ws_manager = WebSocketConnectionManager(
             max_per_target=ws_cfg['max_connections_per_target'],
             max_per_user=ws_cfg['max_connections_per_user'],
-            send_timeout=float(ws_cfg['send_timeout_seconds']),
+            send_timeout=SEND_TIMEOUT_SECONDS,
             backplane=backplane
         );
     }
@@ -771,12 +771,9 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
     ws_manager = self.get_ws_manager();
     ws_cfg = get_scale_config().get_websocket_config();
     max_bytes = int(ws_cfg['max_message_bytes']);
-    heartbeat_s = float(ws_cfg['heartbeat_seconds']);
-    heartbeat_missed = int(ws_cfg['heartbeat_timeout_missed']);
     target_timeout = float(ws_cfg['target_timeout_seconds']);
     msgs_per_sec = float(ws_cfg['messages_per_second']);
     rate_capacity = max(msgs_per_sec, 1.0);
-    handshake_timeout = float(ws_cfg['auth_handshake_timeout_seconds']);
     requires_auth = self.introspector.is_auth_required_for_walker(walker_name);
     walker_cls = self.get_walkers()[walker_name];
     restspec = walker_cls.restspec
@@ -792,7 +789,7 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
         first_data: (dict | None) = None;
         if requires_auth {
             (auth_detail, first_data) = await _ws_authenticate(
-                websocket, user_manager, handshake_timeout
+                websocket, user_manager, AUTH_HANDSHAKE_TIMEOUT_SECONDS
             );
             if auth_detail['status'] != 'ok' {
                 auth_failure(auth_detail['status']);
@@ -816,7 +813,9 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
             return;
         }
         heartbeat_task = asyncio.create_task(
-            _ws_heartbeat_loop(ctx, heartbeat_s, heartbeat_missed)
+            _ws_heartbeat_loop(
+                ctx, HEARTBEAT_SECONDS, HEARTBEAT_MISSED_ALLOWED
+            )
         );
         try {
             while True {
@@ -911,12 +910,9 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
     ws_manager = self.get_ws_manager();
     ws_cfg = get_scale_config().get_websocket_config();
     max_bytes = int(ws_cfg['max_message_bytes']);
-    heartbeat_s = float(ws_cfg['heartbeat_seconds']);
-    heartbeat_missed = int(ws_cfg['heartbeat_timeout_missed']);
     target_timeout = float(ws_cfg['target_timeout_seconds']);
     msgs_per_sec = float(ws_cfg['messages_per_second']);
     rate_capacity = max(msgs_per_sec, 1.0);
-    handshake_timeout = float(ws_cfg['auth_handshake_timeout_seconds']);
     requires_auth = self.introspector.is_auth_required_for_function(func_name);
     func_obj = self.get_functions()[func_name];
     restspec = func_obj.restspec
@@ -939,7 +935,7 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
         first_data: (dict | None) = None;
         if requires_auth {
             (auth_detail, first_data) = await _ws_authenticate(
-                websocket, user_manager, handshake_timeout
+                websocket, user_manager, AUTH_HANDSHAKE_TIMEOUT_SECONDS
             );
             if auth_detail['status'] != 'ok' {
                 auth_failure(auth_detail['status']);
@@ -963,7 +959,9 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
             return;
         }
         heartbeat_task = asyncio.create_task(
-            _ws_heartbeat_loop(ctx, heartbeat_s, heartbeat_missed)
+            _ws_heartbeat_loop(
+                ctx, HEARTBEAT_SECONDS, HEARTBEAT_MISSED_ALLOWED
+            )
         );
         try {
             while True {

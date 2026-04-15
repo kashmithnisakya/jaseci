@@ -26,6 +26,13 @@ glob WS_CLOSE_FORBIDDEN: int = 4403;
 glob WS_CLOSE_IDLE: int = 4408;
 glob WS_CLOSE_TOO_LARGE: int = 4413;
 
+# Internal timings — not in jac.toml because reasonable deployments all agree.
+# Promote to config only if a real use case requires per-deployment tuning.
+glob HEARTBEAT_SECONDS: float = 30.0;
+glob HEARTBEAT_MISSED_ALLOWED: int = 2;
+glob SEND_TIMEOUT_SECONDS: float = 5.0;
+glob AUTH_HANDSHAKE_TIMEOUT_SECONDS: float = 10.0;
+
 """Per-connection state: identity, auth, rate-limit bucket, heartbeat."""
 obj ConnectionContext {
     has websocket: WebSocket,

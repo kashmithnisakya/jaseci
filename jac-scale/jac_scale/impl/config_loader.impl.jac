@@ -115,12 +115,8 @@ impl JacScaleConfig.get_default_config(self: JacScaleConfig) -> dict[str, Any] {
             'max_message_bytes': 65536,
             'max_connections_per_target': 5000,
             'max_connections_per_user': 10,
-            'heartbeat_seconds': 30,
-            'heartbeat_timeout_missed': 2,
             'target_timeout_seconds': 30,
             'messages_per_second': 20,
-            'send_timeout_seconds': 5,
-            'auth_handshake_timeout_seconds': 10,
             'backplane': 'memory'
         }
     };
@@ -335,8 +331,10 @@ impl JacScaleConfig.get_scheduler_config(self: JacScaleConfig) -> dict[str, Any]
 
 """Get WebSocket configuration from jac.toml.
 
-Controls connection caps, heartbeat/ping, message size limits, rate limits and
-per-connection timeouts for the /ws endpoints.
+Exposes only the knobs deployments actually tune per-environment (caps, timeouts,
+rate limit, backplane). Internal timings (heartbeat, send timeout, handshake
+timeout) live as constants in `jac_scale.websocket` — expose them only if a
+real need emerges.
 """
 impl JacScaleConfig.get_websocket_config(self: JacScaleConfig) -> dict[str, Any] {
     config = self.load();
@@ -351,18 +349,10 @@ impl JacScaleConfig.get_websocket_config(self: JacScaleConfig) -> dict[str, Any]
         'max_connections_per_user': int(
             ws_config.get('max_connections_per_user', 10)
         ),
-        'heartbeat_seconds': int(ws_config.get('heartbeat_seconds', 30)),
-        'heartbeat_timeout_missed': int(
-            ws_config.get('heartbeat_timeout_missed', 2)
-        ),
         'target_timeout_seconds': int(
             ws_config.get('target_timeout_seconds', 30)
         ),
         'messages_per_second': int(ws_config.get('messages_per_second', 20)),
-        'send_timeout_seconds': int(ws_config.get('send_timeout_seconds', 5)),
-        'auth_handshake_timeout_seconds': int(
-            ws_config.get('auth_handshake_timeout_seconds', 10)
-        ),
         'backplane': ws_config.get('backplane', 'memory'),
         # Redis URL is always sourced from [plugins.scale.database] / env so
         # there's one place to configure it for the whole plugin.
