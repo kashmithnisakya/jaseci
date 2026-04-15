@@ -9,7 +9,6 @@ import asyncio;
 import logging;
 import time;
 import uuid;
-import from typing { Any }
 import from asyncio { Lock }
 import from fastapi { WebSocket }
 import from jac_scale.ws_backplane { BaseBackplane, MemoryBackplane }
@@ -22,12 +21,10 @@ import from jac_scale.ws_metrics {
 glob logger = logging.getLogger(__name__);
 
 # Application-defined WebSocket close codes (4000-4999 range).
-glob WS_CLOSE_POLICY: int = 4400;
 glob WS_CLOSE_UNAUTHORIZED: int = 4401;
 glob WS_CLOSE_FORBIDDEN: int = 4403;
 glob WS_CLOSE_IDLE: int = 4408;
 glob WS_CLOSE_TOO_LARGE: int = 4413;
-glob WS_CLOSE_RATE_LIMIT: int = 4429;
 
 """Per-connection state: identity, auth, rate-limit bucket, heartbeat."""
 obj ConnectionContext {
@@ -120,12 +117,6 @@ obj WebSocketConnectionManager {
 
     """Send to a single connection with timeout; closes the socket on timeout."""
     async def send_to(ctx: ConnectionContext, message: dict) -> bool;
-
-    # Back-compat shim used by older call sites (walker-only, no user tracking).
-    def get_connections(walker_name: str) -> list[Any] {
-        conns = self.snapshot('walker', walker_name);
-        return [c.websocket for c in conns];
-    }
 }
 
 impl WebSocketConnectionManager.register(ctx: ConnectionContext) -> (str | None) {

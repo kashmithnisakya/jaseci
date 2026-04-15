@@ -36,9 +36,7 @@ import from jac_scale.websocket {
     WS_CLOSE_UNAUTHORIZED,
     WS_CLOSE_FORBIDDEN,
     WS_CLOSE_IDLE,
-    WS_CLOSE_TOO_LARGE,
-    WS_CLOSE_RATE_LIMIT,
-    WS_CLOSE_POLICY
+    WS_CLOSE_TOO_LARGE
 }
 import from typing { AsyncGenerator }
 import from inspect { isgenerator }
