@@ -338,12 +338,8 @@ impl JacScaleConfig.get_websocket_config(self: JacScaleConfig) -> dict[str, Any]
         'max_connections_per_target': int(
             ws_config.get('max_connections_per_target', 5000)
         ),
-        'max_connections_per_user': int(
-            ws_config.get('max_connections_per_user', 10)
-        ),
-        'target_timeout_seconds': int(
-            ws_config.get('target_timeout_seconds', 30)
-        ),
+        'max_connections_per_user': int(ws_config.get('max_connections_per_user', 10)),
+        'target_timeout_seconds': int(ws_config.get('target_timeout_seconds', 30)),
         'messages_per_second': int(ws_config.get('messages_per_second', 20)),
         'backplane': ws_config.get('backplane', 'memory'),
         'redis_url': self.get_database_config().get('redis_url')

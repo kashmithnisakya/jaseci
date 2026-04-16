@@ -21,7 +21,7 @@ obj MemoryBackplane(BaseBackplane) {
     has _subs: dict[str, list[Any]] = {},
         _warned: bool = False;
 
-    async def start -> None {
+    async def start {
         if not self._warned {
             logger.warning(
                 "WS MemoryBackplane in use: broadcasts are limited to this "
@@ -41,20 +41,20 @@ obj MemoryBackplane(BaseBackplane) {
         await asyncio.gather(*tasks, return_exceptions=True);
     }
 
-    async def subscribe(channel: str, handler: Any) -> None {
+    async def subscribe(channel: str, handler: Any) {
         if channel not in self._subs {
             self._subs[channel] = [];
         }
         self._subs[channel].append(handler);
     }
 
-    async def unsubscribe(channel: str) -> None {
+    async def unsubscribe(channel: str) {
         if channel in self._subs {
             del self._subs[channel];
         }
     }
 
-    async def close -> None {
+    async def close {
         self._subs = {};
     }
 
@@ -149,7 +149,7 @@ obj RedisBackplane(BaseBackplane) {
         }
     }
 
-    async def subscribe(channel: str, handler: Any) -> None {
+    async def subscribe(channel: str, handler: Any) {
         lock = self._get_lock();
         await lock.acquire();
         try {
@@ -163,7 +163,7 @@ obj RedisBackplane(BaseBackplane) {
         }
     }
 
-    async def unsubscribe(channel: str) -> None {
+    async def unsubscribe(channel: str) {
         lock = self._get_lock();
         await lock.acquire();
         try {
@@ -180,7 +180,7 @@ obj RedisBackplane(BaseBackplane) {
         }
     }
 
-    async def close -> None {
+    async def close {
         self._closed = True;
         if self._reader_task is not None {
             self._reader_task.cancel();

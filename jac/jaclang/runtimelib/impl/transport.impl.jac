@@ -1,5 +1,3 @@
-"""Transport abstraction layer implementations."""
-
 """Create a success response with envelope pattern."""
 impl TransportResponse.success(
     data: Any = None,
@@ -212,8 +210,8 @@ impl WebSocketTransport.send(data: Any) -> None {
     }
     payload = (
         serialize_transport_response(data)
-        if isinstance(data, TransportResponse)
-        else data
+            if isinstance(data, TransportResponse)
+            else data
     );
     try {
         await self.websocket.send_json(payload);

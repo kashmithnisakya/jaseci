@@ -501,9 +501,7 @@ def _ws_error_frame(code: str, message: str, reason: (str | None) = None) -> dic
 
 """Authenticate a WS connection."""
 async def _ws_authenticate(
-    websocket: WebSocket,
-    user_manager: Any,
-    handshake_timeout: float
+    websocket: WebSocket, user_manager: Any, handshake_timeout: float
 ) -> (dict, dict | None) {
     query_token = websocket.query_params.get('token');
     if query_token {
@@ -554,9 +552,7 @@ async def _ws_authenticate(
 
 """Background heartbeat: send periodic pings; close idle connections."""
 async def _ws_heartbeat_loop(
-    ctx: ConnectionContext,
-    heartbeat_seconds: float,
-    missed_allowed: int
+    ctx: ConnectionContext, heartbeat_seconds: float, missed_allowed: int
 ) -> None {
     try {
         while not ctx.closed {
@@ -582,9 +578,7 @@ async def _ws_heartbeat_loop(
                 break;
             }
             try {
-                await ctx.websocket.send_json(
-                    {'type': 'ping', 'ts': time.time()}
-                );
+                await ctx.websocket.send_json({'type': 'ping', 'ts': time.time()});
             } except Exception as e {
                 logger.debug(f"WS ping send failed conn_id={ctx.conn_id}: {e}");
                 break;
@@ -596,7 +590,7 @@ async def _ws_heartbeat_loop(
 }
 
 """Reject a failed auth handshake with a structured error then close 4401."""
-async def _ws_reject_auth(websocket: WebSocket, auth_detail: dict) -> None {
+async def _ws_reject_auth(websocket: WebSocket, auth_detail: dict) {
     status = auth_detail.get('status', 'invalid');
     message_map = {
         'missing': 'Invalid or missing token',
@@ -619,7 +613,7 @@ async def _ws_reject_auth(websocket: WebSocket, auth_detail: dict) -> None {
 }
 
 """Reject a connection over capacity caps with a structured error then close 4403."""
-async def _ws_reject_capacity(websocket: WebSocket, rejection: str) -> None {
+async def _ws_reject_capacity(websocket: WebSocket, rejection: str) {
     try {
         await websocket.send_json(
             _ws_error_frame('CAPACITY', 'Connection limit reached', rejection)
@@ -691,9 +685,7 @@ async def _ws_handle_control(
                     'UNAUTHORIZED', 'Token refresh failed', detail.get('reason')
                 )
             );
-            await websocket.close(
-                code=WS_CLOSE_UNAUTHORIZED, reason=detail['status']
-            );
+            await websocket.close(code=WS_CLOSE_UNAUTHORIZED, reason=detail['status']);
             return 'break';
         }
         ctx.user_id = detail.get('user_id');
@@ -704,9 +696,7 @@ async def _ws_handle_control(
     if requires_auth and ctx.exp is not None and time.time() >= float(ctx.exp) {
         await websocket.send_json(
             _ws_error_frame(
-                'UNAUTHORIZED',
-                'Token expired; send a refresh message',
-                'expired'
+                'UNAUTHORIZED', 'Token expired; send a refresh message', 'expired'
             )
         );
         await websocket.close(code=WS_CLOSE_UNAUTHORIZED, reason='expired');
@@ -715,8 +705,7 @@ async def _ws_handle_control(
     if not consume_rate_token(ctx, rate_capacity, msgs_per_sec) {
         await websocket.send_json(
             _ws_error_frame(
-                'RATE_LIMITED',
-                f'Rate limit exceeded ({int(msgs_per_sec)} msg/s)'
+                'RATE_LIMITED', f'Rate limit exceeded ({int(msgs_per_sec)} msg/s)'
             )
         );
         return 'continue';
@@ -726,10 +715,8 @@ async def _ws_handle_control(
 
 """Cancel the heartbeat task and unregister the connection."""
 async def _ws_cleanup(
-    heartbeat_task: Any,
-    ws_manager: WebSocketConnectionManager,
-    ctx: ConnectionContext
-) -> None {
+    heartbeat_task: Any, ws_manager: WebSocketConnectionManager, ctx: ConnectionContext
+) {
     heartbeat_task.cancel();
     try {
         await heartbeat_task;
@@ -787,9 +774,7 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
             return;
         }
         heartbeat_task = asyncio.create_task(
-            _ws_heartbeat_loop(
-                ctx, HEARTBEAT_SECONDS, HEARTBEAT_MISSED_ALLOWED
-            )
+            _ws_heartbeat_loop(ctx, HEARTBEAT_SECONDS, HEARTBEAT_MISSED_ALLOWED)
         );
         try {
             while True {
@@ -807,8 +792,13 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
                 }
                 ctx.last_pong = time.monotonic();
                 control = await _ws_handle_control(
-                    websocket, ctx, data, user_manager,
-                    requires_auth, msgs_per_sec, rate_capacity
+                    websocket,
+                    ctx,
+                    data,
+                    user_manager,
+                    requires_auth,
+                    msgs_per_sec,
+                    rate_capacity
                 );
                 if control == 'break' {
                     break;
@@ -833,9 +823,7 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
                     );
                     continue;
                 } except Exception as e {
-                    logger.error(
-                        f"WS walker execution error '{walker_name}': {e}"
-                    );
+                    logger.error(f"WS walker execution error '{walker_name}': {e}");
                     await websocket.send_json(
                         _ws_error_frame('INTERNAL_ERROR', str(e))
                     );
@@ -860,9 +848,7 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
         } except WebSocketDisconnect {
             logger.debug(f"WS client disconnected conn_id={ctx.conn_id}");
         } except Exception as e {
-            logger.error(
-                f"WS error walker='{walker_name}' conn_id={ctx.conn_id}: {e}"
-            );
+            logger.error(f"WS error walker='{walker_name}' conn_id={ctx.conn_id}: {e}");
         } finally {
             await _ws_cleanup(heartbeat_task, ws_manager, ctx);
         }
@@ -884,9 +870,7 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
     rate_capacity = max(msgs_per_sec, 1.0);
     requires_auth = self.introspector.is_auth_required_for_function(func_name);
     func_obj = self.get_functions()[func_name];
-    restspec = func_obj.restspec
-        if func_obj?.restspec and func_obj.restspec
-        else None;
+    restspec = func_obj.restspec if func_obj?.restspec and func_obj.restspec else None;
     is_broadcast = restspec.broadcast if restspec and restspec?.broadcast else False;
     is_streaming = restspec.streaming if restspec and restspec?.streaming else False;
     if is_broadcast and not is_streaming {
@@ -928,9 +912,7 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
             return;
         }
         heartbeat_task = asyncio.create_task(
-            _ws_heartbeat_loop(
-                ctx, HEARTBEAT_SECONDS, HEARTBEAT_MISSED_ALLOWED
-            )
+            _ws_heartbeat_loop(ctx, HEARTBEAT_SECONDS, HEARTBEAT_MISSED_ALLOWED)
         );
         try {
             while True {
@@ -948,8 +930,13 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
                 }
                 ctx.last_pong = time.monotonic();
                 control = await _ws_handle_control(
-                    websocket, ctx, data, user_manager,
-                    requires_auth, msgs_per_sec, rate_capacity
+                    websocket,
+                    ctx,
+                    data,
+                    user_manager,
+                    requires_auth,
+                    msgs_per_sec,
+                    rate_capacity
                 );
                 if control == 'break' {
                     break;
@@ -980,9 +967,7 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
                     );
                     continue;
                 } except Exception as e {
-                    logger.error(
-                        f"WS function execution error '{func_name}': {e}"
-                    );
+                    logger.error(f"WS function execution error '{func_name}': {e}");
                     await websocket.send_json(
                         _ws_error_frame('INTERNAL_ERROR', str(e))
                     );
@@ -1010,9 +995,7 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
         } except WebSocketDisconnect {
             logger.debug(f"WS client disconnected conn_id={ctx.conn_id}");
         } except Exception as e {
-            logger.error(
-                f"WS error function='{func_name}' conn_id={ctx.conn_id}: {e}"
-            );
+            logger.error(f"WS error function='{func_name}' conn_id={ctx.conn_id}: {e}");
         } finally {
             await _ws_cleanup(heartbeat_task, ws_manager, ctx);
         }
@@ -1050,7 +1033,9 @@ impl JacAPIServerEndpoints.register_websocket_endpoints -> None {
         if protocol == APIProtocol.WEBSOCKET {
             handler = self.create_websocket_function_handler(func_name);
             self.server.app.websocket(f"/ws/function/{func_name}")(handler);
-            logger.info(f"Registered WebSocket function endpoint: /ws/function/{func_name}");
+            logger.info(
+                f"Registered WebSocket function endpoint: /ws/function/{func_name}"
+            );
         }
     }
 }

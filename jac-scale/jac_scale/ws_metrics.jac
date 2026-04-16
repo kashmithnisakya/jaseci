@@ -2,15 +2,15 @@
 import logging;
 import from typing { Any }
 
-glob logger = logging.getLogger(__name__);
-glob _enabled: bool = False;
-glob _connections_active: Any = None;
-glob _auth_failures: Any = None;
-glob _broadcasts_total: Any = None;
+glob logger = logging.getLogger(__name__),
+     _enabled: bool = False,
+     _connections_active: Any = None,
+     _auth_failures: Any = None,
+     _broadcasts_total: Any = None;
 
 """Initialize Prometheus metric handles. Idempotent; safe if already called."""
 def setup_ws_metrics(enabled: bool = True, namespace: str = 'jac_scale') -> None {
-    global _enabled, _connections_active, _auth_failures, _broadcasts_total;
+    global _enabled,_connections_active,_auth_failures,_broadcasts_total;
     if not enabled {
         _enabled = False;
         return;
@@ -32,9 +32,7 @@ def setup_ws_metrics(enabled: bool = True, namespace: str = 'jac_scale') -> None
         ['kind', 'name']
     );
     _auth_failures = Counter(
-        f"{namespace}_ws_auth_failures_total",
-        'WebSocket auth failures',
-        ['reason']
+        f"{namespace}_ws_auth_failures_total", 'WebSocket auth failures', ['reason']
     );
     _broadcasts_total = Counter(
         f"{namespace}_ws_broadcasts_total",
@@ -44,7 +42,7 @@ def setup_ws_metrics(enabled: bool = True, namespace: str = 'jac_scale') -> None
     _enabled = True;
 }
 
-def connection_opened(kind: str, name: str) -> None {
+def connection_opened(kind: str, name: str) {
     if _enabled and _connections_active is not None {
         try {
             _connections_active.labels(kind=kind, name=name).inc();
@@ -54,7 +52,7 @@ def connection_opened(kind: str, name: str) -> None {
     }
 }
 
-def connection_closed(kind: str, name: str) -> None {
+def connection_closed(kind: str, name: str) {
     if _enabled and _connections_active is not None {
         try {
             _connections_active.labels(kind=kind, name=name).dec();
@@ -64,7 +62,7 @@ def connection_closed(kind: str, name: str) -> None {
     }
 }
 
-def auth_failure(reason: str) -> None {
+def auth_failure(reason: str) {
     if _enabled and _auth_failures is not None {
         try {
             _auth_failures.labels(reason=reason).inc();
@@ -74,7 +72,7 @@ def auth_failure(reason: str) -> None {
     }
 }
 
-def broadcast_published(kind: str, name: str) -> None {
+def broadcast_published(kind: str, name: str) {
     if _enabled and _broadcasts_total is not None {
         try {
             _broadcasts_total.labels(kind=kind, name=name).inc();

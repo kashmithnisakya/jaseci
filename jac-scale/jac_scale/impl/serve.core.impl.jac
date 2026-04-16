@@ -247,7 +247,7 @@ impl JacAPIServerCore.start(
     # Graceful WebSocket shutdown: close the backplane and let clients disconnect.
     _self_ws = self;
     @self.server.app.on_event("shutdown")
-    async def _ws_shutdown_hook -> None {
+    async def _ws_shutdown_hook {
         try {
             mgr = _self_ws._ws_manager;
             if mgr is not None {

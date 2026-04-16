@@ -156,7 +156,9 @@ impl JacScaleUserManager.get_jwt_claims(token: str) -> dict | None {
 }
 
 """Validate a JWT token and return structured detail."""
-impl JacScaleUserManager.validate_jwt_token_detail(token: str | None) -> dict[str, Any] {
+impl JacScaleUserManager.validate_jwt_token_detail(
+    token: str | None
+) -> dict[str, Any] {
     if not token {
         return {
             'status': 'missing',
@@ -167,10 +169,7 @@ impl JacScaleUserManager.validate_jwt_token_detail(token: str | None) -> dict[st
     }
     try {
         decoded = jwt.decode(
-            token,
-            JWT_SECRET,
-            algorithms=[JWT_ALGORITHM],
-            options={"verify_exp": True}
+            token, JWT_SECRET, algorithms=[JWT_ALGORITHM], options={"verify_exp": True}
         );
     } except jwt.ExpiredSignatureError as e {
         return {

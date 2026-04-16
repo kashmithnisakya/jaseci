@@ -13,14 +13,14 @@ import from jac_scale.ws_metrics {
 }
 
 glob logger = logging.getLogger(__name__),
-    WS_CLOSE_UNAUTHORIZED: int = 4401,
-    WS_CLOSE_FORBIDDEN: int = 4403,
-    WS_CLOSE_IDLE: int = 4408,
-    WS_CLOSE_TOO_LARGE: int = 4413,
-    HEARTBEAT_SECONDS: float = 30.0,
-    HEARTBEAT_MISSED_ALLOWED: int = 2,
-    SEND_TIMEOUT_SECONDS: float = 5.0,
-    AUTH_HANDSHAKE_TIMEOUT_SECONDS: float = 10.0;
+     WS_CLOSE_UNAUTHORIZED: int = 4401,
+     WS_CLOSE_FORBIDDEN: int = 4403,
+     WS_CLOSE_IDLE: int = 4408,
+     WS_CLOSE_TOO_LARGE: int = 4413,
+     HEARTBEAT_SECONDS: float = 30.0,
+     HEARTBEAT_MISSED_ALLOWED: int = 2,
+     SEND_TIMEOUT_SECONDS: float = 5.0,
+     AUTH_HANDSHAKE_TIMEOUT_SECONDS: float = 10.0;
 
 """Per-connection state: identity, auth, rate-limit bucket, heartbeat."""
 obj ConnectionContext {
@@ -243,9 +243,7 @@ impl WebSocketConnectionManager._on_backplane_message(
     await self._local_fanout(target_key, message);
 }
 
-impl WebSocketConnectionManager._local_fanout(
-    target_key: str, message: dict
-) -> None {
+impl WebSocketConnectionManager._local_fanout(target_key: str, message: dict) -> None {
     per_target = self._by_target.get(target_key, {});
     conns = list(per_target.values());
     if not conns {
@@ -265,9 +263,7 @@ impl WebSocketConnectionManager.broadcast(
     await backplane.publish(channel, message);
 }
 
-impl WebSocketConnectionManager.send_to(
-    ctx: ConnectionContext, message: dict
-) -> bool {
+impl WebSocketConnectionManager.send_to(ctx: ConnectionContext, message: dict) -> bool {
     if ctx.closed {
         return False;
     }
