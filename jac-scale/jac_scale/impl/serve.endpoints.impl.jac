@@ -517,7 +517,7 @@ async def _ws_authenticate(
         return (
             {
                 'status': 'missing',
-                'username': None,
+                'user_id': None,
                 'exp': None,
                 'reason': 'Auth handshake timed out'
             },
@@ -530,7 +530,7 @@ async def _ws_authenticate(
         return (
             {
                 'status': 'invalid',
-                'username': None,
+                'user_id': None,
                 'exp': None,
                 'reason': 'Handshake payload is not valid JSON'
             },
@@ -541,7 +541,7 @@ async def _ws_authenticate(
         return (
             {
                 'status': 'invalid',
-                'username': None,
+                'user_id': None,
                 'exp': None,
                 'reason': 'Handshake payload must be a JSON object'
             },
@@ -696,7 +696,7 @@ async def _ws_handle_control(
             );
             return 'break';
         }
-        ctx.username = detail.get('username');
+        ctx.user_id = detail.get('user_id');
         ctx.exp = detail.get('exp');
         await websocket.send_json({'type': 'refreshed', 'ok': True});
         return 'continue';
@@ -758,7 +758,7 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
     execution_manager = self.execution_manager;
     async def websocket_handler(websocket: WebSocket) {
         await websocket.accept();
-        username: (str | None) = None;
+        user_id: (str | None) = None;
         token_exp: (float | None) = None;
         first_data: (dict | None) = None;
         if requires_auth {
@@ -770,14 +770,14 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
                 await _ws_reject_auth(websocket, auth_detail);
                 return;
             }
-            username = auth_detail.get('username');
+            user_id = auth_detail.get('user_id');
             token_exp = auth_detail.get('exp');
         }
         ctx = ConnectionContext(
             websocket=websocket,
             target_kind='walker',
             target_name=walker_name,
-            username=username,
+            user_id=user_id,
             exp=token_exp,
             rate_tokens=rate_capacity
         );
@@ -819,7 +819,7 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
                 try {
                     result = await asyncio.wait_for(
                         execution_manager.spawn_walker(
-                            walker_cls, data, (ctx.username or Con.GUEST.value)
+                            walker_cls, data, (ctx.user_id or Con.GUEST.value)
                         ),
                         timeout=target_timeout
                     );
@@ -899,7 +899,7 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
     execution_manager = self.execution_manager;
     async def websocket_handler(websocket: WebSocket) {
         await websocket.accept();
-        username: (str | None) = None;
+        user_id: (str | None) = None;
         token_exp: (float | None) = None;
         first_data: (dict | None) = None;
         if requires_auth {
@@ -911,14 +911,14 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
                 await _ws_reject_auth(websocket, auth_detail);
                 return;
             }
-            username = auth_detail.get('username');
+            user_id = auth_detail.get('user_id');
             token_exp = auth_detail.get('exp');
         }
         ctx = ConnectionContext(
             websocket=websocket,
             target_kind='fn',
             target_name=func_name,
-            username=username,
+            user_id=user_id,
             exp=token_exp,
             rate_tokens=rate_capacity
         );
@@ -966,7 +966,7 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
                 try {
                     result = await asyncio.wait_for(
                         execution_manager.execute_function(
-                            func_obj, kwargs, (ctx.username or Con.GUEST.value)
+                            func_obj, kwargs, (ctx.user_id or Con.GUEST.value)
                         ),
                         timeout=target_timeout
                     );

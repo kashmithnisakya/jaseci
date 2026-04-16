@@ -33,7 +33,7 @@ obj ConnectionContext {
         target_kind: str,
         target_name: str,
         conn_id: str = '',
-        username: (str | None) = None,
+        user_id: (str | None) = None,
         exp: (float | None) = None,
         rate_tokens: float = 0.0,
         rate_last_refill: float = 0.0,
@@ -124,11 +124,11 @@ impl WebSocketConnectionManager.register(ctx: ConnectionContext) -> (str | None)
         }
         if len(per_target) >= self.max_per_target {
             rejection = 'per_target_limit';
-        } elif ctx.username and self._by_user.get(ctx.username, 0) >= self.max_per_user {
+        } elif ctx.user_id and self._by_user.get(ctx.user_id, 0) >= self.max_per_user {
             rejection = 'per_user_limit';
         } else {
-            if ctx.username {
-                self._by_user[ctx.username] = self._by_user.get(ctx.username, 0) + 1;
+            if ctx.user_id {
+                self._by_user[ctx.user_id] = self._by_user.get(ctx.user_id, 0) + 1;
             }
             newly_active = len(per_target) == 0;
             per_target[ctx.conn_id] = ctx;
@@ -143,7 +143,7 @@ impl WebSocketConnectionManager.register(ctx: ConnectionContext) -> (str | None)
         connection_opened(ctx.target_kind, ctx.target_name);
         logger.info(
             f"WS connected target={ctx.target_kind}:{ctx.target_name} "
-            f"user={ctx.username} conn_id={ctx.conn_id}"
+            f"user_id={ctx.user_id} conn_id={ctx.conn_id}"
         );
     }
     return rejection;
@@ -163,10 +163,10 @@ impl WebSocketConnectionManager.unregister(ctx: ConnectionContext) -> None {
                 now_empty = True;
             }
         }
-        if ctx.username and self._by_user.get(ctx.username, 0) > 0 {
-            self._by_user[ctx.username] -= 1;
-            if self._by_user[ctx.username] <= 0 {
-                del self._by_user[ctx.username];
+        if ctx.user_id and self._by_user.get(ctx.user_id, 0) > 0 {
+            self._by_user[ctx.user_id] -= 1;
+            if self._by_user[ctx.user_id] <= 0 {
+                del self._by_user[ctx.user_id];
             }
         }
         ctx.closed = True;
@@ -179,7 +179,7 @@ impl WebSocketConnectionManager.unregister(ctx: ConnectionContext) -> None {
     connection_closed(ctx.target_kind, ctx.target_name);
     logger.info(
         f"WS disconnected target={ctx.target_kind}:{ctx.target_name} "
-        f"user={ctx.username} conn_id={ctx.conn_id}"
+        f"user_id={ctx.user_id} conn_id={ctx.conn_id}"
     );
 }
 
