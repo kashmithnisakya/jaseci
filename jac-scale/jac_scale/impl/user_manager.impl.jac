@@ -155,18 +155,7 @@ impl JacScaleUserManager.get_jwt_claims(token: str) -> dict | None {
     }
 }
 
-"""Validate a JWT token and return structured detail.
-
-Result shape:
-    {"status": "ok"|"missing"|"expired"|"invalid"|"unknown_user",
-     "user_id": str | None,
-     "exp": float | None,
-     "reason": str | None}
-
-Callers (notably the WebSocket handler) need to distinguish between a missing
-token, an expired one, and an outright-invalid one so they can surface
-actionable errors and close with specific close codes.
-"""
+"""Validate a JWT token and return structured detail."""
 impl JacScaleUserManager.validate_jwt_token_detail(token: str | None) -> dict[str, Any] {
     if not token {
         return {

@@ -333,8 +333,6 @@ impl JacScaleConfig.get_scheduler_config(self: JacScaleConfig) -> dict[str, Any]
 impl JacScaleConfig.get_websocket_config(self: JacScaleConfig) -> dict[str, Any] {
     config = self.load();
     ws_config = config.get('websocket', {});
-    db_raw = config.get('database');
-    db_section = db_raw if isinstance(db_raw, dict) else {};
     return {
         'max_message_bytes': int(ws_config.get('max_message_bytes', 65536)),
         'max_connections_per_target': int(
@@ -348,7 +346,7 @@ impl JacScaleConfig.get_websocket_config(self: JacScaleConfig) -> dict[str, Any]
         ),
         'messages_per_second': int(ws_config.get('messages_per_second', 20)),
         'backplane': ws_config.get('backplane', 'memory'),
-        'redis_url': os.environ.get('REDIS_URL') or db_section.get('redis_url')
+        'redis_url': self.get_database_config().get('redis_url')
     };
 }
 

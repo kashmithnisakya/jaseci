@@ -12,20 +12,15 @@ import from jac_scale.ws_metrics {
     broadcast_published
 }
 
-glob logger = logging.getLogger(__name__);
-
-# Application-defined WebSocket close codes (4000-4999 range).
-glob WS_CLOSE_UNAUTHORIZED: int = 4401;
-glob WS_CLOSE_FORBIDDEN: int = 4403;
-glob WS_CLOSE_IDLE: int = 4408;
-glob WS_CLOSE_TOO_LARGE: int = 4413;
-
-# Internal timings — not in jac.toml because reasonable deployments all agree.
-# Promote to config only if a real use case requires per-deployment tuning.
-glob HEARTBEAT_SECONDS: float = 30.0;
-glob HEARTBEAT_MISSED_ALLOWED: int = 2;
-glob SEND_TIMEOUT_SECONDS: float = 5.0;
-glob AUTH_HANDSHAKE_TIMEOUT_SECONDS: float = 10.0;
+glob logger = logging.getLogger(__name__),
+    WS_CLOSE_UNAUTHORIZED: int = 4401,
+    WS_CLOSE_FORBIDDEN: int = 4403,
+    WS_CLOSE_IDLE: int = 4408,
+    WS_CLOSE_TOO_LARGE: int = 4413,
+    HEARTBEAT_SECONDS: float = 30.0,
+    HEARTBEAT_MISSED_ALLOWED: int = 2,
+    SEND_TIMEOUT_SECONDS: float = 5.0,
+    AUTH_HANDSHAKE_TIMEOUT_SECONDS: float = 10.0;
 
 """Per-connection state: identity, auth, rate-limit bucket, heartbeat."""
 obj ConnectionContext {
@@ -260,10 +255,6 @@ impl WebSocketConnectionManager._local_fanout(
     await asyncio.gather(*tasks, return_exceptions=True);
 }
 
-"""Broadcast via the backplane. Every subscribing worker fans out to its own
-local connections, so this single call reaches all processes — not just this
-one.
-"""
 impl WebSocketConnectionManager.broadcast(
     target_kind: str, target_name: str, message: dict
 ) -> None {

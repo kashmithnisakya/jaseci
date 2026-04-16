@@ -159,7 +159,7 @@ impl JacAPIServerEndpoints.register_functions_endpoints -> None {
         if func_obj?.schedule_spec {
             continue;
         }
-        # Skip WebSocket-protocol functions — they register via /ws/fn/{name}.
+        # Skip WebSocket-protocol functions — they register via /ws/function/{name}.
         if self.get_function_protocol(func_name) == APIProtocol.WEBSOCKET {
             continue;
         }
@@ -916,7 +916,7 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
         }
         ctx = ConnectionContext(
             websocket=websocket,
-            target_kind='fn',
+            target_kind='function',
             target_name=func_name,
             user_id=user_id,
             exp=token_exp,
@@ -1027,7 +1027,7 @@ Walker routes:
     `/ws/{name}`        — legacy alias kept for one release
 
 Function routes:
-    `/ws/fn/{name}`
+    `/ws/function/{name}`
 """
 impl JacAPIServerEndpoints.register_websocket_endpoints -> None {
     for walker_name in self.get_walkers() {
@@ -1049,8 +1049,8 @@ impl JacAPIServerEndpoints.register_websocket_endpoints -> None {
         protocol = self.get_function_protocol(func_name);
         if protocol == APIProtocol.WEBSOCKET {
             handler = self.create_websocket_function_handler(func_name);
-            self.server.app.websocket(f"/ws/fn/{func_name}")(handler);
-            logger.info(f"Registered WebSocket function endpoint: /ws/fn/{func_name}");
+            self.server.app.websocket(f"/ws/function/{func_name}")(handler);
+            logger.info(f"Registered WebSocket function endpoint: /ws/function/{func_name}");
         }
     }
 }
