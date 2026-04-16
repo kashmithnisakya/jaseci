@@ -806,14 +806,14 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
                     }
                 }
                 ctx.last_pong = time.monotonic();
-                flow = await _ws_handle_control(
+                control = await _ws_handle_control(
                     websocket, ctx, data, user_manager,
                     requires_auth, msgs_per_sec, rate_capacity
                 );
-                if flow == 'break' {
+                if control == 'break' {
                     break;
                 }
-                if flow == 'continue' {
+                if control == 'continue' {
                     continue;
                 }
                 try {
@@ -947,14 +947,14 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
                     }
                 }
                 ctx.last_pong = time.monotonic();
-                flow = await _ws_handle_control(
+                control = await _ws_handle_control(
                     websocket, ctx, data, user_manager,
                     requires_auth, msgs_per_sec, rate_capacity
                 );
-                if flow == 'break' {
+                if control == 'break' {
                     break;
                 }
-                if flow == 'continue' {
+                if control == 'continue' {
                     continue;
                 }
                 # Streaming functions get a WebSocketTransport so they can emit

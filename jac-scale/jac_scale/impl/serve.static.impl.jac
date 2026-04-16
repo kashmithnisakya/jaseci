@@ -260,7 +260,14 @@ impl JacAPIServerStatic.serve_root_asset(file_path: str) -> Response {
     import from jaclang.project.config { get_config }
     config = get_config();
     cl_route_prefix = config.serve.cl_route_prefix if config else "cl";
-    api_prefixes = (f'{cl_route_prefix}/', 'walker/', 'function/', 'user/', 'static/');
+    api_prefixes = (
+        f'{cl_route_prefix}/',
+        'walker/',
+        'function/',
+        'user/',
+        'static/',
+        'ws/'
+    );
     if (not file_ext or (file_ext not in allowed_extensions)) {
         # SPA catch-all: serve base_route_app for extensionless paths
         base_route_app = config.serve.base_route_app if config else "";
