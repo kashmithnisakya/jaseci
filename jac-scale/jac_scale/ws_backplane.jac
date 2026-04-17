@@ -222,16 +222,10 @@ obj RedisBackplane(BaseBackplane) {
 }
 
 def build_backplane(cfg: dict) -> BaseBackplane {
-    kind = (cfg.get('backplane') or 'memory').lower();
-    if kind == 'redis' {
-        url = cfg.get('redis_url');
-        if not url {
-            logger.warning(
-                "WS backplane='redis' requested but redis_url is empty; "
-                "falling back to MemoryBackplane."
-            );
-            return MemoryBackplane();
-        }
+    # Auto-detect: if a Redis URL is configured (via [plugins.scale.database])
+    # use RedisBackplane for multi-worker fan-out; otherwise run in-process.
+    url = cfg.get('redis_url');
+    if url {
         return RedisBackplane(url=url);
     }
     return MemoryBackplane();
