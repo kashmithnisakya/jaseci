@@ -4,6 +4,8 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 ## jaclang 0.14.1 (Unreleased)
 
+- **WebSocket Transport**: `WebSocketTransport` now actually drives the underlying FastAPI socket (accept/send/close) instead of the previous placeholder, and all transports share a single `serialize_transport_response()` envelope helper for consistent wire format.
+- **RESTSpec: `streaming` Flag**: Added `streaming: bool = False` to `RESTSpec` so endpoints can opt into streamed responses.
 - **Type Checker: Walker `.reports` Attribute Resolution**: Accessing `.reports` on a spawned walker no longer produces a spurious `E1030` error. Walker and node archetypes now inherit from their builtin base types (`Walker`, `Node`) in the type system's MRO, so fields like `reports: list[Any]` resolve through normal inheritance. Users can also declare `has reports: list[MyType]` on a walker for compile-time type checking of `report` statements.
 
 ## jaclang 0.14.0 (Latest Release)

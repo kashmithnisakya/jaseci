@@ -4,6 +4,10 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 ## jac-scale 0.2.15 (Unreleased)
 
+- **WebSocket Overhaul**: Production-ready WebSocket stack with JWT auth handshake, heartbeat/idle close, per-target and per-user connection caps, message-size limits, and structured reject frames. Functions can now opt into `@restspec(protocol=APIProtocol.WEBSOCKET)` alongside walkers.
+- **Pluggable WS Backplane**: Memory (default) or Redis pub/sub for multi-worker broadcast fan-out. Configure via `backplane = "memory" | "redis"` in `[plugins.scale.websocket]`.
+- **WebSocket Metrics & Config**: Prometheus counters for connections and broadcasts at `/metrics`, plus a new `[plugins.scale.websocket]` config block for message size, connection caps, and rate limits.
+
 ## jac-scale 0.2.14 (Latest Release)
 
 - **Identity-based auth system**: Replaced flat username/password user model with a flexible identity + credential architecture. Users can register with multiple identities (username, email) and credentials (password), stored as arrays in MongoDB. Login accepts any identity type. SSO accounts are stored as identities (`type: sso`, `provider: google`) within the user document instead of a separate `sso_accounts` collection.
