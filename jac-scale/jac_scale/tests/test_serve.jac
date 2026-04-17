@@ -1318,6 +1318,81 @@ test "websocket functionality" {
             }
         }
         asyncio.run(test_private_broadcast_with_auth(users));
+
+        # Test: WebSocket function RPC echo at /ws/function/{name}
+        async def test_ws_function {
+            async with websockets.connect(
+                f"{sv_ws_url}/ws/function/ws_echo_fn"
+            ) as ws {
+                await ws.send(json.dumps({"message": "fn-hi", "client_id": "fn-1"}));
+                response = json.loads(await ws.recv());
+                assert response["ok"] is True , f"Expected ok=True, got {response}";
+                # Function responses wrap the return value in data.result.
+                result = response["data"]["result"];
+                assert result["echo"] == "fn-hi" , f"Unexpected result: {result}";
+                assert result["client_id"] == "fn-1";
+                assert result["kind"] == "function";
+            }
+        }
+        asyncio.run(test_ws_function());
+
+        # Test: structured reject frame shape on unauthorized
+        async def test_reject_frame_shape {
+            async with websockets.connect(f"{sv_ws_url}/ws/PrivateWebSocket") as ws {
+                await ws.send(json.dumps({"message": "no token"}));
+                frame = json.loads(await ws.recv());
+                assert frame["ok"] is False;
+                err = frame["error"];
+                assert err["code"] == "UNAUTHORIZED";
+                assert isinstance(err.get("message"), str) and err["message"];
+                assert "reason" in err , f"Expected reason field, got {err}";
+            }
+        }
+        asyncio.run(test_reject_frame_shape());
+
+        # Test: per-user connection cap enforced (jac.toml sets limit=2).
+        # Register a user, open 2 authenticated sockets, assert 3rd is rejected.
+        cap_username = f"ws_cap_user_{uuid.uuid4().hex[:8]}";
+        requests.post(
+            f"{sv_base_url}/user/register",
+            json={
+                "identities": [{"type": "username", "value": cap_username}],
+                "credential": {"type": "password", "password": "testpass123"}
+            },
+            timeout=10
+        );
+        login_resp = requests.post(
+            f"{sv_base_url}/user/login",
+            json={
+                "identity": {"type": "username", "value": cap_username},
+                "credential": {"type": "password", "password": "testpass123"}
+            },
+            timeout=10
+        );
+        cap_token = login_resp.json()["data"]["token"];
+
+        async def test_per_user_cap(t: str) {
+            ws_a = await websockets.connect(
+                f"{sv_ws_url}/ws/PrivateWebSocket?token={t}"
+            );
+            ws_b = await websockets.connect(
+                f"{sv_ws_url}/ws/PrivateWebSocket?token={t}"
+            );
+            try {
+                async with websockets.connect(
+                    f"{sv_ws_url}/ws/PrivateWebSocket?token={t}"
+                ) as ws_c {
+                    frame = json.loads(await ws_c.recv());
+                    assert frame["ok"] is False , f"Expected reject, got {frame}";
+                    assert frame["error"]["code"] == "CAPACITY";
+                    assert frame["error"].get("reason") == "per_user_limit";
+                }
+            } finally {
+                await ws_a.close();
+                await ws_b.close();
+            }
+        }
+        asyncio.run(test_per_user_cap(cap_token));
     } finally {
         teardown_serve_server(sp);
     }

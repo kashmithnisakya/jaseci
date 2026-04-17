@@ -329,6 +329,17 @@ async walker PrivateBroadcastChat {
     }
 }
 
+"""Test 6: Public WebSocket function at /ws/function/{name} (RPC-style)."""
+@restspec(protocol=APIProtocol.WEBSOCKET)
+def:pub ws_echo_fn(message: str, client_id: str = "anonymous") -> dict {
+    return {
+        "echo": message,
+        "client_id": client_id,
+        "protocol": "websocket",
+        "kind": "function"
+    };
+}
+
 # ============================================================================
 # Scheduling Walkers and Functions
 # ============================================================================

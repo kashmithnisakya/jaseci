@@ -95,8 +95,9 @@ obj RedisBackplane(BaseBackplane) {
             self.url, decode_responses=True, health_check_interval=30
         );
         self._pubsub = self._client.pubsub();
-        # Reader task starts idle; channels are added on subscribe.
-        self._reader_task = asyncio.create_task(self._reader_loop());
+        # Reader task is started lazily on first subscribe(); calling
+        # get_message() before any channel is subscribed raises
+        # "pubsub connection not set" and poisons the loop.
         logger.info(f"WS RedisBackplane connected url={self.url}");
     }
 
@@ -158,6 +159,11 @@ obj RedisBackplane(BaseBackplane) {
                 await self._pubsub.subscribe(channel);
             }
             self._handlers[channel].append(handler);
+            # Start the reader only once we have a subscription, so
+            # get_message() always sees a connected pubsub.
+            if self._reader_task is None and not self._closed {
+                self._reader_task = asyncio.create_task(self._reader_loop());
+            }
         } finally {
             lock.release();
         }
@@ -192,14 +198,18 @@ obj RedisBackplane(BaseBackplane) {
         }
         if self._pubsub is not None {
             try {
-                await self._pubsub.close();
+                # redis-py >= 5.0.1 renamed close() to aclose(); prefer the new
+                # name but fall back for older versions.
+                closer = getattr(self._pubsub, 'aclose', self._pubsub.close);
+                await closer();
             } except Exception as e {
                 logger.debug(f"WS Redis pubsub close exception: {e}");
             }
         }
         if self._client is not None {
             try {
-                await self._client.close();
+                closer = getattr(self._client, 'aclose', self._client.close);
+                await closer();
             } except Exception as e {
                 logger.debug(f"WS Redis client close exception: {e}");
             }
