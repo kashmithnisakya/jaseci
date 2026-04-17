@@ -65,7 +65,7 @@ Content-Type: application/json
 ```
 
 - At least one identity is required at registration; additional identities can be added later.
-- Login accepts any identity the user has registered (`username` **or** `email`) — the server resolves it to the same account.
+- Login accepts any identity the user has registered (`username` **or** `email`); the server resolves it to the same account.
 - `identity.value` and `credential.password` enforce `min_length=1`; empty strings are rejected with `VALIDATION_ERROR`.
 
 ##### JWT `user_id` Claim
@@ -87,7 +87,7 @@ JWT tokens previously encoded `username` as the subject. They now encode `user_i
 **Migration:**
 
 - Any middleware or downstream service that reads `username` from the decoded JWT must read `user_id` instead and resolve it to a user record via the user manager if the username is still required.
-- Existing tokens issued before the upgrade are no longer valid — users must log in again to receive a new token.
+- Existing tokens issued before the upgrade are no longer valid; users must log in again to receive a new token.
 
 ##### Password Hashing Switched to bcrypt
 
@@ -107,7 +107,7 @@ SSO linkages previously lived in a dedicated `sso_accounts` collection keyed by 
 }
 ```
 
-**Migration:** A built-in legacy user migration runs at startup to convert pre-existing flat `username`/`password` records into the identity-based shape. Case-colliding legacy accounts are kept for the first insertion and marked disabled for the rest — review disabled accounts after the upgrade.
+**Migration:** A built-in legacy user migration runs at startup to convert pre-existing flat `username`/`password` records into the identity-based shape. Case-colliding legacy accounts are kept for the first insertion and marked disabled for the rest; review disabled accounts after the upgrade.
 
 ##### Update Password Request Shape
 
