@@ -337,14 +337,51 @@ impl __jacCallFunction(function_name: str, args: dict = {}) -> Any {
     );
 }
 
-impl jacSignup(username: str, password: str) -> dict {
+impl Identity.email(value: str) -> Identity {
+    return Identity(type="email", value=value);
+}
+
+impl Identity.username(value: str) -> Identity {
+    return Identity(type="username", value=value);
+}
+
+impl Identity.auto(value: str) -> Identity {
+    return Identity.email(value) if "@" in value else Identity.username(value);
+}
+
+impl Identity.to_dict -> dict {
+    return {"type": self.type, "value": self.value};
+}
+
+impl Credential.password(value: str) -> Credential {
+    return Credential(type="password", value=value);
+}
+
+impl Credential.to_dict -> dict {
+    return {"type": self.type, "password": self.value};
+}
+
+impl jacSignup(
+    identity: str | Identity | list[Identity],
+    credential: str | Credential
+) -> dict {
+    if isinstance(identity, list) {
+        identities = [i.to_dict() for i in identity];
+    } elif isinstance(identity, Identity) {
+        identities = [identity.to_dict()];
+    } else {
+        identities = [Identity.auto(identity).to_dict()];
+    }
+    cred = credential if isinstance(credential, Credential) else Credential.password(credential);
     base_url = __getApiBaseUrl();
     response = await fetch(
         f"{base_url}/user/register",
         {
             "method": "POST",
             "headers": {"Content-Type": "application/json"},
-            "body": JSON.stringify({"username": username, "password": password})
+            "body": JSON.stringify(
+                {"identities": identities, "credential": cred.to_dict()}
+            )
         }
     );
     if response.ok {
@@ -361,7 +398,7 @@ impl jacSignup(username: str, password: str) -> dict {
             }
             state["order"].splice(0, state["order"].length);
             __setLocalStorage("jac_token", token);
-            return {"success": True, "token": token, "username": username};
+            return {"success": True, "token": token, "identities": identities};
         }
         return {"success": False, "error": "No token received"};
     } else {
@@ -380,14 +417,21 @@ impl jacSignup(username: str, password: str) -> dict {
     }
 }
 
-impl jacLogin(username: str, password: str) -> bool {
+impl jacLogin(
+    identity: str | Identity,
+    credential: str | Credential
+) -> bool {
+    ident = identity if isinstance(identity, Identity) else Identity.auto(identity);
+    cred = credential if isinstance(credential, Credential) else Credential.password(credential);
     base_url = __getApiBaseUrl();
     response = await fetch(
         f"{base_url}/user/login",
         {
             "method": "POST",
             "headers": {"Content-Type": "application/json"},
-            "body": JSON.stringify({"username": username, "password": password})
+            "body": JSON.stringify(
+                {"identity": ident.to_dict(), "credential": cred.to_dict()}
+            )
         }
     );
     if response.ok {

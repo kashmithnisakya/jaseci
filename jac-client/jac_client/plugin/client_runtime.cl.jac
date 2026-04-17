@@ -42,8 +42,41 @@ def:pub navigate(path: str) -> None;
 async def:pub __jacSpawn(left: str, right: str = "", fields: dict = {}) -> Any;
 def:pub jacSpawn(left: str, right: str = "", fields: dict = {}) -> Any;
 async def:pub __jacCallFunction(function_name: str, args: dict = {}) -> Any;
-async def:pub jacSignup(username: str, password: str) -> dict;
-async def:pub jacLogin(username: str, password: str) -> bool;
+
+"""A user identity tagged by type (email, username, ...)."""
+obj:pub Identity {
+    has type: str, value: str;
+
+    """Construct an email identity."""
+    static def email(value: str) -> Identity;
+    """Construct a username identity."""
+    static def username(value: str) -> Identity;
+    """Auto-detect from a raw string: '@' means email, else username."""
+    static def auto(value: str) -> Identity;
+
+    """Serialize to the shape jac-scale's IdentityInput expects."""
+    def to_dict -> dict;
+}
+
+"""A user credential tagged by type (password, ...)."""
+obj:pub Credential {
+    has type: str, value: str;
+
+    """Construct a password credential."""
+    static def password(value: str) -> Credential;
+
+    """Serialize to the shape jac-scale's CredentialInput expects."""
+    def to_dict -> dict;
+}
+
+async def:pub jacSignup(
+    identity: str | Identity | list[Identity],
+    credential: str | Credential
+) -> dict;
+async def:pub jacLogin(
+    identity: str | Identity,
+    credential: str | Credential
+) -> bool;
 def:pub jacLogout -> None;
 def:pub jacIsLoggedIn -> bool;
 def:pub __getApiBaseUrl -> str;
