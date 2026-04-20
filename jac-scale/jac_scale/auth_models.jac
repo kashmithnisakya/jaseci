@@ -17,9 +17,9 @@ class UsernameIdentityInput(BaseModel) {
 }
 
 glob IdentityInput = Annotated[
-    Union[EmailIdentityInput, UsernameIdentityInput],
-    Field(..., discriminator='type')
-];
+         Union[EmailIdentityInput, UsernameIdentityInput],
+         Field(..., discriminator='type')
+     ];
 
 class CredentialInput(BaseModel) {
     has type: CredentialType = Field(..., description='Credential type: password'),
