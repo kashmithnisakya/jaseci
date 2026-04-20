@@ -386,10 +386,11 @@ impl Credential.to_dict -> dict {
 }
 
 impl jacSignup(
-    identity: str | Identity | list[Identity],
-    credential: str | Credential
+    identity: str | Identity | list[Identity], credential: str | Credential
 ) -> dict {
-    identity_list = identity if Array.isArray(identity) else [Identity.from_any(identity)];
+    identity_list = identity
+        if Array.isArray(identity)
+        else [Identity.from_any(identity)];
     identities = [i.to_dict() for i in identity_list];
     cred = Credential.from_any(credential);
     base_url = __getApiBaseUrl();
@@ -436,10 +437,7 @@ impl jacSignup(
     }
 }
 
-impl jacLogin(
-    identity: str | Identity,
-    credential: str | Credential
-) -> bool {
+impl jacLogin(identity: str | Identity, credential: str | Credential) -> bool {
     ident = Identity.from_any(identity);
     cred = Credential.from_any(credential);
     base_url = __getApiBaseUrl();

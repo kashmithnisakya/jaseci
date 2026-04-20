@@ -45,14 +45,18 @@ async def:pub __jacCallFunction(function_name: str, args: dict = {}) -> Any;
 
 """A user identity tagged by type (email, username, ...)."""
 obj:pub Identity {
-    has type: str, value: str;
+    has type: str,
+        value: str;
 
     """Construct an email identity."""
     static def email(value: str) -> Identity;
+
     """Construct a username identity."""
     static def username(value: str) -> Identity;
+
     """Auto-detect from a raw string: '@' means email, else username."""
     static def auto(value: str) -> Identity;
+
     """Normalize any input (str or Identity) into an Identity instance."""
     static def from_any(value: Any) -> Identity;
 
@@ -62,10 +66,12 @@ obj:pub Identity {
 
 """A user credential tagged by type (password, ...)."""
 obj:pub Credential {
-    has type: str, value: str;
+    has type: str,
+        value: str;
 
     """Construct a password credential."""
     static def password(value: str) -> Credential;
+
     """Normalize any input (str or Credential) into a Credential instance."""
     static def from_any(value: Any) -> Credential;
 
@@ -74,13 +80,11 @@ obj:pub Credential {
 }
 
 async def:pub jacSignup(
-    identity: str | Identity | list[Identity],
-    credential: str | Credential
+    identity: str | Identity | list[Identity], credential: str | Credential
 ) -> dict;
-async def:pub jacLogin(
-    identity: str | Identity,
-    credential: str | Credential
-) -> bool;
+
+async def:pub jacLogin(identity: str | Identity, credential: str | Credential) -> bool;
+
 def:pub jacLogout -> None;
 def:pub jacIsLoggedIn -> bool;
 def:pub __getApiBaseUrl -> str;
