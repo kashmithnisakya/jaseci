@@ -365,14 +365,14 @@ impl jacSignup(
     identity: str | Identity | list[Identity],
     credential: str | Credential
 ) -> dict {
-    if isinstance(identity, list) {
-        identities = [i.to_dict() for i in identity];
-    } elif isinstance(identity, Identity) {
-        identities = [identity.to_dict()];
-    } else {
+    if isinstance(identity, str) {
         identities = [Identity.auto(identity).to_dict()];
+    } elif isinstance(identity, list) {
+        identities = [i.to_dict() for i in identity];
+    } else {
+        identities = [identity.to_dict()];
     }
-    cred = credential if isinstance(credential, Credential) else Credential.password(credential);
+    cred = Credential.password(credential) if isinstance(credential, str) else credential;
     base_url = __getApiBaseUrl();
     response = await fetch(
         f"{base_url}/user/register",
@@ -421,8 +421,8 @@ impl jacLogin(
     identity: str | Identity,
     credential: str | Credential
 ) -> bool {
-    ident = identity if isinstance(identity, Identity) else Identity.auto(identity);
-    cred = credential if isinstance(credential, Credential) else Credential.password(credential);
+    ident = Identity.auto(identity) if isinstance(identity, str) else identity;
+    cred = Credential.password(credential) if isinstance(credential, str) else credential;
     base_url = __getApiBaseUrl();
     response = await fetch(
         f"{base_url}/user/login",
