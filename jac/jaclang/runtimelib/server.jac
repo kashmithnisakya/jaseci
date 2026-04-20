@@ -262,3 +262,7 @@ obj JacAPIServer {
 
 """Print comprehensive documentation for all endpoints that would be generated."""
 def print_endpoint_docs(server: JacAPIServer) -> None;
+
+"""Pull (username, password) from either the legacy {username, password} body
+or the newer {identity: {type, value}, credential: {type, password}} body."""
+def _extract_credentials(data: dict) -> tuple[str, str];

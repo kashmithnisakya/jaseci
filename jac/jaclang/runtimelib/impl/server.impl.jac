@@ -1579,16 +1579,14 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 return;
             }
             if (path == '/user/register') {
-                response = server.auth_handler.create_user(
-                    data.get('username', ''), data.get('password', '')
-                );
+                (username, password) = _extract_credentials(data);
+                response = server.auth_handler.create_user(username, password);
                 self._send_response(response);
                 return;
             }
             if (path == '/user/login') {
-                response = server.auth_handler.login(
-                    data.get('username', ''), data.get('password', '')
-                );
+                (username, password) = _extract_credentials(data);
+                response = server.auth_handler.login(username, password);
                 self._send_response(response);
                 return;
             }
@@ -1958,6 +1956,24 @@ impl JacAPIServer.start(
             self.scheduler.stop();
         }
     }
+}
+
+impl _extract_credentials(data: dict) -> tuple[str, str] {
+    username = data.get('username', '');
+    password = data.get('password', '');
+    if not username {
+        identity = data.get('identity') or {};
+        if identity.get('value') {
+            username = identity.get('value', '');
+        }
+    }
+    if not password {
+        credential = data.get('credential') or {};
+        if credential.get('password') {
+            password = credential.get('password', '');
+        }
+    }
+    return (username, password);
 }
 
 """Print comprehensive documentation for all endpoints that would be generated."""
