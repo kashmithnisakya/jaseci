@@ -56,6 +56,32 @@ def _logout(page: Page) -> None {
     }
 }
 
+"""Fill email and password fields (for the typed-API pages)."""
+def _fill_email_auth_form(page: Page, email: str, password: str) -> None {
+    page.locator('input[type="email"]').first.fill(email);
+    page.locator('input[type="password"]').first.fill(password);
+}
+
+"""Navigate to the typed signup page, fill email+password, and submit."""
+def _signup_typed(
+    page: Page, base_url: str, email: str, password: str
+) -> None {
+    page.goto(f"{base_url}/signup_typed", wait_until="load", timeout=60000);
+    page.wait_for_selector('input[type="email"]', timeout=30000);
+    _fill_email_auth_form(page, email, password);
+    _submit_form(page);
+}
+
+"""Navigate to the typed login page, fill email+password, and submit."""
+def _login_typed(
+    page: Page, base_url: str, email: str, password: str
+) -> None {
+    page.goto(f"{base_url}/login_typed", wait_until="load", timeout=60000);
+    page.wait_for_selector('input[type="email"]', timeout=30000);
+    _fill_email_auth_form(page, email, password);
+    _submit_form(page);
+}
+
 """Start the all-in-one jac server and return (process, port, url, temp_dir, original_cwd)."""
 def _start_running_server -> tuple {
     tests_dir = os.path.dirname(__file__);
@@ -186,6 +212,52 @@ test "login with valid credentials" {
                 _login(page, url, username, password);
                 assert "/login" not in page.url.lower()
                 and "/signup" not in page.url.lower();
+            } finally {
+                context.close();
+                browser.close();
+            }
+        }
+    } finally {
+        _stop_running_server(server, temp_dir, original_cwd);
+    }
+}
+
+test "signup with typed Identity and Credential" {
+    (server, port, url, temp_dir, original_cwd) = _start_running_server();
+    try {
+        with sync_playwright() as p {
+            browser = p.chromium.launch(headless=True);
+            context = browser.new_context();
+            page = context.new_page();
+            try {
+                email = f"typed_signup_{int(time.time())}@example.com";
+                _signup_typed(page, url, email, "typed_pass_123");
+                assert "/signup_typed" not in page.url.lower();
+            } finally {
+                context.close();
+                browser.close();
+            }
+        }
+    } finally {
+        _stop_running_server(server, temp_dir, original_cwd);
+    }
+}
+
+test "login with typed Identity and Credential" {
+    (server, port, url, temp_dir, original_cwd) = _start_running_server();
+    try {
+        with sync_playwright() as p {
+            browser = p.chromium.launch(headless=True);
+            context = browser.new_context();
+            page = context.new_page();
+            try {
+                email = f"typed_login_{int(time.time())}@example.com";
+                password = "typed_pass_123";
+                _signup_typed(page, url, email, password);
+                _logout(page);
+                _login_typed(page, url, email, password);
+                assert "/login_typed" not in page.url.lower()
+                and "/signup_typed" not in page.url.lower();
             } finally {
                 context.close();
                 browser.close();

@@ -1967,6 +1967,15 @@ impl _extract_credentials(data: dict) -> tuple[str, str] {
             username = identity.get('value', '');
         }
     }
+    if not username {
+        identities = data.get('identities') or [];
+        if identities and len(identities) > 0 {
+            first = identities[0] or {};
+            if first.get('value') {
+                username = first.get('value', '');
+            }
+        }
+    }
     if not password {
         credential = data.get('credential') or {};
         if credential.get('password') {

@@ -10,6 +10,7 @@ import from tempfile { TemporaryDirectory }
 import from unittest.mock { MagicMock, patch }
 import from jaclang { JacRuntime as Jac }
 import from jaclang.cli.commands { execution }
+import from jaclang.runtimelib.server { _extract_credentials }
 
 glob FIXTURES = str(Path(__file__).parent / "fixtures");
 
@@ -87,6 +88,60 @@ test "user manager token validation" {
         assert username is None;
         user_mgr.close();
     }
+}
+
+# --- _extract_credentials Shim Tests ---
+# Ensures /user/register and /user/login accept both the legacy
+# {username, password} body AND the jac-client identity/credential shapes.
+
+test "extract credentials reads legacy username/password body" {
+    (u, p) = _extract_credentials({"username": "alice", "password": "pw"});
+    assert u == "alice";
+    assert p == "pw";
+}
+
+test "extract credentials reads identity/credential body (jacLogin shape)" {
+    (u, p) = _extract_credentials({
+        "identity": {"type": "username", "value": "bob"},
+        "credential": {"type": "password", "password": "bobpw"}
+    });
+    assert u == "bob";
+    assert p == "bobpw";
+}
+
+test "extract credentials reads identities list (jacSignup shape)" {
+    (u, p) = _extract_credentials({
+        "identities": [{"type": "username", "value": "carol"}],
+        "credential": {"type": "password", "password": "carolpw"}
+    });
+    assert u == "carol";
+    assert p == "carolpw";
+}
+
+test "extract credentials supports email identity via identities list" {
+    (u, p) = _extract_credentials({
+        "identities": [{"type": "email", "value": "dan@example.com"}],
+        "credential": {"type": "password", "password": "danpw"}
+    });
+    assert u == "dan@example.com";
+    assert p == "danpw";
+}
+
+test "extract credentials returns empty strings on empty body" {
+    (u, p) = _extract_credentials({});
+    assert u == "";
+    assert p == "";
+}
+
+test "extract credentials prefers top-level fields when both shapes present" {
+    (u, p) = _extract_credentials({
+        "username": "top",
+        "password": "toppw",
+        "identity": {"type": "username", "value": "nested"},
+        "credential": {"type": "password", "password": "nestedpw"}
+    });
+    assert u == "top";
+    assert p == "toppw";
 }
 
 # --- Faux Mode Tests ---
