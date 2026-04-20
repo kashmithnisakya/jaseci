@@ -53,6 +53,8 @@ obj:pub Identity {
     static def username(value: str) -> Identity;
     """Auto-detect from a raw string: '@' means email, else username."""
     static def auto(value: str) -> Identity;
+    """Normalize any input (str or Identity) into an Identity instance."""
+    static def from_any(value: Any) -> Identity;
 
     """Serialize to the shape jac-scale's IdentityInput expects."""
     def to_dict -> dict;
@@ -64,6 +66,8 @@ obj:pub Credential {
 
     """Construct a password credential."""
     static def password(value: str) -> Credential;
+    """Normalize any input (str or Credential) into a Credential instance."""
+    static def from_any(value: Any) -> Credential;
 
     """Serialize to the shape jac-scale's CredentialInput expects."""
     def to_dict -> dict;

@@ -353,12 +353,32 @@ impl Identity.auto(value: str) -> Identity {
     return Identity.email(value) if "@" in value else Identity.username(value);
 }
 
+impl Identity.from_any(value: Any) -> Identity {
+    if __isString(value) {
+        return Identity.auto(value);
+    }
+    if value and value.to_dict {
+        return value;
+    }
+    raise ValueError("identity must be a str or an Identity instance");
+}
+
 impl Identity.to_dict -> dict {
     return {"type": self.type, "value": self.value};
 }
 
 impl Credential.password(value: str) -> Credential {
     return Credential(type="password", value=value);
+}
+
+impl Credential.from_any(value: Any) -> Credential {
+    if __isString(value) {
+        return Credential.password(value);
+    }
+    if value and value.to_dict {
+        return value;
+    }
+    raise ValueError("credential must be a str or a Credential instance");
 }
 
 impl Credential.to_dict -> dict {
@@ -369,22 +389,9 @@ impl jacSignup(
     identity: str | Identity | list[Identity],
     credential: str | Credential
 ) -> dict {
-    if __isString(identity) {
-        identities = [Identity.auto(identity).to_dict()];
-    } elif Array.isArray(identity) {
-        identities = [i.to_dict() for i in identity];
-    } elif identity and identity.to_dict {
-        identities = [identity.to_dict()];
-    } else {
-        raise ValueError("identity must be str, Identity, or list[Identity]");
-    }
-    if __isString(credential) {
-        cred = Credential.password(credential);
-    } elif credential and credential.to_dict {
-        cred = credential;
-    } else {
-        raise ValueError("credential must be str or Credential");
-    }
+    identity_list = identity if Array.isArray(identity) else [Identity.from_any(identity)];
+    identities = [i.to_dict() for i in identity_list];
+    cred = Credential.from_any(credential);
     base_url = __getApiBaseUrl();
     response = await fetch(
         f"{base_url}/user/register",
@@ -433,20 +440,8 @@ impl jacLogin(
     identity: str | Identity,
     credential: str | Credential
 ) -> bool {
-    if __isString(identity) {
-        ident = Identity.auto(identity);
-    } elif identity and identity.to_dict {
-        ident = identity;
-    } else {
-        raise ValueError("identity must be str or Identity");
-    }
-    if __isString(credential) {
-        cred = Credential.password(credential);
-    } elif credential and credential.to_dict {
-        cred = credential;
-    } else {
-        raise ValueError("credential must be str or Credential");
-    }
+    ident = Identity.from_any(identity);
+    cred = Credential.from_any(credential);
     base_url = __getApiBaseUrl();
     response = await fetch(
         f"{base_url}/user/login",
