@@ -337,6 +337,10 @@ impl __jacCallFunction(function_name: str, args: dict = {}) -> Any {
     );
 }
 
+impl __isString(value: Any) -> bool {
+    return Object.prototype.toString.call(value) == "[object String]";
+}
+
 impl Identity.email(value: str) -> Identity {
     return Identity(type="email", value=value);
 }
@@ -365,14 +369,22 @@ impl jacSignup(
     identity: str | Identity | list[Identity],
     credential: str | Credential
 ) -> dict {
-    if isinstance(identity, str) {
+    if __isString(identity) {
         identities = [Identity.auto(identity).to_dict()];
-    } elif isinstance(identity, list) {
+    } elif Array.isArray(identity) {
         identities = [i.to_dict() for i in identity];
-    } else {
+    } elif identity and identity.to_dict {
         identities = [identity.to_dict()];
+    } else {
+        raise ValueError("identity must be str, Identity, or list[Identity]");
     }
-    cred = Credential.password(credential) if isinstance(credential, str) else credential;
+    if __isString(credential) {
+        cred = Credential.password(credential);
+    } elif credential and credential.to_dict {
+        cred = credential;
+    } else {
+        raise ValueError("credential must be str or Credential");
+    }
     base_url = __getApiBaseUrl();
     response = await fetch(
         f"{base_url}/user/register",
@@ -421,8 +433,20 @@ impl jacLogin(
     identity: str | Identity,
     credential: str | Credential
 ) -> bool {
-    ident = Identity.auto(identity) if isinstance(identity, str) else identity;
-    cred = Credential.password(credential) if isinstance(credential, str) else credential;
+    if __isString(identity) {
+        ident = Identity.auto(identity);
+    } elif identity and identity.to_dict {
+        ident = identity;
+    } else {
+        raise ValueError("identity must be str or Identity");
+    }
+    if __isString(credential) {
+        cred = Credential.password(credential);
+    } elif credential and credential.to_dict {
+        cred = credential;
+    } else {
+        raise ValueError("credential must be str or Credential");
+    }
     base_url = __getApiBaseUrl();
     response = await fetch(
         f"{base_url}/user/login",

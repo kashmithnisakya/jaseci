@@ -106,6 +106,7 @@ async def:pub __cachedEndpointCall(
 
 def:pub __invalidateEndpoint(endpoint_key: str) -> None;
 def:pub __overlaps(list1: list, list2: list) -> bool;
+def:pub __isString(value: Any) -> bool;
 
 # ============================================================================
 # Client Error Reporting
