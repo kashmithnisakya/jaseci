@@ -221,8 +221,15 @@ impl MongoBackend.get(id: UUID) -> (Anchor | None) {
     return cast(Anchor, anchor);
 }
 
-"""Store anchor in MongoDB with fingerprint and archetype identity fields."""
-impl MongoBackend.put(anchor: Anchor) -> None {
+"""No-op: anchor is already staged in the parent's L1 (_mem_ref) by
+TieredMemory.put(). DB persistence is deferred to sync() so that all
+writes go through merge-aware atomic operations."""
+impl MongoBackend.put(anchor: Anchor) -> None { }
+
+"""Write anchor directly to MongoDB. Used internally by sync() for
+non-NodeAnchor types (EdgeAnchor, WalkerAnchor) where edge merging
+doesn't apply."""
+impl MongoBackend._write_to_db(anchor: Anchor) -> None {
     if self.client is None or not anchor.persistent {
         return;
     }
@@ -232,7 +239,7 @@ impl MongoBackend.put(anchor: Anchor) -> None {
         self.collection.update_one({'_id': str(_id)}, {'$set': doc}, upsert=True);
         anchor.hash = Serializer._compute_hash(anchor);
     } except Exception as e {
-        logger.error(f"MongoDB put failed: {e}");
+        logger.error(f"MongoDB _write_to_db failed: {e}");
     }
 }
 
@@ -249,8 +256,14 @@ impl MongoBackend.delete(id: UUID) -> None {
     }
 }
 
-"""Close MongoDB connection."""
+"""Flush pending writes and close MongoDB connection."""
 impl MongoBackend.close -> None {
+    # Persist any pending L1 changes before closing
+    try {
+        self.sync();
+    } except Exception as e {
+        logger.warning(f"MongoBackend.close sync failed: {e}");
+    }
     if self.client {
         try {
             self.client.close();
@@ -358,10 +371,76 @@ impl MongoBackend.sync -> None {
             continue;
         }
         try {
-            self.put(anchor);
+            # For NodeAnchors with a load snapshot, always route through
+            # the atomic pipeline so edge changes from sibling walkers
+            # are preserved even when only scalar fields changed here.
+            if isinstance(anchor, NodeAnchor) {
+                delta = anchor.edge_delta();
+                if delta is not None {
+                    added = [str(eid) for eid in delta[0]];
+                    removed = [str(eid) for eid in delta[1]];
+                    self._put_node_atomic(anchor, added, removed);
+                    continue;
+                }
+            }
+            # Non-NodeAnchors or newly-created NodeAnchors: direct write
+            self._write_to_db(anchor);
         } except Exception as e {
             logger.warning(f"MongoDB sync failed for anchor {anchor.id}: {e}");
         }
+    }
+}
+
+"""Atomically update a NodeAnchor, merging edge changes with DB state."""
+impl MongoBackend._put_node_atomic(
+    anchor: NodeAnchor, edges_added: list[str], edges_removed: list[str]
+) -> None {
+    if self.client is None {
+        return;
+    }
+    _id = str(to_uuid(anchor.id));
+    try {
+        data: dict[str, object] = dict(Serializer.serialize(anchor, include_type=True));
+        # Separate edge list from the rest of the serialized data
+        data_no_edges = {
+            k: v
+            for (k, v) in data.items()
+            if k != 'edges'
+        };
+        # Single atomic operation: merge non-edge fields + apply edge delta
+        self.collection.update_one(
+            {'_id': _id},
+            [
+                {
+                    '$set': {
+                        'data': {
+                            '$mergeObjects': [
+                                '$data',
+                                data_no_edges,
+                                {
+                                    'edges': {
+                                        '$setUnion': [
+                                            {
+                                                '$setDifference': [
+                                                    {'$ifNull': ['$data.edges', []]},
+                                                    edges_removed
+                                                ]
+                                            },
+                                            edges_added
+                                        ]
+                                    }
+                                }
+                            ]
+                        },
+                        'type': 'NodeAnchor'
+                    }
+                }
+            ],
+            upsert=True
+        );
+        anchor.hash = Serializer._compute_hash(anchor);
+    } except Exception as e {
+        logger.error(f"MongoDB _put_node_atomic failed: {e}");
     }
 }
 
