@@ -352,7 +352,7 @@ impl __normalizeCredential(x: Any) -> dict {
 }
 
 impl jacSignup(
-    identities_or_username: (str | dict | list), credential_or_password: (str | dict)
+    identities_or_username: (str | list), credential_or_password: (str | dict)
 ) -> dict {
     base_url = __getApiBaseUrl();
     credential = __normalizeCredential(credential_or_password);

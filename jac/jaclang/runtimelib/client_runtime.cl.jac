@@ -89,7 +89,7 @@ async def __jacCallFunction(function_name: str, args: dict = {}) -> Any;
 def __normalizeIdentity(x: Any) -> dict;
 def __normalizeCredential(x: Any) -> dict;
 async def jacSignup(
-    identities_or_username: (str | dict | list), credential_or_password: (str | dict)
+    identities_or_username: (str | list), credential_or_password: (str | dict)
 ) -> dict;
 
 async def jacLogin(
