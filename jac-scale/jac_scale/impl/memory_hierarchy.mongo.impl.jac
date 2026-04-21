@@ -221,14 +221,30 @@ impl MongoBackend.get(id: UUID) -> (Anchor | None) {
     return cast(Anchor, anchor);
 }
 
-"""No-op: anchor is already staged in the parent's L1 (_mem_ref) by
-TieredMemory.put(). DB persistence is deferred to sync() so that all
-writes go through merge-aware atomic operations."""
-impl MongoBackend.put(anchor: Anchor) -> None { }
+"""Store anchor in MongoDB. For NodeAnchors with a load snapshot, uses
+an atomic aggregation pipeline to merge edge deltas with the stored
+document, so concurrent writers cannot erase each other's edge changes.
+Newly-created anchors and non-NodeAnchor types take the direct write
+path."""
+impl MongoBackend.put(anchor: Anchor) -> None {
+    if self.client is None or not anchor.persistent {
+        return;
+    }
+    if isinstance(anchor, NodeAnchor) {
+        delta = anchor.edge_delta();
+        if delta is not None {
+            added = [str(eid) for eid in delta[0]];
+            removed = [str(eid) for eid in delta[1]];
+            self._put_node_atomic(anchor, added, removed);
+            return;
+        }
+    }
+    self._write_to_db(anchor);
+}
 
-"""Write anchor directly to MongoDB. Used internally by sync() for
-non-NodeAnchor types (EdgeAnchor, WalkerAnchor) where edge merging
-doesn't apply."""
+"""Write anchor directly to MongoDB. Used internally by put() and
+sync() for newly-created anchors or non-NodeAnchor types where edge
+merging does not apply."""
 impl MongoBackend._write_to_db(anchor: Anchor) -> None {
     if self.client is None or not anchor.persistent {
         return;
