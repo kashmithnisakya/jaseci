@@ -358,8 +358,8 @@ impl jacSignup(
     credential = __normalizeCredential(credential_or_password);
     identities = (
         identities_or_username
-        if Array.isArray(identities_or_username)
-        else [__normalizeIdentity(identities_or_username)]
+            if Array.isArray(identities_or_username)
+            else [__normalizeIdentity(identities_or_username)]
     );
     primary_username = identities[0]["value"] if len(identities) > 0 else "";
     response = await fetch(
