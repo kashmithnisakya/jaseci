@@ -338,24 +338,21 @@ impl __jacCallFunction(function_name: str, args: dict = {}) -> Any {
 }
 
 impl __normalizeIdentity(x: Any) -> dict {
-    if x != None
-        and Object.prototype.toString.call(x) == "[object Object]" {
+    if x != None and Object.prototype.toString.call(x) == "[object Object]" {
         return x;
     }
     return {"type": "username", "value": x};
 }
 
 impl __normalizeCredential(x: Any) -> dict {
-    if x != None
-        and Object.prototype.toString.call(x) == "[object Object]" {
+    if x != None and Object.prototype.toString.call(x) == "[object Object]" {
         return x;
     }
     return {"type": "password", "password": x};
 }
 
 impl jacSignup(
-    identities_or_username: (str | dict | list),
-    credential_or_password: (str | dict)
+    identities_or_username: (str | dict | list), credential_or_password: (str | dict)
 ) -> dict {
     base_url = __getApiBaseUrl();
     credential = __normalizeCredential(credential_or_password);
@@ -370,9 +367,7 @@ impl jacSignup(
         {
             "method": "POST",
             "headers": {"Content-Type": "application/json"},
-            "body": JSON.stringify({
-                "identities": identities, "credential": credential
-            })
+            "body": JSON.stringify({"identities": identities, "credential": credential})
         }
     );
     if response.ok {
@@ -389,9 +384,7 @@ impl jacSignup(
             }
             state["order"].splice(0, state["order"].length);
             __setLocalStorage("jac_token", token);
-            return {
-                "success": True, "token": token, "username": primary_username
-            };
+            return {"success": True, "token": token, "username": primary_username};
         }
         return {"success": False, "error": "No token received"};
     } else {
@@ -411,8 +404,7 @@ impl jacSignup(
 }
 
 impl jacLogin(
-    identity_or_username: (str | dict),
-    credential_or_password: (str | dict)
+    identity_or_username: (str | dict), credential_or_password: (str | dict)
 ) -> bool {
     base_url = __getApiBaseUrl();
     identity = __normalizeIdentity(identity_or_username);
@@ -422,9 +414,7 @@ impl jacLogin(
         {
             "method": "POST",
             "headers": {"Content-Type": "application/json"},
-            "body": JSON.stringify({
-                "identity": identity, "credential": credential
-            })
+            "body": JSON.stringify({"identity": identity, "credential": credential})
         }
     );
     if response.ok {

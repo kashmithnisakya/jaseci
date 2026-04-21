@@ -418,8 +418,7 @@ def __normalizeCredential(x: Any) -> dict {
 }
 
 impl jacSignup(
-    identities_or_username: (str | dict | list),
-    credential_or_password: (str | dict)
+    identities_or_username: (str | dict | list), credential_or_password: (str | dict)
 ) -> dict {
     credential = __normalizeCredential(credential_or_password);
     if Array.isArray(identities_or_username) {
@@ -433,9 +432,7 @@ impl jacSignup(
         {
             "method": "POST",
             "headers": {"Content-Type": "application/json"},
-            "body": JSON.stringify({
-                "identities": identities, "credential": credential
-            })
+            "body": JSON.stringify({"identities": identities, "credential": credential})
         }
     );
     if response.ok {
@@ -450,9 +447,7 @@ impl jacSignup(
         } except Exception { }
         if token {
             __setLocalStorage("jac_token", token);
-            return {
-                "success": True, "token": token, "username": primary_username
-            };
+            return {"success": True, "token": token, "username": primary_username};
         }
         return {"success": False, "error": "No token received"};
     } else {
@@ -477,8 +472,7 @@ impl jacSignup(
 }
 
 impl jacLogin(
-    identity_or_username: (str | dict),
-    credential_or_password: (str | dict)
+    identity_or_username: (str | dict), credential_or_password: (str | dict)
 ) -> bool {
     identity = __normalizeIdentity(identity_or_username);
     credential = __normalizeCredential(credential_or_password);
@@ -487,9 +481,7 @@ impl jacLogin(
         {
             "method": "POST",
             "headers": {"Content-Type": "application/json"},
-            "body": JSON.stringify({
-                "identity": identity, "credential": credential
-            })
+            "body": JSON.stringify({"identity": identity, "credential": credential})
         }
     );
     if response.ok {

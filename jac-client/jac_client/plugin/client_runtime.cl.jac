@@ -45,13 +45,13 @@ async def:pub __jacCallFunction(function_name: str, args: dict = {}) -> Any;
 def:pub __normalizeIdentity(x: Any) -> dict;
 def:pub __normalizeCredential(x: Any) -> dict;
 async def:pub jacSignup(
-    identities_or_username: (str | dict | list),
-    credential_or_password: (str | dict)
+    identities_or_username: (str | dict | list), credential_or_password: (str | dict)
 ) -> dict;
+
 async def:pub jacLogin(
-    identity_or_username: (str | dict),
-    credential_or_password: (str | dict)
+    identity_or_username: (str | dict), credential_or_password: (str | dict)
 ) -> bool;
+
 def:pub jacLogout -> None;
 def:pub jacIsLoggedIn -> bool;
 def:pub __getApiBaseUrl -> str;

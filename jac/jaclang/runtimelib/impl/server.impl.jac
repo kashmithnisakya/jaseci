@@ -1599,8 +1599,7 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 }
                 if username_identity is None {
                     Jac.send_json(
-                        self, 400,
-                        {'error': "identity.type 'username' is required"}
+                        self, 400, {'error': "identity.type 'username' is required"}
                     );
                     return;
                 }
@@ -1619,8 +1618,7 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 }
                 if login_req.identity.type != IdentityType.USERNAME.value {
                     Jac.send_json(
-                        self, 400,
-                        {'error': "identity.type must be 'username'"}
+                        self, 400, {'error': "identity.type must be 'username'"}
                     );
                     return;
                 }
