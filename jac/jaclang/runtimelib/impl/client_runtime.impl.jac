@@ -403,13 +403,39 @@ impl __jacCallFunction(function_name: str, args: dict = {}) -> Any {
     return result;
 }
 
-impl jacSignup(username: str, password: str) -> dict {
+def __normalizeIdentity(x: Any) -> dict {
+    if __isObject(x) {
+        return x;
+    }
+    return {"type": "username", "value": x};
+}
+
+def __normalizeCredential(x: Any) -> dict {
+    if __isObject(x) {
+        return x;
+    }
+    return {"type": "password", "password": x};
+}
+
+impl jacSignup(
+    identities_or_username: (str | dict | list),
+    credential_or_password: (str | dict)
+) -> dict {
+    credential = __normalizeCredential(credential_or_password);
+    if Array.isArray(identities_or_username) {
+        identities = identities_or_username;
+    } else {
+        identities = [__normalizeIdentity(identities_or_username)];
+    }
+    primary_username = identities[0]["value"] if len(identities) > 0 else "";
     response = await fetch(
-        "/user/create",
+        "/user/register",
         {
             "method": "POST",
             "headers": {"Content-Type": "application/json"},
-            "body": JSON.stringify({"username": username, "password": password})
+            "body": JSON.stringify({
+                "identities": identities, "credential": credential
+            })
         }
     );
     if response.ok {
@@ -424,7 +450,9 @@ impl jacSignup(username: str, password: str) -> dict {
         } except Exception { }
         if token {
             __setLocalStorage("jac_token", token);
-            return {"success": True, "token": token, "username": username};
+            return {
+                "success": True, "token": token, "username": primary_username
+            };
         }
         return {"success": False, "error": "No token received"};
     } else {
@@ -448,13 +476,20 @@ impl jacSignup(username: str, password: str) -> dict {
     }
 }
 
-impl jacLogin(username: str, password: str) -> bool {
+impl jacLogin(
+    identity_or_username: (str | dict),
+    credential_or_password: (str | dict)
+) -> bool {
+    identity = __normalizeIdentity(identity_or_username);
+    credential = __normalizeCredential(credential_or_password);
     response = await fetch(
         "/user/login",
         {
             "method": "POST",
             "headers": {"Content-Type": "application/json"},
-            "body": JSON.stringify({"username": username, "password": password})
+            "body": JSON.stringify({
+                "identity": identity, "credential": credential
+            })
         }
     );
     if response.ok {
