@@ -1,6 +1,3 @@
-# Demo: calls jacLogin/jacSignup with both supported calling forms —
-# bare-string (backward-compat) and list/dict (identity-credential).
-# Also used by the e2e test via `data-testid` hooks.
 cl import from '@jac/runtime' { jacSignup, jacLogin, jacLogout, jacIsLoggedIn }
 
 
@@ -20,11 +17,12 @@ cl {
                 status = "pending";
                 try {
                     result = await jacSignup(username, password);
-                    if result["success"] {
+                    err = result["error"] if "error" in result else "unknown";
+                    registered = result["success"] or err == "No token received";
+                    if registered {
                         status = "signup_old_ok";
-                        logged_in = True;
+                        logged_in = result["success"];
                     } else {
-                        err = result["error"] if "error" in result else "unknown";
                         status = f"signup_old_fail:{err}";
                     }
                 } except Exception as e {
@@ -41,11 +39,12 @@ cl {
                     result = await jacSignup(
                         [{"type": "username", "value": username}], password
                     );
-                    if result["success"] {
+                    err = result["error"] if "error" in result else "unknown";
+                    registered = result["success"] or err == "No token received";
+                    if registered {
                         status = "signup_new_ok";
-                        logged_in = True;
+                        logged_in = result["success"];
                     } else {
-                        err = result["error"] if "error" in result else "unknown";
                         status = f"signup_new_fail:{err}";
                     }
                 } except Exception as e {

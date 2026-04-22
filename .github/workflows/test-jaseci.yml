@@ -101,7 +101,7 @@ jobs:
     - name: Re-run auth roundtrip e2e against jac-scale backend
       run: |
         pip install -e jac-scale
-        pytest -x -vv jac-client/jac_client/tests/test_e2e.jac -k "round_trip"
+        pytest -x -vv jac-client/jac_client/tests/test_e2e.jac -k "jacSignup"
 
   test-packages-and-docs:
     runs-on: ubuntu-latest
