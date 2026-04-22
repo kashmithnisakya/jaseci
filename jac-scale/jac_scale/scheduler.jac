@@ -93,7 +93,6 @@ obj JacScaleScheduler {
     def register_dynamic_tasks_from_db -> None;
     # /jobs endpoint logic
     def create_job(name: str, spec: TriggerSpec, created_by: str) -> dict;
-
     def list_jobs -> list[dict];
     def get_job(job_id: str) -> (dict | None);
     def update_job(job_id: str, spec: TriggerSpec) -> (dict | None);
