@@ -17,17 +17,16 @@ cl {
                 status = "pending";
                 try {
                     result = await jacSignup(username, password);
-                    err = result["error"] if "error" in result else "unknown";
-                    registered = result["success"] or err == "No token received";
-                    if registered {
+                    if result["success"] {
                         status = "signup_old_ok";
-                        logged_in = result["success"];
                     } else {
+                        err = result["error"] if "error" in result else "unknown";
                         status = f"signup_old_fail:{err}";
                     }
                 } except Exception as e {
                     status = f"signup_old_exc:{e}";
                 }
+                logged_in = jacIsLoggedIn();
             }
             run();
         }
@@ -39,17 +38,16 @@ cl {
                     result = await jacSignup(
                         [{"type": "username", "value": username}], password
                     );
-                    err = result["error"] if "error" in result else "unknown";
-                    registered = result["success"] or err == "No token received";
-                    if registered {
+                    if result["success"] {
                         status = "signup_new_ok";
-                        logged_in = result["success"];
                     } else {
+                        err = result["error"] if "error" in result else "unknown";
                         status = f"signup_new_fail:{err}";
                     }
                 } except Exception as e {
                     status = f"signup_new_exc:{e}";
                 }
+                logged_in = jacIsLoggedIn();
             }
             run();
         }
@@ -59,15 +57,11 @@ cl {
                 status = "pending";
                 try {
                     ok = await jacLogin(username, password);
-                    if ok {
-                        status = "login_old_ok";
-                        logged_in = True;
-                    } else {
-                        status = "login_old_fail";
-                    }
+                    status = "login_old_ok" if ok else "login_old_fail";
                 } except Exception as e {
                     status = f"login_old_exc:{e}";
                 }
+                logged_in = jacIsLoggedIn();
             }
             run();
         }
@@ -79,22 +73,18 @@ cl {
                     ok = await jacLogin(
                         {"type": "username", "value": username}, password
                     );
-                    if ok {
-                        status = "login_new_ok";
-                        logged_in = True;
-                    } else {
-                        status = "login_new_fail";
-                    }
+                    status = "login_new_ok" if ok else "login_new_fail";
                 } except Exception as e {
                     status = f"login_new_exc:{e}";
                 }
+                logged_in = jacIsLoggedIn();
             }
             run();
         }
 
         def do_logout(_evt: MouseEvent) {
             jacLogout();
-            logged_in = False;
+            logged_in = jacIsLoggedIn();
             status = "logged_out";
         }
 
