@@ -521,9 +521,7 @@ impl JacScaleScheduler.update_job(job_id: str, spec: TriggerSpec) -> (dict | Non
     name = existing.get('name', '');
     user_id = existing.get('created_by', self._system_user_id);
     is_walker = existing.get('is_walker', True);
-    updates: dict[str, Any] = {
-        'updated_at': _utc_now_iso()
-    };
+    updates: dict[str, Any] = {'updated_at': _utc_now_iso()};
     updates.update(spec.to_dict());
 
     with self._lock {
@@ -674,8 +672,7 @@ impl JacScaleScheduler._schedule_apscheduler_job(
                 # concurrent create_job/update_job/delete_job calls.
                 with self._lock {
                     self._store.update(
-                        job_id,
-                        {'status': 'orphaned', 'orphaned_at': _utc_now_iso()}
+                        job_id, {'status': 'orphaned', 'orphaned_at': _utc_now_iso()}
                     );
                     try {
                         self._apscheduler.remove_job(job_id);

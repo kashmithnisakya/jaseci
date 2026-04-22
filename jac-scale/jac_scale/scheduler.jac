@@ -35,9 +35,7 @@ obj JobStore {
     def update(job_id: str, updates: dict) -> bool;
     def delete(job_id: str) -> bool;
     # Single atomic run-history update: increments run_count and sets last_*.
-    def record_run(
-        job_id: str, status: str, error: str | None = None
-    ) -> None;
+    def record_run(job_id: str, status: str, error: str | None = None) -> None;
 }
 
 obj MongoJobStore(JobStore) {
@@ -55,9 +53,7 @@ obj MongoJobStore(JobStore) {
     def find_active_one(job_id: str) -> dict | None;
     def update(job_id: str, updates: dict) -> bool;
     def delete(job_id: str) -> bool;
-    def record_run(
-        job_id: str, status: str, error: str | None = None
-    ) -> None;
+    def record_run(job_id: str, status: str, error: str | None = None) -> None;
 }
 
 obj MemoryJobStore(JobStore) {
@@ -75,9 +71,7 @@ obj MemoryJobStore(JobStore) {
     def find_active_one(job_id: str) -> dict | None;
     def update(job_id: str, updates: dict) -> bool;
     def delete(job_id: str) -> bool;
-    def record_run(
-        job_id: str, status: str, error: str | None = None
-    ) -> None;
+    def record_run(job_id: str, status: str, error: str | None = None) -> None;
 }
 
 """Validated trigger configuration for a scheduled job.
@@ -131,6 +125,7 @@ obj JacScaleScheduler {
         trigger: str | None = None,
         created_by: str | None = None
     ) -> tuple[list[dict], int];
+
     def get_job(job_id: str) -> (dict | None);
     def update_job(job_id: str, spec: TriggerSpec) -> (dict | None);
     def delete_job(job_id: str) -> bool;
