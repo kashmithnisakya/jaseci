@@ -458,7 +458,21 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          Category.TYPE,
          "Cannot spread type {actual} into '{component}' (expected dict)"
      ),
+     # Comparison operator errors
+     E1110 = _err(
+         "E1110",
+         Category.TYPE,
+         "Operator \"{op}\" not supported between types \"{left}\" and \"{right}\""
+     ),
+     E1111 = _err(
+         "E1111",
+         Category.TYPE,
+         "Right operand of \"{op}\" must support \"__contains__\"; \"{type}\" does not"
+     ),
      W1050 = _warn("W1050", Category.TYPE, "Unknown intrinsic JSX element '<{tag}>'"),
+     W1051 = _warn(
+         "W1051", Category.TYPE, "Expression type could not be resolved (Unknown)"
+     ),
      # Import warnings
      W1100 = _warn("W1100", Category.IMPORT, "Module not found"),
      W1101 = _warn(
@@ -522,6 +536,11 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          "W2075",
          Category.SEMANTIC,
          "Redundant comparison to boolean literal — use the expression directly"
+     ),
+     W2080 = _warn(
+         "W2080",
+         Category.SEMANTIC,
+         "Attribute '{attr}' assigned in '{method}' body should be declared as a 'has' field on {arch_type} '{name}'"
      ),
      E2055 = _err(
          "E2055",
@@ -689,6 +708,11 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          "'has {name}: {type_name} = {init}' [usestate-to-has]"
          "setter can be replaced with direct assignment to the field in the ability body"
      ),
+     W3039 = _warn(
+         "W3039",
+         Category.LINT,
+         "getattr(obj, 'attr', None) should use null-safe access [getattr-to-null-ok]"
+     ),
      # Old kebab-case name -> code mapping for jac.toml backward compat
      LINT_ALIASES: dict[str, str] = {
          "staticmethod-to-static": "W3001",
@@ -713,7 +737,8 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          "is-with-literal": "W3035",
          "usestate-to-has": "W3038",
          "mutable-default": "W3036",
-         "unnecessary-none-return": "W3037"
+         "unnecessary-none-return": "W3037",
+         "getattr-to-null-ok": "W3039"
      },
      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
      # Codegen errors (E5xxx/W5xxx)
