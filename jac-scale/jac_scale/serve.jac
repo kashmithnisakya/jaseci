@@ -38,7 +38,7 @@ import from fastapi { WebSocket, WebSocketDisconnect }  # jac:runtime
 import from jac_scale.admin.admin_portal { JacAPIServerAdmin }
 import from jac_scale.admin.llm_telemetry { JacAPIServerLLMTelemetry }
 import from jac_scale.enums { Platforms, Operations }
-import from jac_scale.scheduler { JacScaleScheduler }
+import from jac_scale.scheduler { JacScaleScheduler, TriggerSpec }
 import from jaclang.runtimelib.builtin { ScheduleTrigger }
 import from jaclang.jac0core.constant { Constants as Con }
 import traceback;

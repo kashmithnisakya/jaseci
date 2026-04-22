@@ -1,8 +1,165 @@
+"""Validate inputs and return a TriggerSpec. Raises ValueError on bad input."""
+impl TriggerSpec.validate(
+    trigger: str,
+    interval: float | None = None,
+    cron: str | None = None,
+    date: str | None = None
+) -> TriggerSpec {
+    valid = ('interval', 'cron', 'date');
+    if trigger not in valid {
+        raise ValueError(f"trigger must be one of: {list(valid)}");
+    }
+    if trigger == 'interval' {
+        if interval is None {
+            raise ValueError("interval (seconds) required for trigger='interval'");
+        }
+        if float(interval) <= 0 {
+            raise ValueError("interval must be > 0 seconds");
+        }
+    } elif trigger == 'cron' {
+        if not cron {
+            raise ValueError("cron expression required for trigger='cron'");
+        }
+        # Real structural + range validation via APScheduler's parser.
+        # Catches things like '99 99 99 99 99' that pass a naive 5-field check.
+        _ct: Any = CronTrigger;
+        if _ct is not None {
+            try {
+                _ct.from_crontab(cron);
+            } except Exception as e {
+                raise ValueError(f"invalid cron expression: {e}");
+            }
+        }
+    } elif trigger == 'date' {
+        if not date {
+            raise ValueError("date (ISO datetime string) required for trigger='date'");
+        }
+    }
+    return TriggerSpec(trigger=trigger, interval=interval, cron=cron, date=date);
+}
+
+"""Rehydrate a TriggerSpec from a persisted job dict (no validation)."""
+impl TriggerSpec.from_dict(d: dict) -> TriggerSpec {
+    return TriggerSpec(
+        trigger=d.get('trigger', 'interval'),
+        interval=d.get('interval'),
+        cron=d.get('cron'),
+        date=d.get('date')
+    );
+}
+
+"""Return the fields as a dict for job-data persistence."""
+impl TriggerSpec.to_dict -> dict {
+    return {
+        'trigger': self.trigger,
+        'interval': self.interval,
+        'cron': self.cron,
+        'date': self.date
+    };
+}
+
+"""Build the kwargs for APScheduler.add_job(..., trigger=..., **kwargs)."""
+impl TriggerSpec.apscheduler_kwargs -> dict {
+    if self.trigger == 'interval' {
+        # validate() guarantees interval is not None for trigger='interval'.
+        return {'seconds': float(self.interval if self.interval is not None else 0)};
+    }
+    if self.trigger == 'cron' {
+        fields = (self.cron or '').strip().split();
+        (f_min, f_hour, f_day, f_month, f_weekday) = fields;
+        return {
+            'minute': f_min,
+            'hour': f_hour,
+            'day': f_day,
+            'month': f_month,
+            'day_of_week': f_weekday
+        };
+    }
+    return {'run_date': self.date};
+}
+
+"""MongoJobStore — DB-backed, authoritative when configured."""
+impl MongoJobStore.insert(job: dict) -> str {
+    result = self._db.insert_one(self._collection, dict(job));
+    return str(result.inserted_id);
+}
+
+impl MongoJobStore.find_active -> list[dict] {
+    jobs: list[dict] = [];
+    for doc in self._db.find(self._collection, {'status': 'active'}) {
+        doc['_id'] = str(doc['_id']);
+        jobs.append(doc);
+    }
+    return jobs;
+}
+
+impl MongoJobStore.find_active_one(job_id: str) -> dict | None {
+    doc = self._db.find_one(self._collection, {'_id': job_id, 'status': 'active'});
+    if doc {
+        doc['_id'] = str(doc['_id']);
+        return doc;
+    }
+    return None;
+}
+
+impl MongoJobStore.update(job_id: str, updates: dict) -> bool {
+    result = self._db.update_one(
+        self._collection, {'_id': job_id}, {'$set': updates}
+    );
+    return result.modified_count > 0;
+}
+
+impl MongoJobStore.delete(job_id: str) -> bool {
+    result = self._db.delete_one(self._collection, {'_id': job_id});
+    return result.deleted_count > 0;
+}
+
+"""MemoryJobStore — fallback when no DB is configured."""
+impl MemoryJobStore.postinit -> None {
+    # Ensure each instance gets its own dict (avoid mutable default sharing).
+    self._jobs = {};
+}
+
+impl MemoryJobStore.insert(job: dict) -> str {
+    job_id = str(job.get('_id', str(uuid4())));
+    self._jobs[job_id] = dict(job);
+    return job_id;
+}
+
+impl MemoryJobStore.find_active -> list[dict] {
+    return [j for j in self._jobs.values() if j.get('status') == 'active'];
+}
+
+impl MemoryJobStore.find_active_one(job_id: str) -> dict | None {
+    job = self._jobs.get(job_id);
+    if job and job.get('status') == 'active' {
+        return job;
+    }
+    return None;
+}
+
+impl MemoryJobStore.update(job_id: str, updates: dict) -> bool {
+    if job_id in self._jobs {
+        self._jobs[job_id].update(updates);
+        return True;
+    }
+    return False;
+}
+
+impl MemoryJobStore.delete(job_id: str) -> bool {
+    if job_id in self._jobs {
+        del self._jobs[job_id];
+        return True;
+    }
+    return False;
+}
+
 """Silence APScheduler's verbose logs on instantiation."""
 impl JacScaleScheduler.postinit -> None {
     logging.getLogger('apscheduler').setLevel(logging.ERROR);
-    # Ensure each instance gets its own dict (avoid mutable default sharing)
-    self._in_memory_jobs = {};
+    # Serializes mutations of self._apscheduler and the store across FastAPI
+    # request threads and APScheduler worker threads.
+    self._lock = threading.RLock();
 }
 
 """Return or create the module-level singleton JacScaleScheduler."""
@@ -26,28 +183,40 @@ impl JacScaleScheduler.setup(system_user_id: str, server: Any | None = None) -> 
     }
     Scheduler.instance().dynamic_handler = _dynamic_handler;
 
-    # Configure scheduler settings and initialize DB connection once.
+    # Configure the JobStore: MongoJobStore when a URI is configured (authoritative),
+    # otherwise MemoryJobStore as a fallback.
     scheduler_cfg = get_scale_config().get_scheduler_config();
-    self._collection = scheduler_cfg.get('collection', 'scheduled_jobs');
+    collection = scheduler_cfg.get('collection', 'scheduled_jobs');
     db_cfg = get_scale_config().get_database_config();
     if db_cfg.get('mongodb_uri') {
         try {
-            self._db = Db(client=get_mongo_client(), db_name='jac_scale');
+            mongo_db = Db(client=get_mongo_client(), db_name='jac_scale');
+            self._store = MongoJobStore(_db=mongo_db, _collection=collection);
             logger.debug("MongoDB configured — jobs will be persisted");
         } except Exception as e {
             logger.warning(f"MongoDB connection failed, using in-memory: {e}");
-            self._db = None;
+            self._store = MemoryJobStore();
         }
+    } else {
+        self._store = MemoryJobStore();
     }
-    # APScheduler uses in-memory job store — MongoDB persistence is handled manually
-    # via _persist_job / _load_jobs_from_db, avoiding serialisation issues with closures.
+    # APScheduler uses an in-memory job store — persistence goes through self._store,
+    # avoiding serialisation issues with closures.
     if HAS_APSCHEDULER {
-        executors = {'default': ThreadPoolExecutor(10)};
-        job_defaults = {'coalesce': False, 'max_instances': 1};
+        pool_size = int(scheduler_cfg.get('thread_pool_size', 10));
+        misfire = int(scheduler_cfg.get('misfire_grace_time', 60));
+        executors = {'default': ThreadPoolExecutor(pool_size)};
+        job_defaults = {
+            'coalesce': False,
+            'max_instances': 1,
+            'misfire_grace_time': misfire
+        };
         self._apscheduler = BackgroundScheduler(
             executors=executors, job_defaults=job_defaults
         );
-        logger.debug("APScheduler initialized with in-memory job store");
+        logger.debug(
+            f"APScheduler initialized (pool_size={pool_size}, misfire_grace={misfire}s)"
+        );
     } else {
         self._apscheduler = None;
         logger.info(
@@ -69,15 +238,24 @@ impl JacScaleScheduler.start -> None {
     }
 }
 
-"""Stop the APScheduler background scheduler."""
-impl JacScaleScheduler.stop -> None {
+"""Stop the APScheduler background scheduler.
+
+If `drain=True`, wait for in-flight scheduled jobs to complete before returning.
+Base Scheduler (static tasks) is stopped too.
+"""
+impl JacScaleScheduler.stop(drain: bool = False) -> None {
     if self._apscheduler is not None and self._apscheduler.running {
         try {
-            self._apscheduler.shutdown(wait=False);
-            logger.info("Scheduler stopped");
+            self._apscheduler.shutdown(wait=drain);
+            logger.info(f"Scheduler stopped (drain={drain})");
         } except Exception as e {
             logger.error(f"Error stopping APScheduler: {e}");
         }
+    }
+    try {
+        Scheduler.instance().stop();
+    } except Exception as e {
+        logger.debug(f"Error stopping base Scheduler: {e}");
     }
 }
 
@@ -132,25 +310,19 @@ impl JacScaleScheduler.register_dynamic_tasks_from_db -> None {
     if self._apscheduler is None {
         return;
     }
-    jobs = self._load_jobs_from_db();
+    jobs = self._store.find_active();
     for job_data in jobs {
         job_id = str(job_data.get('_id', str(uuid4())));
         name = job_data.get('name', '');
-        trigger = job_data.get('trigger', 'interval');
-        interval = job_data.get('interval');
-        cron = job_data.get('cron');
-        date = job_data.get('date');
         user_id = job_data.get('created_by', self._system_user_id);
         is_walker = job_data.get('is_walker', True);
         if name {
             try {
+                spec = TriggerSpec.from_dict(job_data);
                 self._schedule_apscheduler_job(
                     job_id=job_id,
                     name=name,
-                    trigger=trigger,
-                    interval=interval,
-                    cron=cron,
-                    date=date,
+                    spec=spec,
                     user_id=user_id,
                     is_walker=is_walker
                 );
@@ -164,12 +336,7 @@ impl JacScaleScheduler.register_dynamic_tasks_from_db -> None {
 
 """Create a new dynamic scheduled job. Runs as the creating user (created_by)."""
 impl JacScaleScheduler.create_job(
-    name: str,
-    trigger: str,
-    created_by: str,
-    interval: (float | None) = None,
-    cron: (str | None) = None,
-    date: (str | None) = None
+    name: str, spec: TriggerSpec, created_by: str
 ) -> dict {
     if self._apscheduler is None {
         raise RuntimeError(
@@ -187,38 +354,34 @@ impl JacScaleScheduler.create_job(
     job_data: dict = {
         '_id': job_id,
         'name': name,
-        'trigger': trigger,
-        'interval': interval,
-        'cron': cron,
-        'date': date,
         'created_by': created_by,
         'is_walker': is_walker,
         'created_at': now_str,
         'status': 'active'
     };
+    job_data.update(spec.to_dict());
 
-    # Persist first so the DB is authoritative. If this raises (e.g. Mongo is down),
-    # nothing is scheduled and the caller gets a storage error to propagate.
-    persisted_id = self._persist_job(job_data);
-    job_data['_id'] = persisted_id;
+    with self._lock {
+        # Persist first so the DB is authoritative. If this raises (e.g. Mongo
+        # is down), nothing is scheduled and the caller gets a storage error.
+        persisted_id = self._store.insert(job_data);
+        job_data['_id'] = persisted_id;
 
-    # Schedule with APScheduler. Dynamic jobs execute as the creating user
-    # (created_by), not the system user. On failure, roll back the DB insert so
-    # we don't leave a zombie record pointing at an unscheduled job.
-    try {
-        self._schedule_apscheduler_job(
-            job_id=persisted_id,
-            name=name,
-            trigger=trigger,
-            interval=interval,
-            cron=cron,
-            date=date,
-            user_id=created_by,
-            is_walker=is_walker
-        );
-    } except Exception {
-        self._delete_job_from_db(persisted_id);
-        raise;
+        # Schedule with APScheduler. Dynamic jobs execute as the creating user
+        # (created_by), not the system user. On failure, roll back the DB
+        # insert so we don't leave a zombie record.
+        try {
+            self._schedule_apscheduler_job(
+                job_id=persisted_id,
+                name=name,
+                spec=spec,
+                user_id=created_by,
+                is_walker=is_walker
+            );
+        } except Exception {
+            self._store.delete(persisted_id);
+            raise;
+        }
     }
 
     logger.debug(f"Created dynamic job: {name} (id={persisted_id})");
@@ -227,36 +390,16 @@ impl JacScaleScheduler.create_job(
 
 """List all dynamic scheduled jobs."""
 impl JacScaleScheduler.list_jobs -> list[dict] {
-    return self._load_jobs_from_db();
+    return self._store.find_active();
 }
 
 """Get a single dynamic job by ID."""
 impl JacScaleScheduler.get_job(job_id: str) -> (dict | None) {
-    if self._db is not None {
-        doc = self._db.find_one(
-            self._collection, {'_id': job_id, 'status': 'active'}
-        );
-        if doc {
-            doc['_id'] = str(doc['_id']);
-            return doc;
-        }
-        return None;
-    }
-    job = self._in_memory_jobs.get(job_id);
-    if job and job.get('status') == 'active' {
-        return job;
-    }
-    return None;
+    return self._store.find_active_one(job_id);
 }
 
 """Update schedule for an existing dynamic job."""
-impl JacScaleScheduler.update_job(
-    job_id: str,
-    trigger: str,
-    interval: (float | None) = None,
-    cron: (str | None) = None,
-    date: (str | None) = None
-) -> (dict | None) {
+impl JacScaleScheduler.update_job(job_id: str, spec: TriggerSpec) -> (dict | None) {
     existing = self.get_job(job_id);
     if existing is None {
         return None;
@@ -265,35 +408,32 @@ impl JacScaleScheduler.update_job(
     name = existing.get('name', '');
     user_id = existing.get('created_by', self._system_user_id);
     is_walker = existing.get('is_walker', True);
-    updates = {
-        'trigger': trigger,
-        'interval': interval,
-        'cron': cron,
-        'date': date,
+    updates: dict[str, Any] = {
         'updated_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
     };
+    updates.update(spec.to_dict());
 
-    # Remove old APScheduler job and re-add with new schedule
-    if self._apscheduler is not None {
-        try {
-            self._apscheduler.remove_job(job_id);
-        } except Exception as e {
-            logger.debug(f"Could not remove old APScheduler job {job_id}: {e}");
+    with self._lock {
+        # DB is authoritative — update it first. If this raises, APScheduler
+        # is untouched and the job continues on its old schedule.
+        self._store.update(job_id, updates);
+
+        # Remove old APScheduler job and re-add with new schedule.
+        if self._apscheduler is not None {
+            try {
+                self._apscheduler.remove_job(job_id);
+            } except Exception as e {
+                logger.debug(f"Could not remove old APScheduler job {job_id}: {e}");
+            }
+            self._schedule_apscheduler_job(
+                job_id=job_id,
+                name=name,
+                spec=spec,
+                user_id=user_id,
+                is_walker=is_walker
+            );
         }
-        self._schedule_apscheduler_job(
-            job_id=job_id,
-            name=name,
-            trigger=trigger,
-            interval=interval,
-            cron=cron,
-            date=date,
-            user_id=user_id,
-            is_walker=is_walker
-        );
     }
-
-    # Update DB record
-    self._update_job_in_db(job_id, updates);
 
     updated = dict(existing);
     updated.update(updates);
@@ -303,29 +443,41 @@ impl JacScaleScheduler.update_job(
 
 """Delete a dynamic scheduled job."""
 impl JacScaleScheduler.delete_job(job_id: str) -> bool {
-    if self._apscheduler is not None {
-        try {
-            self._apscheduler.remove_job(job_id);
-        } except Exception as e {
-            logger.debug(f"Could not remove APScheduler job {job_id}: {e}");
+    with self._lock {
+        # DB first: if deletion fails, APScheduler still fires the job — safe.
+        # If we removed APScheduler first and the DB delete failed, the job
+        # would resurrect on next restart via register_dynamic_tasks_from_db.
+        result = self._store.delete(job_id);
+        if result and self._apscheduler is not None {
+            try {
+                self._apscheduler.remove_job(job_id);
+            } except Exception as e {
+                logger.debug(f"Could not remove APScheduler job {job_id}: {e}");
+            }
         }
     }
-    result = self._delete_job_from_db(job_id);
     if result {
         logger.debug(f"Deleted dynamic job id={job_id}");
     }
     return result;
 }
 
-"""Execute a scheduled walker or function in the context of the given user."""
+"""Execute a scheduled walker or function in the context of the given user.
+
+If `job_id` is provided (dynamic jobs), records execution history into the store.
+Static jobs pass job_id=None and skip history recording.
+"""
 impl JacScaleScheduler._execute_task(
-    name: str, user_id: str, is_walker: bool
+    name: str, user_id: str, is_walker: bool, job_id: str | None = None
 ) -> None {
     import asyncio;
     label = 'walker' if is_walker else 'function';
     try {
         if self._server is None {
             logger.error(f"Cannot execute {label} '{name}': server reference not set");
+            if job_id {
+                self._record_run(job_id, 'failed', 'server reference not set');
+            }
             return;
         }
         introspector = self._server.introspector;
@@ -334,15 +486,16 @@ impl JacScaleScheduler._execute_task(
         ) or {};
         target = registry.get(name);
         if target is None {
-            # Walker/function was removed from the codebase. Log and skip this
-            # tick; the /jobs endpoint can remove or re-create the job manually.
             logger.warning(
                 f"Scheduled {label} '{name}' is no longer registered in the server"
             );
+            if job_id {
+                self._record_run(job_id, 'failed', 'target not registered');
+            }
             return;
         }
 
-        async def _run {
+        async def _run -> None {
             if is_walker {
                 result = await self._server.execution_manager.spawn_walker(
                     target, {}, user_id
@@ -353,9 +506,13 @@ impl JacScaleScheduler._execute_task(
                 );
             }
             if isinstance(result, dict) and 'error' in result {
-                logger.error(
-                    f"Scheduled {label} '{name}' error: {result.get('error')}"
-                );
+                err = str(result.get('error'));
+                logger.error(f"Scheduled {label} '{name}' error: {err}");
+                if job_id {
+                    self._record_run(job_id, 'failed', err);
+                }
+            } elif job_id {
+                self._record_run(job_id, 'succeeded');
             }
         }
 
@@ -364,17 +521,37 @@ impl JacScaleScheduler._execute_task(
         asyncio.run(_run());
     } except Exception as e {
         logger.error(f"Error executing {label} '{name}': {e}");
+        if job_id {
+            self._record_run(job_id, 'failed', str(e));
+        }
     }
 }
 
-"""Add a job to APScheduler with the given trigger configuration."""
+"""Update the job's execution-history fields in the store."""
+impl JacScaleScheduler._record_run(
+    job_id: str, status: str, error: str | None = None
+) -> None {
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat();
+    existing = self._store.find_active_one(job_id);
+    run_count = int(existing.get('run_count', 0)) + 1 if existing else 1;
+    updates: dict[str, Any] = {
+        'last_run_at': now_iso,
+        'last_status': status,
+        'last_error': error,
+        'run_count': run_count
+    };
+    try {
+        self._store.update(job_id, updates);
+    } except Exception as e {
+        logger.debug(f"Could not record run for job {job_id}: {e}");
+    }
+}
+
+"""Add a job to APScheduler using a validated TriggerSpec."""
 impl JacScaleScheduler._schedule_apscheduler_job(
     job_id: str,
     name: str,
-    trigger: str,
-    interval: (float | None),
-    cron: (str | None),
-    date: (str | None),
+    spec: TriggerSpec,
     user_id: str,
     is_walker: bool = True
 ) -> None {
@@ -390,7 +567,7 @@ impl JacScaleScheduler._schedule_apscheduler_job(
                 logger.warning(
                     f"Job '{name}' (id={job_id}) creator '{user_id}' no longer exists — marking orphaned"
                 );
-                self._update_job_in_db(
+                self._store.update(
                     job_id,
                     {
                         'status': 'orphaned',
@@ -409,97 +586,15 @@ impl JacScaleScheduler._schedule_apscheduler_job(
                 return;
             }
         }
-        self._execute_task(name, user_id, is_walker);
+        self._execute_task(name, user_id, is_walker, job_id=job_id);
     }
 
-    if trigger == 'interval' {
-        if interval is None {
-            raise ValueError("interval (seconds) required for trigger='interval'");
-        }
-        trigger_kwargs = {'seconds': float(interval)};
-    } elif trigger == 'cron' {
-        if not cron {
-            raise ValueError("cron expression required for trigger='cron'");
-        }
-        fields = cron.strip().split();
-        if len(fields) != 5 {
-            raise ValueError(
-                f"Cron must have 5 fields (min hour day month weekday), got: {cron}"
-            );
-        }
-        (f_min, f_hour, f_day, f_month, f_weekday) = fields;
-        trigger_kwargs = {
-            'minute': f_min,
-            'hour': f_hour,
-            'day': f_day,
-            'month': f_month,
-            'day_of_week': f_weekday
-        };
-    } elif trigger == 'date' {
-        if not date {
-            raise ValueError("date (ISO datetime string) required for trigger='date'");
-        }
-        trigger_kwargs = {'run_date': date};
-    } else {
-        raise ValueError(
-            f"Unknown trigger '{trigger}'. Valid values: interval, cron, date"
-        );
-    }
     self._apscheduler.add_job(
-        job_func, trigger, id=job_id, replace_existing=True, **trigger_kwargs
+        job_func,
+        spec.trigger,
+        id=job_id,
+        replace_existing=True,
+        **spec.apscheduler_kwargs()
     );
 }
 
-"""Persist a job record. Mongo is authoritative when configured — errors propagate."""
-impl JacScaleScheduler._persist_job(job_data: dict) -> str {
-    if self._db is not None {
-        result = self._db.insert_one(self._collection, dict(job_data));
-        return str(result.inserted_id);
-    }
-    job_id = str(job_data.get('_id', str(uuid4())));
-    self._in_memory_jobs[job_id] = dict(job_data);
-    return job_id;
-}
-
-"""Load all active job records. Mongo is authoritative when configured."""
-impl JacScaleScheduler._load_jobs_from_db -> list[dict] {
-    if self._db is not None {
-        jobs: list[dict] = [];
-        for doc in self._db.find(self._collection, {'status': 'active'}) {
-            doc['_id'] = str(doc['_id']);
-            jobs.append(doc);
-        }
-        return jobs;
-    }
-    return [
-        j for j in self._in_memory_jobs.values() if j.get('status') == 'active'
-    ];
-}
-
-"""Delete a job record. Mongo is authoritative when configured."""
-impl JacScaleScheduler._delete_job_from_db(job_id: str) -> bool {
-    if self._db is not None {
-        result = self._db.delete_one(self._collection, {'_id': job_id});
-        return result.deleted_count > 0;
-    }
-    if job_id in self._in_memory_jobs {
-        del self._in_memory_jobs[job_id];
-        return True;
-    }
-    return False;
-}
-
-"""Update a job record. Mongo is authoritative when configured."""
-impl JacScaleScheduler._update_job_in_db(job_id: str, updates: dict) -> bool {
-    if self._db is not None {
-        result = self._db.update_one(
-            self._collection, {'_id': job_id}, {'$set': updates}
-        );
-        return result.modified_count > 0;
-    }
-    if job_id in self._in_memory_jobs {
-        self._in_memory_jobs[job_id].update(updates);
-        return True;
-    }
-    return False;
-}

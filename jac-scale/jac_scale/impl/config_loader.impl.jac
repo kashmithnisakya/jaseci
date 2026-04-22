@@ -314,7 +314,10 @@ impl JacScaleConfig.get_scheduler_config(self: JacScaleConfig) -> dict[str, Any]
     config = self.load();
     scheduler_config = config.get('scheduler', {});
     return {
-        'collection': scheduler_config.get('collection', 'scheduled_jobs')
+        'collection': scheduler_config.get('collection', 'scheduled_jobs'),
+        'thread_pool_size': int(scheduler_config.get('thread_pool_size', 10)),
+        'misfire_grace_time': int(scheduler_config.get('misfire_grace_time', 60)),
+        'shutdown_timeout': int(scheduler_config.get('shutdown_timeout', 10))
     };
 }
 

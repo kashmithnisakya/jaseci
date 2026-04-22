@@ -515,6 +515,28 @@ impl JacAPIServerCore._setup_scheduler -> None {
 
     # Start APScheduler background thread
     jac_scheduler.start();
+
+    # Drain scheduled jobs on SIGTERM/graceful shutdown. Timeout is configurable
+    # via [plugins.scale.scheduler] shutdown_timeout in jac.toml (default 10s).
+    scheduler_cfg = get_scale_config().get_scheduler_config();
+    timeout_sec = int(scheduler_cfg.get('shutdown_timeout', 10));
+    async def _shutdown_scheduler -> None {
+        import asyncio;
+        try {
+            await asyncio.wait_for(
+                asyncio.to_thread(
+                    JacScaleScheduler.instance().stop, drain=True
+                ),
+                timeout=float(timeout_sec)
+            );
+        } except asyncio.TimeoutError {
+            logger.warning(
+                f"Scheduler drain exceeded {timeout_sec}s — forcing shutdown"
+            );
+            JacScaleScheduler.instance().stop(drain=False);
+        }
+    }
+    self.server.app.add_event_handler('shutdown', _shutdown_scheduler);
 }
 
 """Create a wrapper around the metrics endpoint that requires admin authentication."""

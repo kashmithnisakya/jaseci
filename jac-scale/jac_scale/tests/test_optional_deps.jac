@@ -316,11 +316,12 @@ test "scheduler create_job raises clear error without apscheduler" {
                 sched.setup(system_user_id="system-user-id");
                 raised = False;
                 try {
+                    import from jac_scale.scheduler { TriggerSpec }
+                    spec = TriggerSpec.validate(trigger="interval", interval=60.0);
                     sched.create_job(
                         name="test_walker",
-                        trigger="interval",
-                        created_by="system-user-id",
-                        interval=60.0
+                        spec=spec,
+                        created_by="system-user-id"
                     );
                 } except RuntimeError as e {
                     raised = True;
