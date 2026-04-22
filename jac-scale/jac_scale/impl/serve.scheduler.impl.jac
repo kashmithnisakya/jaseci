@@ -1,5 +1,51 @@
 import from jac_scale.utils { authenticate_or_fail }
 
+"""Classify an exception as a storage failure (Mongo down, network error, etc).
+
+Returns a 503 response for storage failures, else None (caller should treat as 500).
+"""
+def _storage_failure_response(e: Exception) -> TransportResponse | None {
+    err_name = type(e).__name__;
+    storage_markers = (
+        'Mongo', 'ServerSelection', 'NetworkTimeout', 'ConnectionFailure',
+        'AutoReconnect', 'OperationFailure', 'WriteError'
+    );
+    for marker in storage_markers {
+        if marker in err_name {
+            return TransportResponse.fail(
+                code='STORAGE_UNAVAILABLE',
+                message='Job store temporarily unavailable',
+                meta=Meta(extra={'http_status': 503})
+            );
+        }
+    }
+    return None;
+}
+
+"""Return a 404 response if `job` is None or caller is neither creator nor admin.
+
+Uses 404 for unauthorized access so existence of another user's job is not leaked.
+"""
+def _ensure_authorized(
+    job: dict | None, user_id: str, user_manager: Any
+) -> TransportResponse | None {
+    not_found = TransportResponse.fail(
+        code='NOT_FOUND',
+        message='Job not found',
+        meta=Meta(extra={'http_status': 404})
+    );
+    if job is None {
+        return not_found;
+    }
+    if job.get('created_by') == user_id {
+        return None;
+    }
+    if user_manager.get_user_role(user_id) == 'admin' {
+        return None;
+    }
+    return not_found;
+}
+
 """Validate trigger type and trigger-specific fields. Returns error response or None."""
 def _validate_trigger(
     trigger: str, interval: Any, cron: Any, date: Any
@@ -144,7 +190,7 @@ impl JacAPIServerScheduler.register_scheduler_endpoints -> None {
 impl JacAPIServerScheduler.create_job_callback -> Callable[..., TransportResponse] {
     async def callback(request: Request) -> TransportResponse {
         authorization = request.headers.get('Authorization');
-        (username, auth_err) = authenticate_or_fail(authorization, self.user_manager);
+        (user_id, auth_err) = authenticate_or_fail(authorization, self.user_manager);
         if auth_err {
             return auth_err;
         }
@@ -218,21 +264,23 @@ impl JacAPIServerScheduler.create_job_callback -> Callable[..., TransportRespons
         }
 
         try {
-            root_id = self.user_manager.get_root_id(username);
             scheduler = JacScaleScheduler.instance();
             job = scheduler.create_job(
                 name=walker_or_function,
                 trigger=trigger,
+                created_by=user_id,
                 interval=float(interval) if interval is not None else None,
                 cron=cron_expr,
-                date=date_str,
-                created_by=username,
-                root_id=root_id
+                date=date_str
             );
             return TransportResponse.success(
                 data=job, meta=Meta(extra={'http_status': 201})
             );
         } except Exception as e {
+            storage_err = _storage_failure_response(e);
+            if storage_err {
+                return storage_err;
+            }
             return TransportResponse.fail(
                 code='SCHEDULER_ERROR',
                 message=str(e),
@@ -247,7 +295,7 @@ impl JacAPIServerScheduler.create_job_callback -> Callable[..., TransportRespons
 impl JacAPIServerScheduler.list_jobs_callback -> Callable[..., TransportResponse] {
     async def callback(request: Request) -> TransportResponse {
         authorization = request.headers.get('Authorization');
-        (username, auth_err) = authenticate_or_fail(authorization, self.user_manager);
+        (user_id, auth_err) = authenticate_or_fail(authorization, self.user_manager);
         if auth_err {
             return auth_err;
         }
@@ -255,11 +303,19 @@ impl JacAPIServerScheduler.list_jobs_callback -> Callable[..., TransportResponse
         try {
             scheduler = JacScaleScheduler.instance();
             jobs = scheduler.list_jobs();
+            # Non-admin users only see their own jobs.
+            if self.user_manager.get_user_role(user_id) != 'admin' {
+                jobs = [j for j in jobs if j.get('created_by') == user_id];
+            }
             return TransportResponse.success(
                 data={'jobs': jobs, 'count': len(jobs)},
                 meta=Meta(extra={'http_status': 200})
             );
         } except Exception as e {
+            storage_err = _storage_failure_response(e);
+            if storage_err {
+                return storage_err;
+            }
             return TransportResponse.fail(
                 code='SCHEDULER_ERROR',
                 message=str(e),
@@ -274,7 +330,7 @@ impl JacAPIServerScheduler.list_jobs_callback -> Callable[..., TransportResponse
 impl JacAPIServerScheduler.get_job_callback -> Callable[..., TransportResponse] {
     async def callback(request: Request, job_id: str) -> TransportResponse {
         authorization = request.headers.get('Authorization');
-        (username, auth_err) = authenticate_or_fail(authorization, self.user_manager);
+        (user_id, auth_err) = authenticate_or_fail(authorization, self.user_manager);
         if auth_err {
             return auth_err;
         }
@@ -282,17 +338,18 @@ impl JacAPIServerScheduler.get_job_callback -> Callable[..., TransportResponse] 
         try {
             scheduler = JacScaleScheduler.instance();
             job = scheduler.get_job(job_id);
-            if job is None {
-                return TransportResponse.fail(
-                    code='NOT_FOUND',
-                    message=f'Job "{job_id}" not found',
-                    meta=Meta(extra={'http_status': 404})
-                );
+            access_err = _ensure_authorized(job, user_id, self.user_manager);
+            if access_err {
+                return access_err;
             }
             return TransportResponse.success(
                 data=job, meta=Meta(extra={'http_status': 200})
             );
         } except Exception as e {
+            storage_err = _storage_failure_response(e);
+            if storage_err {
+                return storage_err;
+            }
             return TransportResponse.fail(
                 code='SCHEDULER_ERROR',
                 message=str(e),
@@ -307,7 +364,7 @@ impl JacAPIServerScheduler.get_job_callback -> Callable[..., TransportResponse] 
 impl JacAPIServerScheduler.update_job_callback -> Callable[..., TransportResponse] {
     async def callback(request: Request, job_id: str) -> TransportResponse {
         authorization = request.headers.get('Authorization');
-        (username, auth_err) = authenticate_or_fail(authorization, self.user_manager);
+        (user_id, auth_err) = authenticate_or_fail(authorization, self.user_manager);
         if auth_err {
             return auth_err;
         }
@@ -343,6 +400,11 @@ impl JacAPIServerScheduler.update_job_callback -> Callable[..., TransportRespons
 
         try {
             scheduler = JacScaleScheduler.instance();
+            existing = scheduler.get_job(job_id);
+            auth_err = _ensure_authorized(existing, user_id, self.user_manager);
+            if auth_err {
+                return auth_err;
+            }
             updated = scheduler.update_job(
                 job_id=job_id,
                 trigger=trigger,
@@ -353,7 +415,7 @@ impl JacAPIServerScheduler.update_job_callback -> Callable[..., TransportRespons
             if updated is None {
                 return TransportResponse.fail(
                     code='NOT_FOUND',
-                    message=f'Job "{job_id}" not found',
+                    message='Job not found',
                     meta=Meta(extra={'http_status': 404})
                 );
             }
@@ -361,6 +423,10 @@ impl JacAPIServerScheduler.update_job_callback -> Callable[..., TransportRespons
                 data=updated, meta=Meta(extra={'http_status': 200})
             );
         } except Exception as e {
+            storage_err = _storage_failure_response(e);
+            if storage_err {
+                return storage_err;
+            }
             return TransportResponse.fail(
                 code='SCHEDULER_ERROR',
                 message=str(e),
@@ -375,18 +441,23 @@ impl JacAPIServerScheduler.update_job_callback -> Callable[..., TransportRespons
 impl JacAPIServerScheduler.delete_job_callback -> Callable[..., TransportResponse] {
     async def callback(request: Request, job_id: str) -> TransportResponse {
         authorization = request.headers.get('Authorization');
-        (username, auth_err) = authenticate_or_fail(authorization, self.user_manager);
+        (user_id, auth_err) = authenticate_or_fail(authorization, self.user_manager);
         if auth_err {
             return auth_err;
         }
 
         try {
             scheduler = JacScaleScheduler.instance();
+            existing = scheduler.get_job(job_id);
+            auth_err = _ensure_authorized(existing, user_id, self.user_manager);
+            if auth_err {
+                return auth_err;
+            }
             deleted = scheduler.delete_job(job_id);
             if not deleted {
                 return TransportResponse.fail(
                     code='NOT_FOUND',
-                    message=f'Job "{job_id}" not found',
+                    message='Job not found',
                     meta=Meta(extra={'http_status': 404})
                 );
             }
@@ -395,6 +466,10 @@ impl JacAPIServerScheduler.delete_job_callback -> Callable[..., TransportRespons
                 meta=Meta(extra={'http_status': 200})
             );
         } except Exception as e {
+            storage_err = _storage_failure_response(e);
+            if storage_err {
+                return storage_err;
+            }
             return TransportResponse.fail(
                 code='SCHEDULER_ERROR',
                 message=str(e),

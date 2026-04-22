@@ -15,14 +15,14 @@ impl JacScaleScheduler.instance -> JacScaleScheduler {
     return _jac_scale_scheduler;
 }
 
-"""Set up the scheduler with a system token and optional server reference."""
-impl JacScaleScheduler.setup(system_token: str, server: Any | None = None) -> None {
-    self._system_token = system_token;
+"""Set up the scheduler with the system user's id and optional server reference."""
+impl JacScaleScheduler.setup(system_user_id: str, server: Any | None = None) -> None {
+    self._system_user_id = system_user_id;
     self._server = server;
 
     # Register the dynamic handler via the public API in jaclang's scheduler.
     def _dynamic_handler(task: Any) {
-        self._execute_task(task.name, self._system_username, task.is_walker);
+        self._execute_task(task.name, self._system_user_id, task.is_walker);
     }
     Scheduler.instance().dynamic_handler = _dynamic_handler;
 
@@ -90,7 +90,7 @@ impl JacScaleScheduler.register_static_tasks(
 
     def _make_target(_name: str, _is_walker: bool) -> Any {
         def target {
-            self._execute_task(_name, self._system_username, _is_walker);
+            self._execute_task(_name, self._system_user_id, _is_walker);
         }
         return target;
     }
@@ -140,7 +140,7 @@ impl JacScaleScheduler.register_dynamic_tasks_from_db -> None {
         interval = job_data.get('interval');
         cron = job_data.get('cron');
         date = job_data.get('date');
-        username = job_data.get('created_by', self._system_username);
+        user_id = job_data.get('created_by', self._system_user_id);
         is_walker = job_data.get('is_walker', True);
         if name {
             try {
@@ -151,7 +151,7 @@ impl JacScaleScheduler.register_dynamic_tasks_from_db -> None {
                     interval=interval,
                     cron=cron,
                     date=date,
-                    username=username,
+                    user_id=user_id,
                     is_walker=is_walker
                 );
                 logger.debug(f"Restored dynamic job: {name} (id={job_id})");
@@ -162,15 +162,14 @@ impl JacScaleScheduler.register_dynamic_tasks_from_db -> None {
     }
 }
 
-"""Create a new dynamic scheduled job."""
+"""Create a new dynamic scheduled job. Runs as the creating user (created_by)."""
 impl JacScaleScheduler.create_job(
     name: str,
     trigger: str,
+    created_by: str,
     interval: (float | None) = None,
     cron: (str | None) = None,
-    date: (str | None) = None,
-    created_by: str = '__system__',
-    root_id: (str | None) = None
+    date: (str | None) = None
 ) -> dict {
     if self._apscheduler is None {
         raise RuntimeError(
@@ -193,27 +192,34 @@ impl JacScaleScheduler.create_job(
         'cron': cron,
         'date': date,
         'created_by': created_by,
-        'root_id': root_id,
         'is_walker': is_walker,
         'created_at': now_str,
         'status': 'active'
     };
 
-    # Schedule with APScheduler first (raises on invalid config)
-    self._schedule_apscheduler_job(
-        job_id=job_id,
-        name=name,
-        trigger=trigger,
-        interval=interval,
-        cron=cron,
-        date=date,
-        username=created_by,
-        is_walker=is_walker
-    );
-
-    # Persist to DB (MongoDB or in-memory)
+    # Persist first so the DB is authoritative. If this raises (e.g. Mongo is down),
+    # nothing is scheduled and the caller gets a storage error to propagate.
     persisted_id = self._persist_job(job_data);
     job_data['_id'] = persisted_id;
+
+    # Schedule with APScheduler. Dynamic jobs execute as the creating user
+    # (created_by), not the system user. On failure, roll back the DB insert so
+    # we don't leave a zombie record pointing at an unscheduled job.
+    try {
+        self._schedule_apscheduler_job(
+            job_id=persisted_id,
+            name=name,
+            trigger=trigger,
+            interval=interval,
+            cron=cron,
+            date=date,
+            user_id=created_by,
+            is_walker=is_walker
+        );
+    } except Exception {
+        self._delete_job_from_db(persisted_id);
+        raise;
+    }
 
     logger.debug(f"Created dynamic job: {name} (id={persisted_id})");
     return job_data;
@@ -227,20 +233,20 @@ impl JacScaleScheduler.list_jobs -> list[dict] {
 """Get a single dynamic job by ID."""
 impl JacScaleScheduler.get_job(job_id: str) -> (dict | None) {
     if self._db is not None {
-        try {
-            doc = self._db.find_one(
-                self._collection, {'_id': job_id, 'status': 'active'}
-            );
-            if doc {
-                doc['_id'] = str(doc['_id']);
-                return doc;
-            }
-            return None;
-        } except Exception as e {
-            logger.warning(f"MongoDB find_one failed, using in-memory: {e}");
+        doc = self._db.find_one(
+            self._collection, {'_id': job_id, 'status': 'active'}
+        );
+        if doc {
+            doc['_id'] = str(doc['_id']);
+            return doc;
         }
+        return None;
     }
-    return self._in_memory_jobs.get(job_id);
+    job = self._in_memory_jobs.get(job_id);
+    if job and job.get('status') == 'active' {
+        return job;
+    }
+    return None;
 }
 
 """Update schedule for an existing dynamic job."""
@@ -257,7 +263,7 @@ impl JacScaleScheduler.update_job(
     }
 
     name = existing.get('name', '');
-    username = existing.get('created_by', self._system_username);
+    user_id = existing.get('created_by', self._system_user_id);
     is_walker = existing.get('is_walker', True);
     updates = {
         'trigger': trigger,
@@ -281,7 +287,7 @@ impl JacScaleScheduler.update_job(
             interval=interval,
             cron=cron,
             date=date,
-            username=username,
+            user_id=user_id,
             is_walker=is_walker
         );
     }
@@ -313,7 +319,7 @@ impl JacScaleScheduler.delete_job(job_id: str) -> bool {
 
 """Execute a scheduled walker or function in the context of the given user."""
 impl JacScaleScheduler._execute_task(
-    name: str, username: str, is_walker: bool
+    name: str, user_id: str, is_walker: bool
 ) -> None {
     import asyncio;
     label = 'walker' if is_walker else 'function';
@@ -333,16 +339,15 @@ impl JacScaleScheduler._execute_task(
             return;
         }
         target = registry[name];
-        logger.debug(f"Executing scheduled {label} '{name}' as '{username}'");
 
         async def _run {
             if is_walker {
                 result = await self._server.execution_manager.spawn_walker(
-                    target, {}, username
+                    target, {}, user_id
                 );
             } else {
                 result = await self._server.execution_manager.execute_function(
-                    target, {}, username
+                    target, {}, user_id
                 );
             }
             if isinstance(result, dict) and 'error' in result {
@@ -375,7 +380,7 @@ impl JacScaleScheduler._schedule_apscheduler_job(
     interval: (float | None),
     cron: (str | None),
     date: (str | None),
-    username: str,
+    user_id: str,
     is_walker: bool = True
 ) -> None {
     if self._apscheduler is None {
@@ -383,7 +388,33 @@ impl JacScaleScheduler._schedule_apscheduler_job(
     }
 
     def job_func {
-        self._execute_task(name, username, is_walker);
+        # Dynamic jobs run as the creating user. If that user has been deleted,
+        # mark the job orphaned and unregister so it stops firing.
+        if user_id != self._system_user_id and self._server is not None {
+            if not self._server.user_manager.user_exists(user_id) {
+                logger.warning(
+                    f"Job '{name}' (id={job_id}) creator '{user_id}' no longer exists — marking orphaned"
+                );
+                self._update_job_in_db(
+                    job_id,
+                    {
+                        'status': 'orphaned',
+                        'orphaned_at': datetime.datetime.now(
+                            datetime.timezone.utc
+                        ).isoformat()
+                    }
+                );
+                try {
+                    self._apscheduler.remove_job(job_id);
+                } except Exception as e {
+                    logger.debug(
+                        f"Could not remove orphaned APScheduler job {job_id}: {e}"
+                    );
+                }
+                return;
+            }
+        }
+        self._execute_task(name, user_id, is_walker);
     }
 
     if trigger == 'interval' {
@@ -424,47 +455,37 @@ impl JacScaleScheduler._schedule_apscheduler_job(
     );
 }
 
-"""Persist a job record to MongoDB or in-memory store. Returns the job ID."""
+"""Persist a job record. Mongo is authoritative when configured — errors propagate."""
 impl JacScaleScheduler._persist_job(job_data: dict) -> str {
     if self._db is not None {
-        try {
-            result = self._db.insert_one(self._collection, dict(job_data));
-            return str(result.inserted_id);
-        } except Exception as e {
-            logger.warning(f"MongoDB persist failed, using in-memory: {e}");
-        }
+        result = self._db.insert_one(self._collection, dict(job_data));
+        return str(result.inserted_id);
     }
     job_id = str(job_data.get('_id', str(uuid4())));
     self._in_memory_jobs[job_id] = dict(job_data);
     return job_id;
 }
 
-"""Load all active job records from MongoDB or in-memory store."""
+"""Load all active job records. Mongo is authoritative when configured."""
 impl JacScaleScheduler._load_jobs_from_db -> list[dict] {
     if self._db is not None {
-        try {
-            jobs: list[dict] = [];
-            for doc in self._db.find(self._collection, {'status': 'active'}) {
-                doc['_id'] = str(doc['_id']);
-                jobs.append(doc);
-            }
-            return jobs;
-        } except Exception as e {
-            logger.warning(f"MongoDB load failed, using in-memory: {e}");
+        jobs: list[dict] = [];
+        for doc in self._db.find(self._collection, {'status': 'active'}) {
+            doc['_id'] = str(doc['_id']);
+            jobs.append(doc);
         }
+        return jobs;
     }
-    return list(self._in_memory_jobs.values());
+    return [
+        j for j in self._in_memory_jobs.values() if j.get('status') == 'active'
+    ];
 }
 
-"""Delete a job record from MongoDB or in-memory store."""
+"""Delete a job record. Mongo is authoritative when configured."""
 impl JacScaleScheduler._delete_job_from_db(job_id: str) -> bool {
     if self._db is not None {
-        try {
-            result = self._db.delete_one(self._collection, {'_id': job_id});
-            return result.deleted_count > 0;
-        } except Exception as e {
-            logger.warning(f"MongoDB delete failed, using in-memory: {e}");
-        }
+        result = self._db.delete_one(self._collection, {'_id': job_id});
+        return result.deleted_count > 0;
     }
     if job_id in self._in_memory_jobs {
         del self._in_memory_jobs[job_id];
@@ -473,17 +494,13 @@ impl JacScaleScheduler._delete_job_from_db(job_id: str) -> bool {
     return False;
 }
 
-"""Update a job record in MongoDB or in-memory store."""
+"""Update a job record. Mongo is authoritative when configured."""
 impl JacScaleScheduler._update_job_in_db(job_id: str, updates: dict) -> bool {
     if self._db is not None {
-        try {
-            result = self._db.update_one(
-                self._collection, {'_id': job_id}, {'$set': updates}
-            );
-            return result.modified_count > 0;
-        } except Exception as e {
-            logger.warning(f"MongoDB update failed, using in-memory: {e}");
-        }
+        result = self._db.update_one(
+            self._collection, {'_id': job_id}, {'$set': updates}
+        );
+        return result.modified_count > 0;
     }
     if job_id in self._in_memory_jobs {
         self._in_memory_jobs[job_id].update(updates);

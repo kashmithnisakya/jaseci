@@ -492,18 +492,20 @@ impl JacAPIServerCore._refresh_dev_endpoints -> None {
 
 """Create the __system__ user, initialise JacScaleScheduler, and register /jobs endpoints."""
 impl JacAPIServerCore._setup_scheduler -> None {
-    scheduler_config = get_scale_config().get_scheduler_config();
-    system_password = scheduler_config.get('system_user_password', 'system_secret');
+    # System user is created with a sentinel password that no one will type.
+    # It is not loginable over HTTP because the login handler rejects role=='system'.
     try {
         self.user_manager.create_internal_user(
-            '__system__', system_password, role='system'
+            '__system__', '__no_login__', role='system'
         );
     } except Exception { }
-    system_token = self.user_manager.create_jwt_token('__system__');
+    # Resolve the actual user_id for the system user (stable UUID, not the '__system__' identity string).
+    system_user = self.user_manager.get_user('__system__');
+    system_user_id = system_user.get('user_id', '__system__') if system_user else '__system__';
 
     # Initialise JacScaleScheduler singleton
     jac_scheduler = JacScaleScheduler.instance();
-    jac_scheduler.setup(system_token=system_token or '', server=self);
+    jac_scheduler.setup(system_user_id=system_user_id, server=self);
 
     # Register static tasks (walkers/functions with STATIC trigger)
     jac_scheduler.register_static_tasks(self.get_walkers(), self.get_functions(), self);

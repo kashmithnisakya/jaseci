@@ -17,8 +17,7 @@ glob _jac_scale_scheduler: (JacScaleScheduler | None) = None,
 """Jac-Scale scheduler that bridges APScheduler and the jaclang base Scheduler."""
 obj JacScaleScheduler {
     has _apscheduler: Any | None = None,
-        _system_token: str | None = None,
-        _system_username: str = '__system__',
+        _system_user_id: str = '__system__',
         _collection: str = 'scheduled_jobs',
         _db: Any | None = None,
         _in_memory_jobs: dict[str, Any] = {},
@@ -26,7 +25,7 @@ obj JacScaleScheduler {
 
     def postinit -> None;
     static def instance -> JacScaleScheduler;
-    def setup(system_token: str, server: Any | None = None) -> None;
+    def setup(system_user_id: str, server: Any | None = None) -> None;
     def start -> None;
     def stop -> None;
     # Called at server startup — scans loaded walkers/functions with schedule_spec
@@ -36,11 +35,10 @@ obj JacScaleScheduler {
     def create_job(
         name: str,
         trigger: str,
+        created_by: str,
         interval: (float | None) = None,
         cron: (str | None) = None,
-        date: (str | None) = None,
-        created_by: str = '__system__',
-        root_id: (str | None) = None
+        date: (str | None) = None
     ) -> dict;
 
     def list_jobs -> list[dict];
@@ -55,7 +53,7 @@ obj JacScaleScheduler {
 
     def delete_job(job_id: str) -> bool;
     # Internal execution helpers
-    def _execute_task(name: str, username: str, is_walker: bool) -> None;
+    def _execute_task(name: str, user_id: str, is_walker: bool) -> None;
     def _schedule_apscheduler_job(
         job_id: str,
         name: str,
@@ -63,7 +61,7 @@ obj JacScaleScheduler {
         interval: (float | None),
         cron: (str | None),
         date: (str | None),
-        username: str,
+        user_id: str,
         is_walker: bool = True
     ) -> None;
 

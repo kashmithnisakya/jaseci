@@ -107,7 +107,6 @@ impl JacScaleConfig.get_default_config(self: JacScaleConfig) -> dict[str, Any] {
             'require_password_reset': True
         },
         'scheduler': {
-            'system_user_password': 'system_secret',
             'collection': 'scheduled_jobs'
         },
         'telemetry': {'max_traces': 1000}
@@ -315,8 +314,6 @@ impl JacScaleConfig.get_scheduler_config(self: JacScaleConfig) -> dict[str, Any]
     config = self.load();
     scheduler_config = config.get('scheduler', {});
     return {
-        'system_user_password': os.environ.get('SYSTEM_USER_PASSWORD')
-        or scheduler_config.get('system_user_password', 'system_secret'),
         'collection': scheduler_config.get('collection', 'scheduled_jobs')
     };
 }

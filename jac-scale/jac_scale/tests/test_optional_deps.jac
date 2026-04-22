@@ -296,7 +296,7 @@ test "scheduler setup succeeds without apscheduler installed" {
             with unittest.mock.patch("jac_scale.scheduler.ThreadPoolExecutor", None) {
                 sched = JacScaleScheduler();
                 # setup() should not crash — APScheduler init is skipped gracefully.
-                sched.setup(system_token="test-token");
+                sched.setup(system_user_id="system-user-id");
                 assert sched._apscheduler is None , "APScheduler should be None when package is not installed";
                 # start/stop should be no-ops, not errors.
                 sched.start();
@@ -313,11 +313,14 @@ test "scheduler create_job raises clear error without apscheduler" {
         with unittest.mock.patch("jac_scale.scheduler.BackgroundScheduler", None) {
             with unittest.mock.patch("jac_scale.scheduler.ThreadPoolExecutor", None) {
                 sched = JacScaleScheduler();
-                sched.setup(system_token="test-token");
+                sched.setup(system_user_id="system-user-id");
                 raised = False;
                 try {
                     sched.create_job(
-                        name="test_walker", trigger="interval", interval=60.0
+                        name="test_walker",
+                        trigger="interval",
+                        created_by="system-user-id",
+                        interval=60.0
                     );
                 } except RuntimeError as e {
                     raised = True;

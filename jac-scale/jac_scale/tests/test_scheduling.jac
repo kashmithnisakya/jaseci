@@ -170,7 +170,8 @@ test "endpoint filtering and startup" {
         resp = requests.post(f"{base_url}/jobs", json={}, timeout=5);
         assert resp.status_code != 404 , "/jobs POST should be registered";
 
-        # __system__ user created at startup
+        # __system__ user is created at startup but is NOT loginable over HTTP
+        # (role='system' accounts have no credential record).
         resp = requests.post(
             f"{base_url}/user/login",
             json={
@@ -179,8 +180,7 @@ test "endpoint filtering and startup" {
             },
             timeout=5
         ).json();
-        assert resp.get("ok") , "__system__ user must exist and authenticate";
-        assert _data(resp).get("token");
+        assert not resp.get("ok") , "__system__ user must not be loginable over HTTP";
     } finally {
         _stop_server(sp);
         _cleanup();
