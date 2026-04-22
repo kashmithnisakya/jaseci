@@ -24,10 +24,20 @@ callers decide whether to surface as 503 or let through.
 """
 obj JobStore {
     def insert(job: dict) -> str;
-    def find_active -> list[dict];
+    def find_active(
+        limit: int | None = None,
+        offset: int = 0,
+        trigger: str | None = None,
+        created_by: str | None = None
+    ) -> tuple[list[dict], int];
+
     def find_active_one(job_id: str) -> dict | None;
     def update(job_id: str, updates: dict) -> bool;
     def delete(job_id: str) -> bool;
+    # Single atomic run-history update: increments run_count and sets last_*.
+    def record_run(
+        job_id: str, status: str, error: str | None = None
+    ) -> None;
 }
 
 obj MongoJobStore(JobStore) {
@@ -35,10 +45,19 @@ obj MongoJobStore(JobStore) {
         _collection: str;
 
     def insert(job: dict) -> str;
-    def find_active -> list[dict];
+    def find_active(
+        limit: int | None = None,
+        offset: int = 0,
+        trigger: str | None = None,
+        created_by: str | None = None
+    ) -> tuple[list[dict], int];
+
     def find_active_one(job_id: str) -> dict | None;
     def update(job_id: str, updates: dict) -> bool;
     def delete(job_id: str) -> bool;
+    def record_run(
+        job_id: str, status: str, error: str | None = None
+    ) -> None;
 }
 
 obj MemoryJobStore(JobStore) {
@@ -46,10 +65,19 @@ obj MemoryJobStore(JobStore) {
 
     def postinit -> None;
     def insert(job: dict) -> str;
-    def find_active -> list[dict];
+    def find_active(
+        limit: int | None = None,
+        offset: int = 0,
+        trigger: str | None = None,
+        created_by: str | None = None
+    ) -> tuple[list[dict], int];
+
     def find_active_one(job_id: str) -> dict | None;
     def update(job_id: str, updates: dict) -> bool;
     def delete(job_id: str) -> bool;
+    def record_run(
+        job_id: str, status: str, error: str | None = None
+    ) -> None;
 }
 
 """Validated trigger configuration for a scheduled job.
@@ -81,7 +109,11 @@ obj JacScaleScheduler {
         _system_user_id: str = '__system__',
         _store: JobStore = MemoryJobStore(),
         _server: Any | None = None,
-        _lock: threading.RLock = threading.RLock();
+        _lock: threading.RLock = threading.RLock(),
+        # Positive cache: user_id -> expiry epoch seconds. Negative results are
+        # not cached (user was just deleted → transition immediately).
+        _user_exists_cache: dict[str, float] = {},
+        _user_exists_ttl: float = 30.0;
 
     def postinit -> None;
     static def instance -> JacScaleScheduler;
@@ -93,7 +125,12 @@ obj JacScaleScheduler {
     def register_dynamic_tasks_from_db -> None;
     # /jobs endpoint logic
     def create_job(name: str, spec: TriggerSpec, created_by: str) -> dict;
-    def list_jobs -> list[dict];
+    def list_jobs(
+        limit: int | None = None,
+        offset: int = 0,
+        trigger: str | None = None,
+        created_by: str | None = None
+    ) -> tuple[list[dict], int];
     def get_job(job_id: str) -> (dict | None);
     def update_job(job_id: str, spec: TriggerSpec) -> (dict | None);
     def delete_job(job_id: str) -> bool;
@@ -107,4 +144,7 @@ obj JacScaleScheduler {
     ) -> None;
 
     def _record_run(job_id: str, status: str, error: str | None = None) -> None;
+    # Checks user_manager.user_exists with a short TTL cache to avoid
+    # a DB round-trip on every scheduled-job tick.
+    def _user_is_live(user_id: str) -> bool;
 }

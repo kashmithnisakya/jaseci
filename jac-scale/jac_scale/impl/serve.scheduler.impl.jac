@@ -313,32 +313,16 @@ impl JacAPIServerScheduler.list_jobs_callback -> Callable[..., TransportResponse
         creator_filter = params.get('created_by');
 
         try {
-            scheduler = JacScaleScheduler.instance();
-            jobs = scheduler.list_jobs();
             is_admin = self.user_manager.get_user_role(user_id) == 'admin';
             # Non-admins only see their own jobs; creator_filter is admin-only.
-            if not is_admin {
-                jobs = [
-                    j
-                    for j in jobs
-                    if j.get('created_by') == user_id
-                ];
-            } elif creator_filter {
-                jobs = [
-                    j
-                    for j in jobs
-                    if j.get('created_by') == creator_filter
-                ];
-            }
-            if trigger_filter {
-                jobs = [
-                    j
-                    for j in jobs
-                    if j.get('trigger') == trigger_filter
-                ];
-            }
-            total = len(jobs);
-            page = jobs[offset:offset + limit];
+            effective_creator = user_id if not is_admin else creator_filter;
+            scheduler = JacScaleScheduler.instance();
+            (page, total) = scheduler.list_jobs(
+                limit=limit,
+                offset=offset,
+                trigger=trigger_filter,
+                created_by=effective_creator
+            );
             return TransportResponse.success(
                 data={
                     'jobs': page,

@@ -1,3 +1,8 @@
+"""Current UTC time as an ISO-8601 string. Used for timestamps persisted to the store."""
+def _utc_now_iso -> str {
+    return datetime.datetime.now(datetime.timezone.utc).isoformat();
+}
+
 """Validate inputs and return a TriggerSpec. Raises ValueError on bad input."""
 impl TriggerSpec.validate(
     trigger: str,
@@ -20,15 +25,19 @@ impl TriggerSpec.validate(
         if not cron {
             raise ValueError("cron expression required for trigger='cron'");
         }
-        # Real structural + range validation via APScheduler's parser.
-        # Catches things like '99 99 99 99 99' that pass a naive 5-field check.
+        # Structural + range validation via APScheduler's parser. Catches things
+        # like '99 99 99 99 99' that pass a naive 5-field check. If APScheduler
+        # is not installed, cron triggers are unsupported — don't silently accept.
         _ct: Any = CronTrigger;
-        if _ct is not None {
-            try {
-                _ct.from_crontab(cron);
-            } except Exception as e {
-                raise ValueError(f"invalid cron expression: {e}");
-            }
+        if _ct is None {
+            raise ValueError(
+                "cron triggers require APScheduler. Install with: pip install jac-scale[scheduler]"
+            );
+        }
+        try {
+            _ct.from_crontab(cron);
+        } except Exception as e {
+            raise ValueError(f"invalid cron expression: {e}");
         }
     } elif trigger == 'date' {
         if not date {
@@ -84,13 +93,35 @@ impl MongoJobStore.insert(job: dict) -> str {
     return str(result.inserted_id);
 }
 
-impl MongoJobStore.find_active -> list[dict] {
+impl MongoJobStore.find_active(
+    limit: int | None = None,
+    offset: int = 0,
+    trigger: str | None = None,
+    created_by: str | None = None
+) -> tuple[list[dict], int] {
+    query: dict[str, Any] = {'status': 'active'};
+    if trigger {
+        query['trigger'] = trigger;
+    }
+    if created_by {
+        query['created_by'] = created_by;
+    }
+    # Count matching docs first so callers can paginate without rerunning the filter set.
+    total = self._db.count_documents(self._collection, query);
+    # Chain skip/limit on the pymongo cursor so pagination happens DB-side.
+    cursor: Any = self._db.find(self._collection, query);
+    if offset > 0 {
+        cursor = cursor.skip(offset);
+    }
+    if limit is not None {
+        cursor = cursor.limit(limit);
+    }
     jobs: list[dict] = [];
-    for doc in self._db.find(self._collection, {'status': 'active'}) {
+    for doc in cursor {
         doc['_id'] = str(doc['_id']);
         jobs.append(doc);
     }
-    return jobs;
+    return (jobs, total);
 }
 
 impl MongoJobStore.find_active_one(job_id: str) -> dict | None {
@@ -112,6 +143,24 @@ impl MongoJobStore.delete(job_id: str) -> bool {
     return result.deleted_count > 0;
 }
 
+impl MongoJobStore.record_run(
+    job_id: str, status: str, error: str | None = None
+) -> None {
+    # One atomic round-trip: $inc on run_count, $set on the last_* fields.
+    self._db.update_one(
+        self._collection,
+        {'_id': job_id},
+        {
+            '$inc': {'run_count': 1},
+            '$set': {
+                'last_run_at': _utc_now_iso(),
+                'last_status': status,
+                'last_error': error
+            }
+        }
+    );
+}
+
 """MemoryJobStore — fallback when no DB is configured."""
 impl MemoryJobStore.postinit -> None {
     # Ensure each instance gets its own dict (avoid mutable default sharing).
@@ -124,12 +173,29 @@ impl MemoryJobStore.insert(job: dict) -> str {
     return job_id;
 }
 
-impl MemoryJobStore.find_active -> list[dict] {
-    return [
-        j
-        for j in self._jobs.values()
-        if j.get('status') == 'active'
-    ];
+impl MemoryJobStore.find_active(
+    limit: int | None = None,
+    offset: int = 0,
+    trigger: str | None = None,
+    created_by: str | None = None
+) -> tuple[list[dict], int] {
+    # Single pass through the dict applying all active/trigger/creator filters.
+    matches: list[dict] = [];
+    for j in self._jobs.values() {
+        if j.get('status') != 'active' {
+            continue;
+        }
+        if trigger is not None and j.get('trigger') != trigger {
+            continue;
+        }
+        if created_by is not None and j.get('created_by') != created_by {
+            continue;
+        }
+        matches.append(j);
+    }
+    total = len(matches);
+    end = (offset + limit) if limit is not None else total;
+    return (matches[offset:end], total);
 }
 
 impl MemoryJobStore.find_active_one(job_id: str) -> dict | None {
@@ -156,12 +222,51 @@ impl MemoryJobStore.delete(job_id: str) -> bool {
     return False;
 }
 
+impl MemoryJobStore.record_run(
+    job_id: str, status: str, error: str | None = None
+) -> None {
+    job = self._jobs.get(job_id);
+    if job is None {
+        return;
+    }
+    job['last_run_at'] = _utc_now_iso();
+    job['last_status'] = status;
+    job['last_error'] = error;
+    job['run_count'] = int(job.get('run_count', 0)) + 1;
+}
+
 """Silence APScheduler's verbose logs on instantiation."""
 impl JacScaleScheduler.postinit -> None {
     logging.getLogger('apscheduler').setLevel(logging.ERROR);
     # Serializes mutations of self._apscheduler and the store across FastAPI
     # request threads and APScheduler worker threads.
     self._lock = threading.RLock();
+    # Each instance gets its own cache dict (avoid mutable default sharing).
+    self._user_exists_cache = {};
+}
+
+"""Return True if `user_id` currently exists. Caches positive answers for
+`_user_exists_ttl` seconds so a high-frequency scheduled job doesn't round-trip
+to the DB on every tick. Negative answers are never cached: a deleted user
+should transition to the orphaned path immediately.
+"""
+impl JacScaleScheduler._user_is_live(user_id: str) -> bool {
+    import time;
+    now = time.time();
+    expires_at = self._user_exists_cache.get(user_id, 0.0);
+    if expires_at > now {
+        return True;
+    }
+    if self._server is None {
+        return False;
+    }
+    if self._server.user_manager.user_exists(user_id) {
+        self._user_exists_cache[user_id] = now + self._user_exists_ttl;
+        return True;
+    }
+    # Negative: evict any stale positive entry.
+    self._user_exists_cache.pop(user_id, None);
+    return False;
 }
 
 """Return or create the module-level singleton JacScaleScheduler."""
@@ -312,7 +417,7 @@ impl JacScaleScheduler.register_dynamic_tasks_from_db -> None {
     if self._apscheduler is None {
         return;
     }
-    jobs = self._store.find_active();
+    (jobs, _total) = self._store.find_active();
     for job_data in jobs {
         job_id = str(job_data.get('_id', str(uuid4())));
         name = job_data.get('name', '');
@@ -347,7 +452,7 @@ impl JacScaleScheduler.create_job(
     }
 
     job_id = str(uuid4());
-    now_str = datetime.datetime.now(datetime.timezone.utc).isoformat();
+    now_str = _utc_now_iso();
 
     # Resolve whether this is a walker or function once, persist it
     introspector = self._server.introspector if self._server else None;
@@ -389,9 +494,16 @@ impl JacScaleScheduler.create_job(
     return job_data;
 }
 
-"""List all dynamic scheduled jobs."""
-impl JacScaleScheduler.list_jobs -> list[dict] {
-    return self._store.find_active();
+"""List active dynamic jobs. Pagination + filters are pushed to the store."""
+impl JacScaleScheduler.list_jobs(
+    limit: int | None = None,
+    offset: int = 0,
+    trigger: str | None = None,
+    created_by: str | None = None
+) -> tuple[list[dict], int] {
+    return self._store.find_active(
+        limit=limit, offset=offset, trigger=trigger, created_by=created_by
+    );
 }
 
 """Get a single dynamic job by ID."""
@@ -410,7 +522,7 @@ impl JacScaleScheduler.update_job(job_id: str, spec: TriggerSpec) -> (dict | Non
     user_id = existing.get('created_by', self._system_user_id);
     is_walker = existing.get('is_walker', True);
     updates: dict[str, Any] = {
-        'updated_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
+        'updated_at': _utc_now_iso()
     };
     updates.update(spec.to_dict());
 
@@ -528,21 +640,15 @@ impl JacScaleScheduler._execute_task(
     }
 }
 
-"""Update the job's execution-history fields in the store."""
+"""Record the outcome of a scheduled execution on the job record.
+
+Delegates to the store's atomic record_run (single round-trip for Mongo).
+"""
 impl JacScaleScheduler._record_run(
     job_id: str, status: str, error: str | None = None
 ) -> None {
-    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat();
-    existing = self._store.find_active_one(job_id);
-    run_count = int(existing.get('run_count', 0)) + 1 if existing else 1;
-    updates: dict[str, Any] = {
-        'last_run_at': now_iso,
-        'last_status': status,
-        'last_error': error,
-        'run_count': run_count
-    };
     try {
-        self._store.update(job_id, updates);
+        self._store.record_run(job_id, status, error);
     } except Exception as e {
         logger.debug(f"Could not record run for job {job_id}: {e}");
     }
@@ -560,25 +666,24 @@ impl JacScaleScheduler._schedule_apscheduler_job(
         # Dynamic jobs run as the creating user. If that user has been deleted,
         # mark the job orphaned and unregister so it stops firing.
         if user_id != self._system_user_id and self._server is not None {
-            if not self._server.user_manager.user_exists(user_id) {
+            if not self._user_is_live(user_id) {
                 logger.warning(
                     f"Job '{name}' (id={job_id}) creator '{user_id}' no longer exists — marking orphaned"
                 );
-                self._store.update(
-                    job_id,
-                    {
-                        'status': 'orphaned',
-                        'orphaned_at': datetime.datetime.now(
-                            datetime.timezone.utc
-                        ).isoformat()
-                    }
-                );
-                try {
-                    self._apscheduler.remove_job(job_id);
-                } except Exception as e {
-                    logger.debug(
-                        f"Could not remove orphaned APScheduler job {job_id}: {e}"
+                # Take the RLock so the orphan transition races cleanly with
+                # concurrent create_job/update_job/delete_job calls.
+                with self._lock {
+                    self._store.update(
+                        job_id,
+                        {'status': 'orphaned', 'orphaned_at': _utc_now_iso()}
                     );
+                    try {
+                        self._apscheduler.remove_job(job_id);
+                    } except Exception as e {
+                        logger.debug(
+                            f"Could not remove orphaned APScheduler job {job_id}: {e}"
+                        );
+                    }
                 }
                 return;
             }

@@ -147,6 +147,16 @@ impl Db.find(col_name: str, filter: dict) -> Cursor | list {
     return self._get_mongo_collection(col_name).find(filter);
 }
 
+impl Db.count_documents(col_name: str, filter: dict) -> int {
+    if self.db_type == DatabaseType.REDIS {
+        raise NotImplementedError(
+            "count_documents() is not supported for Redis."
+        );
+    }
+    col: Any = self._get_mongo_collection(col_name);
+    return col.count_documents(filter);
+}
+
 impl Db.insert_one(
     col_name: str, document: dict
 ) -> PyMongoInsertOneResult | InsertResult {

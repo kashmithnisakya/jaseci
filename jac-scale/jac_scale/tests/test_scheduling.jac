@@ -403,3 +403,89 @@ test "jobs validation and auth errors" {
         _cleanup();
     }
 }
+
+# =============================================================================
+# Test 4: Ownership enforcement — user B cannot see/modify user A's job
+# =============================================================================
+test "ownership enforcement across users" {
+    port = get_free_port();
+    base_url = f"http://localhost:{port}";
+    _cleanup();
+    sp = _start_server(port);
+    try {
+        token_a = _get_token(base_url, "alice", "pass_a");
+        token_b = _get_token(base_url, "bob", "pass_b");
+        ha = {"Authorization": f"Bearer {token_a}"};
+        hb = {"Authorization": f"Bearer {token_b}"};
+
+        # Alice creates a job
+        body_a = _post_job(
+            base_url, ha,
+            {
+                "walker_or_function": "DynamicScheduledWalker",
+                "trigger": "interval",
+                "interval": 3600
+            }
+        );
+        assert body_a.get("ok") , f"Alice failed to create job: {body_a}";
+        job_id = _data(body_a).get("_id");
+        assert job_id , "Expected job id on create";
+
+        # Bob GET single → must not see it
+        resp = requests.get(
+            f"{base_url}/jobs/{job_id}", headers=hb, timeout=5
+        ).json();
+        assert not resp.get("ok") , "Bob must not see Alice's job";
+        err = _err(resp);
+        assert err is not None and err.get("code") == "NOT_FOUND" , (
+            f"Expected NOT_FOUND for cross-user GET, got {err}"
+        );
+
+        # Bob PUT → must not update it
+        resp = requests.put(
+            f"{base_url}/jobs/{job_id}",
+            json={"trigger": "interval", "interval": 7200},
+            headers=hb,
+            timeout=5
+        ).json();
+        assert not resp.get("ok") , "Bob must not update Alice's job";
+        err = _err(resp);
+        assert err is not None and err.get("code") == "NOT_FOUND" , (
+            f"Expected NOT_FOUND for cross-user PUT, got {err}"
+        );
+
+        # Bob DELETE → must not delete it
+        resp = requests.delete(
+            f"{base_url}/jobs/{job_id}", headers=hb, timeout=5
+        ).json();
+        assert not resp.get("ok") , "Bob must not delete Alice's job";
+        err = _err(resp);
+        assert err is not None and err.get("code") == "NOT_FOUND" , (
+            f"Expected NOT_FOUND for cross-user DELETE, got {err}"
+        );
+
+        # Bob GET /jobs list → shouldn't contain Alice's job
+        resp = requests.get(f"{base_url}/jobs", headers=hb, timeout=5).json();
+        assert resp.get("ok") , f"Bob list call failed: {resp}";
+        bob_jobs = _data(resp).get("jobs", []);
+        assert all(j.get("_id") != job_id for j in bob_jobs) , (
+            "Bob's /jobs list leaked Alice's job"
+        );
+
+        # Alice can still access her own job
+        resp = requests.get(
+            f"{base_url}/jobs/{job_id}", headers=ha, timeout=5
+        ).json();
+        assert resp.get("ok") , "Alice must see her own job";
+        assert _data(resp).get("_id") == job_id;
+
+        # Alice can delete her own job
+        resp = requests.delete(
+            f"{base_url}/jobs/{job_id}", headers=ha, timeout=5
+        ).json();
+        assert resp.get("ok") , f"Alice failed to delete her own job: {resp}";
+    } finally {
+        _stop_server(sp);
+        _cleanup();
+    }
+}

@@ -166,6 +166,9 @@ obj Db {
     """Find all documents matching filter."""
     def find(col_name: str, filter: dict) -> Cursor | list;
 
+    """Count documents matching filter."""
+    def count_documents(col_name: str, filter: dict) -> int;
+
     """Insert a single document."""
     def insert_one(
         col_name: str, document: dict
