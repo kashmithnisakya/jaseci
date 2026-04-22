@@ -597,4 +597,3 @@ impl JacScaleScheduler._schedule_apscheduler_job(
         **spec.apscheduler_kwargs()
     );
 }
-
