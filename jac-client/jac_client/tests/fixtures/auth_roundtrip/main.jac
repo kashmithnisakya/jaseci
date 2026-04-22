@@ -1,7 +1,7 @@
-# Demo: calls jacLogin/jacSignup with both supported calling forms —
-# bare-string (backward-compat) and list/dict (identity-credential).
-# Also used by the e2e test via `data-testid` hooks.
-cl import from '@jac/runtime' { jacSignup, jacLogin, jacLogout, jacIsLoggedIn }
+# Test fixture: exercises jacLogin/jacSignup with BOTH calling forms
+cl import from '@jac/runtime' {
+    jacSignup, jacLogin, jacLogout, jacIsLoggedIn
+}
 
 
 cl {
@@ -24,7 +24,9 @@ cl {
                         status = "signup_old_ok";
                         logged_in = True;
                     } else {
-                        err = result["error"] if "error" in result else "unknown";
+                        err = result["error"]
+                            if "error" in result
+                            else "unknown";
                         status = f"signup_old_fail:{err}";
                     }
                 } except Exception as e {
@@ -45,7 +47,9 @@ cl {
                         status = "signup_new_ok";
                         logged_in = True;
                     } else {
-                        err = result["error"] if "error" in result else "unknown";
+                        err = result["error"]
+                            if "error" in result
+                            else "unknown";
                         status = f"signup_new_fail:{err}";
                     }
                 } except Exception as e {
@@ -102,20 +106,30 @@ cl {
         return
             <div style={{"padding": "20px", "fontFamily": "sans-serif"}}>
                 <h1>Auth Roundtrip Fixture</h1>
-                <p data-testid="logged-in">logged_in={str(logged_in)}</p>
+                <p data-testid="logged-in">
+                    logged_in={str(logged_in)}
+                </p>
                 <div>
                     <input
                         type="text"
                         data-testid="username-input"
                         value={username}
-                        onChange={lambda e: ChangeEvent { username = e.target.value;}}
+                        onChange={
+                            lambda e: ChangeEvent {
+                                username = e.target.value;
+                            }
+                        }
                         placeholder="username"
                     />
                     <input
                         type="password"
                         data-testid="password-input"
                         value={password}
-                        onChange={lambda e: ChangeEvent { password = e.target.value;}}
+                        onChange={
+                            lambda e: ChangeEvent {
+                                password = e.target.value;
+                            }
+                        }
                         placeholder="password"
                     />
                 </div>
@@ -132,7 +146,9 @@ cl {
                     <button data-testid="login-new" onClick={do_login_new}>
                         Login (new)
                     </button>
-                    <button data-testid="logout-btn" onClick={do_logout}>Logout</button>
+                    <button data-testid="logout-btn" onClick={do_logout}>
+                        Logout
+                    </button>
                 </div>
                 <div
                     data-testid="status"

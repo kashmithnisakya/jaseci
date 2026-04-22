@@ -8,4 +8,7 @@ entry-point = "main.jac"
 name = "auth-calling-forms"
 description = "Demonstrates jacLogin/jacSignup with both string and identity/credential calling forms"
 
+[serve]
+base_route_app = "app"
+
 [plugins.client]
