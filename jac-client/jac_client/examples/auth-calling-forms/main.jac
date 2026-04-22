@@ -100,7 +100,7 @@ cl {
 
         return
             <div style={{"padding": "20px", "fontFamily": "sans-serif"}}>
-                <h1>Auth Roundtrip Fixture</h1>
+                <h1>Auth Calling Forms Demo</h1>
                 <p data-testid="logged-in">logged_in={str(logged_in)}</p>
                 <div>
                     <input
