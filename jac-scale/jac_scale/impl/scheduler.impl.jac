@@ -329,16 +329,18 @@ impl JacScaleScheduler._execute_task(
             return;
         }
         introspector = self._server.introspector;
-        if is_walker {
-            registry = introspector._walkers or introspector.get_walkers();
-        } else {
-            registry = introspector._functions or introspector.get_functions();
-        }
-        if name not in registry {
-            logger.error(f"{label.capitalize()} '{name}' not found in server registry");
+        registry: dict[str, Any] = (
+            introspector._walkers if is_walker else introspector._functions
+        ) or {};
+        target = registry.get(name);
+        if target is None {
+            # Walker/function was removed from the codebase. Log and skip this
+            # tick; the /jobs endpoint can remove or re-create the job manually.
+            logger.warning(
+                f"Scheduled {label} '{name}' is no longer registered in the server"
+            );
             return;
         }
-        target = registry[name];
 
         async def _run {
             if is_walker {
@@ -357,16 +359,9 @@ impl JacScaleScheduler._execute_task(
             }
         }
 
-        try {
-            loop = asyncio.get_event_loop();
-            if loop.is_running() {
-                asyncio.ensure_future(_run());
-            } else {
-                loop.run_until_complete(_run());
-            }
-        } except RuntimeError {
-            asyncio.run(_run());
-        }
+        # APScheduler fires this in a worker thread with no event loop —
+        # create an isolated loop per invocation to keep execution thread-safe.
+        asyncio.run(_run());
     } except Exception as e {
         logger.error(f"Error executing {label} '{name}': {e}");
     }
