@@ -73,27 +73,3 @@ def authenticate_or_fail(
     return (user_id, None);
 }
 
-"""Authenticate an inbound request by Authorization header."""
-def require_auth(
-    request: Any, user_manager: Any, message: str = 'Authorization required'
-) -> tuple[str | None, TransportResponse | None] {
-    authorization = request.headers.get('Authorization');
-    return authenticate_or_fail(authorization, user_manager, message);
-}
-
-"""Parse JSON request body. Returns (body, None) on success or ({}, error_response)."""
-async def parse_json_body(request: Any) -> tuple[dict, TransportResponse | None] {
-    try {
-        body = await request.json();
-        return (body, None);
-    } except Exception {
-        return (
-            {},
-            TransportResponse.fail(
-                code='INVALID_REQUEST',
-                message='Request body must be valid JSON',
-                meta=Meta(extra={'http_status': 400})
-            )
-        );
-    }
-}

@@ -1,4 +1,4 @@
-import from jac_scale.utils { parse_json_body, require_auth }
+import from jac_scale.utils { authenticate_or_fail }
 
 """Classify an exception as a storage failure (Mongo down, network error, etc).
 
@@ -190,14 +190,21 @@ impl JacAPIServerScheduler.register_scheduler_endpoints -> None {
 """Build POST /jobs callback — creates a new dynamic scheduled job."""
 impl JacAPIServerScheduler.create_job_callback -> Callable[..., TransportResponse] {
     async def callback(request: Request) -> TransportResponse {
-        (user_id, auth_err) = require_auth(request, self.user_manager);
+        (user_id, auth_err) = authenticate_or_fail(
+            request.headers.get('Authorization'), self.user_manager
+        );
         if auth_err {
             return auth_err;
         }
 
-        (body, body_err) = await parse_json_body(request);
-        if body_err {
-            return body_err;
+        try {
+            body = await request.json();
+        } except Exception {
+            return TransportResponse.fail(
+                code='INVALID_REQUEST',
+                message='Request body must be valid JSON',
+                meta=Meta(extra={'http_status': 400})
+            );
         }
 
         walker_or_function = body.get('walker_or_function', '');
@@ -284,7 +291,9 @@ Query parameters:
 """
 impl JacAPIServerScheduler.list_jobs_callback -> Callable[..., TransportResponse] {
     async def callback(request: Request) -> TransportResponse {
-        (user_id, auth_err) = require_auth(request, self.user_manager);
+        (user_id, auth_err) = authenticate_or_fail(
+            request.headers.get('Authorization'), self.user_manager
+        );
         if auth_err {
             return auth_err;
         }
@@ -358,7 +367,9 @@ impl JacAPIServerScheduler.list_jobs_callback -> Callable[..., TransportResponse
 """Build GET /jobs/{job_id} callback — retrieves a single dynamic job."""
 impl JacAPIServerScheduler.get_job_callback -> Callable[..., TransportResponse] {
     async def callback(request: Request, job_id: str) -> TransportResponse {
-        (user_id, auth_err) = require_auth(request, self.user_manager);
+        (user_id, auth_err) = authenticate_or_fail(
+            request.headers.get('Authorization'), self.user_manager
+        );
         if auth_err {
             return auth_err;
         }
@@ -391,14 +402,21 @@ impl JacAPIServerScheduler.get_job_callback -> Callable[..., TransportResponse] 
 """Build PUT /jobs/{job_id} callback — updates an existing dynamic job's schedule."""
 impl JacAPIServerScheduler.update_job_callback -> Callable[..., TransportResponse] {
     async def callback(request: Request, job_id: str) -> TransportResponse {
-        (user_id, auth_err) = require_auth(request, self.user_manager);
+        (user_id, auth_err) = authenticate_or_fail(
+            request.headers.get('Authorization'), self.user_manager
+        );
         if auth_err {
             return auth_err;
         }
 
-        (body, body_err) = await parse_json_body(request);
-        if body_err {
-            return body_err;
+        try {
+            body = await request.json();
+        } except Exception {
+            return TransportResponse.fail(
+                code='INVALID_REQUEST',
+                message='Request body must be valid JSON',
+                meta=Meta(extra={'http_status': 400})
+            );
         }
 
         (spec, spec_err) = _build_spec(body);
@@ -442,7 +460,9 @@ impl JacAPIServerScheduler.update_job_callback -> Callable[..., TransportRespons
 """Build DELETE /jobs/{job_id} callback — deletes a dynamic scheduled job."""
 impl JacAPIServerScheduler.delete_job_callback -> Callable[..., TransportResponse] {
     async def callback(request: Request, job_id: str) -> TransportResponse {
-        (user_id, auth_err) = require_auth(request, self.user_manager);
+        (user_id, auth_err) = authenticate_or_fail(
+            request.headers.get('Authorization'), self.user_manager
+        );
         if auth_err {
             return auth_err;
         }
