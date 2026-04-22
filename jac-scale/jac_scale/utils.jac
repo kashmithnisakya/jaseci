@@ -72,4 +72,3 @@ def authenticate_or_fail(
     }
     return (user_id, None);
 }
-
