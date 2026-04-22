@@ -103,9 +103,7 @@ impl MongoJobStore.find_active_one(job_id: str) -> dict | None {
 }
 
 impl MongoJobStore.update(job_id: str, updates: dict) -> bool {
-    result = self._db.update_one(
-        self._collection, {'_id': job_id}, {'$set': updates}
-    );
+    result = self._db.update_one(self._collection, {'_id': job_id}, {'$set': updates});
     return result.modified_count > 0;
 }
 
@@ -127,7 +125,11 @@ impl MemoryJobStore.insert(job: dict) -> str {
 }
 
 impl MemoryJobStore.find_active -> list[dict] {
-    return [j for j in self._jobs.values() if j.get('status') == 'active'];
+    return [
+        j
+        for j in self._jobs.values()
+        if j.get('status') == 'active'
+    ];
 }
 
 impl MemoryJobStore.find_active_one(job_id: str) -> dict | None {
@@ -366,7 +368,6 @@ impl JacScaleScheduler.create_job(
         # is down), nothing is scheduled and the caller gets a storage error.
         persisted_id = self._store.insert(job_data);
         job_data['_id'] = persisted_id;
-
         # Schedule with APScheduler. Dynamic jobs execute as the creating user
         # (created_by), not the system user. On failure, roll back the DB
         # insert so we don't leave a zombie record.
@@ -417,7 +418,6 @@ impl JacScaleScheduler.update_job(job_id: str, spec: TriggerSpec) -> (dict | Non
         # DB is authoritative — update it first. If this raises, APScheduler
         # is untouched and the job continues on its old schedule.
         self._store.update(job_id, updates);
-
         # Remove old APScheduler job and re-add with new schedule.
         if self._apscheduler is not None {
             try {
@@ -483,7 +483,8 @@ impl JacScaleScheduler._execute_task(
         introspector = self._server.introspector;
         registry: dict[str, Any] = (
             introspector._walkers if is_walker else introspector._functions
-        ) or {};
+        )
+        or {};
         target = registry.get(name);
         if target is None {
             logger.warning(
@@ -495,7 +496,7 @@ impl JacScaleScheduler._execute_task(
             return;
         }
 
-        async def _run -> None {
+        async def _run {
             if is_walker {
                 result = await self._server.execution_manager.spawn_walker(
                     target, {}, user_id
@@ -549,11 +550,7 @@ impl JacScaleScheduler._record_run(
 
 """Add a job to APScheduler using a validated TriggerSpec."""
 impl JacScaleScheduler._schedule_apscheduler_job(
-    job_id: str,
-    name: str,
-    spec: TriggerSpec,
-    user_id: str,
-    is_walker: bool = True
+    job_id: str, name: str, spec: TriggerSpec, user_id: str, is_walker: bool = True
 ) -> None {
     if self._apscheduler is None {
         raise RuntimeError("APScheduler is not initialized");

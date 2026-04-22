@@ -7,8 +7,13 @@ Returns a 503 response for storage failures, else None (caller should treat as 5
 def _storage_failure_response(e: Exception) -> TransportResponse | None {
     err_name = type(e).__name__;
     storage_markers = (
-        'Mongo', 'ServerSelection', 'NetworkTimeout', 'ConnectionFailure',
-        'AutoReconnect', 'OperationFailure', 'WriteError'
+        'Mongo',
+        'ServerSelection',
+        'NetworkTimeout',
+        'ConnectionFailure',
+        'AutoReconnect',
+        'OperationFailure',
+        'WriteError'
     );
     for marker in storage_markers {
         if marker in err_name {
@@ -30,9 +35,7 @@ def _ensure_authorized(
     job: dict | None, user_id: str, user_manager: Any
 ) -> TransportResponse | None {
     not_found = TransportResponse.fail(
-        code='NOT_FOUND',
-        message='Job not found',
-        meta=Meta(extra={'http_status': 404})
+        code='NOT_FOUND', message='Job not found', meta=Meta(extra={'http_status': 404})
     );
     if job is None {
         return not_found;
@@ -306,12 +309,24 @@ impl JacAPIServerScheduler.list_jobs_callback -> Callable[..., TransportResponse
             is_admin = self.user_manager.get_user_role(user_id) == 'admin';
             # Non-admins only see their own jobs; creator_filter is admin-only.
             if not is_admin {
-                jobs = [j for j in jobs if j.get('created_by') == user_id];
+                jobs = [
+                    j
+                    for j in jobs
+                    if j.get('created_by') == user_id
+                ];
             } elif creator_filter {
-                jobs = [j for j in jobs if j.get('created_by') == creator_filter];
+                jobs = [
+                    j
+                    for j in jobs
+                    if j.get('created_by') == creator_filter
+                ];
             }
             if trigger_filter {
-                jobs = [j for j in jobs if j.get('trigger') == trigger_filter];
+                jobs = [
+                    j
+                    for j in jobs
+                    if j.get('trigger') == trigger_filter
+                ];
             }
             total = len(jobs);
             page = jobs[offset:offset + limit];

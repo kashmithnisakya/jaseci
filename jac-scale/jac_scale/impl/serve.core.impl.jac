@@ -501,7 +501,9 @@ impl JacAPIServerCore._setup_scheduler -> None {
     } except Exception { }
     # Resolve the actual user_id for the system user (stable UUID, not the '__system__' identity string).
     system_user = self.user_manager.get_user('__system__');
-    system_user_id = system_user.get('user_id', '__system__') if system_user else '__system__';
+    system_user_id = system_user.get('user_id', '__system__')
+        if system_user
+        else '__system__';
 
     # Initialise JacScaleScheduler singleton
     jac_scheduler = JacScaleScheduler.instance();
@@ -520,13 +522,11 @@ impl JacAPIServerCore._setup_scheduler -> None {
     # via [plugins.scale.scheduler] shutdown_timeout in jac.toml (default 10s).
     scheduler_cfg = get_scale_config().get_scheduler_config();
     timeout_sec = int(scheduler_cfg.get('shutdown_timeout', 10));
-    async def _shutdown_scheduler -> None {
+    async def _shutdown_scheduler {
         import asyncio;
         try {
             await asyncio.wait_for(
-                asyncio.to_thread(
-                    JacScaleScheduler.instance().stop, drain=True
-                ),
+                asyncio.to_thread(JacScaleScheduler.instance().stop, drain=True),
                 timeout=float(timeout_sec)
             );
         } except asyncio.TimeoutError {

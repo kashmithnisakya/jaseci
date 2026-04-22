@@ -106,9 +106,7 @@ impl JacScaleConfig.get_default_config(self: JacScaleConfig) -> dict[str, Any] {
             'session_expiry_hours': 24,
             'require_password_reset': True
         },
-        'scheduler': {
-            'collection': 'scheduled_jobs'
-        },
+        'scheduler': {'collection': 'scheduled_jobs'},
         'telemetry': {'max_traces': 1000}
     };
 }

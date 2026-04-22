@@ -73,11 +73,7 @@ def authenticate_or_fail(
     return (user_id, None);
 }
 
-"""Authenticate an inbound request by Authorization header.
-
-Returns (user_id, None) on success or (None, error_response) on failure.
-Collapses the header-extract + token-validate + error-shape pattern into one call.
-"""
+"""Authenticate an inbound request by Authorization header."""
 def require_auth(
     request: Any, user_manager: Any, message: str = 'Authorization required'
 ) -> tuple[str | None, TransportResponse | None] {

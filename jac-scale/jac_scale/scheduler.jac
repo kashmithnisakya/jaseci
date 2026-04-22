@@ -31,7 +31,8 @@ obj JobStore {
 }
 
 obj MongoJobStore(JobStore) {
-    has _db: Any, _collection: str;
+    has _db: Any,
+        _collection: str;
 
     def insert(job: dict) -> str;
     def find_active -> list[dict];
@@ -91,14 +92,11 @@ obj JacScaleScheduler {
     def register_static_tasks(walkers: dict, functions: dict, server: Any) -> None;
     def register_dynamic_tasks_from_db -> None;
     # /jobs endpoint logic
-    def create_job(
-        name: str, spec: TriggerSpec, created_by: str
-    ) -> dict;
+    def create_job(name: str, spec: TriggerSpec, created_by: str) -> dict;
 
     def list_jobs -> list[dict];
     def get_job(job_id: str) -> (dict | None);
     def update_job(job_id: str, spec: TriggerSpec) -> (dict | None);
-
     def delete_job(job_id: str) -> bool;
     # Internal execution helpers
     def _execute_task(
@@ -106,15 +104,8 @@ obj JacScaleScheduler {
     ) -> None;
 
     def _schedule_apscheduler_job(
-        job_id: str,
-        name: str,
-        spec: TriggerSpec,
-        user_id: str,
-        is_walker: bool = True
+        job_id: str, name: str, spec: TriggerSpec, user_id: str, is_walker: bool = True
     ) -> None;
 
-    def _record_run(
-        job_id: str, status: str, error: str | None = None
-    ) -> None;
-
+    def _record_run(job_id: str, status: str, error: str | None = None) -> None;
 }
