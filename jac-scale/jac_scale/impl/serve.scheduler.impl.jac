@@ -92,6 +92,7 @@ impl JacAPIServerScheduler.register_scheduler_endpoints -> None {
             path='/jobs',
             callback=self.create_job_callback(),
             parameters=[],
+            request_model=CreateJobRequest,
             response_model=None,
             tags=['Scheduler'],
             summary='Create scheduled job',
@@ -156,6 +157,7 @@ impl JacAPIServerScheduler.register_scheduler_endpoints -> None {
                     type=ParameterType.PATH
                 )
             ],
+            request_model=UpdateJobRequest,
             response_model=None,
             tags=['Scheduler'],
             summary='Update scheduled job',
@@ -189,7 +191,9 @@ impl JacAPIServerScheduler.register_scheduler_endpoints -> None {
 
 """Build POST /jobs callback — creates a new dynamic scheduled job."""
 impl JacAPIServerScheduler.create_job_callback -> Callable[..., TransportResponse] {
-    async def callback(request: Request) -> TransportResponse {
+    async def callback(
+        request: Request, body_data: CreateJobRequest
+    ) -> TransportResponse {
         (user_id, auth_err) = authenticate_or_fail(
             request.headers.get('Authorization'), self.user_manager
         );
@@ -197,24 +201,10 @@ impl JacAPIServerScheduler.create_job_callback -> Callable[..., TransportRespons
             return auth_err;
         }
 
-        try {
-            body = await request.json();
-        } except Exception {
-            return TransportResponse.fail(
-                code='INVALID_REQUEST',
-                message='Request body must be valid JSON',
-                meta=Meta(extra={'http_status': 400})
-            );
-        }
-
+        # body_data is already validated by Pydantic — required fields are
+        # guaranteed present, types are coerced.
+        body = body_data.model_dump(mode='python');
         walker_or_function = body.get('walker_or_function', '');
-        if not walker_or_function {
-            return TransportResponse.fail(
-                code='INVALID_REQUEST',
-                message='Field "walker_or_function" is required',
-                meta=Meta(extra={'http_status': 400})
-            );
-        }
 
         (spec, spec_err) = _build_spec(body);
         if spec_err or spec is None {
@@ -385,7 +375,9 @@ impl JacAPIServerScheduler.get_job_callback -> Callable[..., TransportResponse] 
 
 """Build PUT /jobs/{job_id} callback — updates an existing dynamic job's schedule."""
 impl JacAPIServerScheduler.update_job_callback -> Callable[..., TransportResponse] {
-    async def callback(request: Request, job_id: str) -> TransportResponse {
+    async def callback(
+        request: Request, job_id: str, body_data: UpdateJobRequest
+    ) -> TransportResponse {
         (user_id, auth_err) = authenticate_or_fail(
             request.headers.get('Authorization'), self.user_manager
         );
@@ -393,17 +385,9 @@ impl JacAPIServerScheduler.update_job_callback -> Callable[..., TransportRespons
             return auth_err;
         }
 
-        try {
-            body = await request.json();
-        } except Exception {
-            return TransportResponse.fail(
-                code='INVALID_REQUEST',
-                message='Request body must be valid JSON',
-                meta=Meta(extra={'http_status': 400})
-            );
-        }
-
-        (spec, spec_err) = _build_spec(body);
+        # Pydantic has already validated the body — _build_spec runs the
+        # trigger-specific field checks and the CronTrigger structural parse.
+        (spec, spec_err) = _build_spec(body_data.model_dump(mode='python'));
         if spec_err or spec is None {
             return spec_err;
         }

@@ -367,8 +367,6 @@ test "jobs validation and auth errors" {
                 },
                 "INVALID_REQUEST"
             ),
-            # Missing trigger → INVALID_REQUEST
-            ({"walker_or_function": "DynamicScheduledWalker"}, "INVALID_REQUEST"),
             # interval trigger, no interval value → INVALID_REQUEST
             (
                 {"walker_or_function": "DynamicScheduledWalker", "trigger": "interval"},
@@ -384,11 +382,10 @@ test "jobs validation and auth errors" {
                 {"walker_or_function": "DynamicScheduledWalker", "trigger": "date"},
                 "INVALID_REQUEST"
             ),
-            # Unknown trigger type → INVALID_REQUEST
-            (
-                {"walker_or_function": "DynamicScheduledWalker", "trigger": "weekly"},
-                "INVALID_REQUEST"
-            ),
+            # Note: "missing trigger" and "unknown trigger" are rejected at the
+            # Pydantic schema layer (CreateJobRequest) with FastAPI's default
+            # 422 response, so they don't reach our custom handler and aren't
+            # listed here.
 
         ];
 
@@ -398,6 +395,23 @@ test "jobs validation and auth errors" {
             err = _err(body);
             assert err is not None and err.get("code") == expected_code , (
                 f"Expected {expected_code}, got {err} for payload {payload}"
+            );
+        }
+
+        # Pydantic schema validation (CreateJobRequest) rejects these two with
+        # FastAPI's 422 format before our handler runs.
+        schema_reject_payloads = [
+            # Missing trigger
+            {"walker_or_function": "DynamicScheduledWalker"},
+            # Unknown trigger value (violates Literal['interval','cron','date'])
+            {"walker_or_function": "DynamicScheduledWalker", "trigger": "weekly"}
+        ];
+        for payload in schema_reject_payloads {
+            resp = requests.post(
+                f"{base_url}/jobs", json=payload, headers=h, timeout=5
+            );
+            assert resp.status_code == 422 , (
+                f"Expected 422 for payload {payload}, got {resp.status_code}"
             );
         }
     } finally {

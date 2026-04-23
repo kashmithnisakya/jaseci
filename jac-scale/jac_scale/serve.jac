@@ -49,6 +49,7 @@ import from jac_scale.auth_models {
     LoginRequest,
     UpdatePasswordRequest
 }
+import from jac_scale.scheduler_models { CreateJobRequest, UpdateJobRequest }
 
 # Load configuration from jac.toml with env var overrides
 glob _jwt_config = get_scale_config().get_jwt_config(),
