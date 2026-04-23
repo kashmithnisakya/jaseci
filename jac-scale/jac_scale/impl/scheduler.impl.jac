@@ -299,7 +299,7 @@ impl JacScaleScheduler.setup(system_user_id: str, server: Any | None = None) -> 
     db_cfg = get_scale_config().get_database_config();
     if db_cfg.get('mongodb_uri') {
         try {
-            mongo_db = Db(client=get_mongo_client(), db_name='jac_scale');
+            mongo_db = Db(client=get_mongo_client());
             self._store = MongoJobStore(_db=mongo_db, _collection=collection);
             logger.debug("MongoDB configured — jobs will be persisted");
         } except Exception as e {
@@ -401,7 +401,7 @@ impl JacScaleScheduler.register_static_tasks(
                 );
                 continue;
             }
-            logger.info(f"Registered static {label}: {item_name}");
+            logger.debug(f"Registered static {label}: {item_name}");
             # Pass is_walker=False here: our target closure runs the walker
             # through execution_manager itself, so the base Scheduler must not
             # try to Jac.spawn on the return value (which would be None).
@@ -448,7 +448,7 @@ impl JacScaleScheduler.register_dynamic_tasks_from_db -> None {
                     user_id=user_id,
                     is_walker=is_walker
                 );
-                logger.info(f"Restored dynamic job: {name} (id={job_id})");
+                logger.debug(f"Restored dynamic job: {name} (id={job_id})");
                 restored += 1;
             } except Exception as e {
                 logger.error(f"Failed to restore job '{name}': {e}");
