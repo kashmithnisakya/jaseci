@@ -27,6 +27,32 @@ def _storage_failure_response(e: Exception) -> TransportResponse | None {
     return None;
 }
 
+"""Map an exception to the caller-facing TransportResponse.
+
+Storage failures → 503 STORAGE_UNAVAILABLE; anything else → 500 SCHEDULER_ERROR.
+Single call site for the catch-block in every /jobs endpoint.
+"""
+def _err_response(e: Exception) -> TransportResponse {
+    storage = _storage_failure_response(e);
+    if storage {
+        return storage;
+    }
+    return TransportResponse.fail(
+        code='SCHEDULER_ERROR', message=str(e), meta=Meta(extra={'http_status': 500})
+    );
+}
+
+"""Authenticate the Authorization header and return (user_id, err).
+
+Thin wrapper so every /jobs callback can do a one-line auth + early-return
+instead of repeating header extraction + fail-shape assembly.
+"""
+def _require_auth(
+    request: Any, user_manager: Any
+) -> tuple[str | None, TransportResponse | None] {
+    return authenticate_or_fail(request.headers.get('Authorization'), user_manager);
+}
+
 """Return a 404 response if `job` is None or caller is neither creator nor admin.
 
 Uses 404 for unauthorized access so existence of another user's job is not leaked.
@@ -194,9 +220,7 @@ impl JacAPIServerScheduler.create_job_callback -> Callable[..., TransportRespons
     async def callback(
         request: Request, body_data: CreateJobRequest
     ) -> TransportResponse {
-        (user_id, auth_err) = authenticate_or_fail(
-            request.headers.get('Authorization'), self.user_manager
-        );
+        (user_id, auth_err) = _require_auth(request, self.user_manager);
         if auth_err {
             return auth_err;
         }
@@ -257,15 +281,7 @@ impl JacAPIServerScheduler.create_job_callback -> Callable[..., TransportRespons
                 data=job, meta=Meta(extra={'http_status': 201})
             );
         } except Exception as e {
-            storage_err = _storage_failure_response(e);
-            if storage_err {
-                return storage_err;
-            }
-            return TransportResponse.fail(
-                code='SCHEDULER_ERROR',
-                message=str(e),
-                meta=Meta(extra={'http_status': 500})
-            );
+            return _err_response(e);
         }
     }
     return callback;
@@ -281,9 +297,7 @@ Query parameters:
 """
 impl JacAPIServerScheduler.list_jobs_callback -> Callable[..., TransportResponse] {
     async def callback(request: Request) -> TransportResponse {
-        (user_id, auth_err) = authenticate_or_fail(
-            request.headers.get('Authorization'), self.user_manager
-        );
+        (user_id, auth_err) = _require_auth(request, self.user_manager);
         if auth_err {
             return auth_err;
         }
@@ -324,15 +338,7 @@ impl JacAPIServerScheduler.list_jobs_callback -> Callable[..., TransportResponse
                 meta=Meta(extra={'http_status': 200})
             );
         } except Exception as e {
-            storage_err = _storage_failure_response(e);
-            if storage_err {
-                return storage_err;
-            }
-            return TransportResponse.fail(
-                code='SCHEDULER_ERROR',
-                message=str(e),
-                meta=Meta(extra={'http_status': 500})
-            );
+            return _err_response(e);
         }
     }
     return callback;
@@ -341,9 +347,7 @@ impl JacAPIServerScheduler.list_jobs_callback -> Callable[..., TransportResponse
 """Build GET /jobs/{job_id} callback — retrieves a single dynamic job."""
 impl JacAPIServerScheduler.get_job_callback -> Callable[..., TransportResponse] {
     async def callback(request: Request, job_id: str) -> TransportResponse {
-        (user_id, auth_err) = authenticate_or_fail(
-            request.headers.get('Authorization'), self.user_manager
-        );
+        (user_id, auth_err) = _require_auth(request, self.user_manager);
         if auth_err {
             return auth_err;
         }
@@ -359,15 +363,7 @@ impl JacAPIServerScheduler.get_job_callback -> Callable[..., TransportResponse] 
                 data=job, meta=Meta(extra={'http_status': 200})
             );
         } except Exception as e {
-            storage_err = _storage_failure_response(e);
-            if storage_err {
-                return storage_err;
-            }
-            return TransportResponse.fail(
-                code='SCHEDULER_ERROR',
-                message=str(e),
-                meta=Meta(extra={'http_status': 500})
-            );
+            return _err_response(e);
         }
     }
     return callback;
@@ -378,9 +374,7 @@ impl JacAPIServerScheduler.update_job_callback -> Callable[..., TransportRespons
     async def callback(
         request: Request, job_id: str, body_data: UpdateJobRequest
     ) -> TransportResponse {
-        (user_id, auth_err) = authenticate_or_fail(
-            request.headers.get('Authorization'), self.user_manager
-        );
+        (user_id, auth_err) = _require_auth(request, self.user_manager);
         if auth_err {
             return auth_err;
         }
@@ -411,15 +405,7 @@ impl JacAPIServerScheduler.update_job_callback -> Callable[..., TransportRespons
                 data=updated, meta=Meta(extra={'http_status': 200})
             );
         } except Exception as e {
-            storage_err = _storage_failure_response(e);
-            if storage_err {
-                return storage_err;
-            }
-            return TransportResponse.fail(
-                code='SCHEDULER_ERROR',
-                message=str(e),
-                meta=Meta(extra={'http_status': 500})
-            );
+            return _err_response(e);
         }
     }
     return callback;
@@ -428,9 +414,7 @@ impl JacAPIServerScheduler.update_job_callback -> Callable[..., TransportRespons
 """Build DELETE /jobs/{job_id} callback — deletes a dynamic scheduled job."""
 impl JacAPIServerScheduler.delete_job_callback -> Callable[..., TransportResponse] {
     async def callback(request: Request, job_id: str) -> TransportResponse {
-        (user_id, auth_err) = authenticate_or_fail(
-            request.headers.get('Authorization'), self.user_manager
-        );
+        (user_id, auth_err) = _require_auth(request, self.user_manager);
         if auth_err {
             return auth_err;
         }
@@ -455,15 +439,7 @@ impl JacAPIServerScheduler.delete_job_callback -> Callable[..., TransportRespons
                 meta=Meta(extra={'http_status': 200})
             );
         } except Exception as e {
-            storage_err = _storage_failure_response(e);
-            if storage_err {
-                return storage_err;
-            }
-            return TransportResponse.fail(
-                code='SCHEDULER_ERROR',
-                message=str(e),
-                meta=Meta(extra={'http_status': 500})
-            );
+            return _err_response(e);
         }
     }
     return callback;

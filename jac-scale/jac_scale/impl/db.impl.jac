@@ -127,24 +127,30 @@ impl Db.exists(key: str, col_name: str = 'default') -> bool {
 }
 
 # ===== MONGODB-ONLY METHODS =====
-impl Db.find_one(col_name: str, filter: dict) -> dict | None {
+impl Db.find_one(
+    col_name: str, filter: dict, projection: dict | None = None
+) -> dict | None {
     if self.db_type == DatabaseType.REDIS {
         raise NotImplementedError(
             "find_one() with filters is not supported for Redis. "
             "Redis is a key-value store. Use get(key) instead."
         );
     }
-    return self._get_mongo_collection(col_name).find_one(filter);
+    col: Any = self._get_mongo_collection(col_name);
+    return col.find_one(filter, projection);
 }
 
-impl Db.find(col_name: str, filter: dict) -> Cursor | list {
+impl Db.find(
+    col_name: str, filter: dict, projection: dict | None = None
+) -> Cursor | list {
     if self.db_type == DatabaseType.REDIS {
         raise NotImplementedError(
             "find() with filters is not supported for Redis. "
             "Redis is a key-value store. Use scan_keys(pattern) for pattern matching."
         );
     }
-    return self._get_mongo_collection(col_name).find(filter);
+    col: Any = self._get_mongo_collection(col_name);
+    return col.find(filter, projection);
 }
 
 impl Db.count_documents(col_name: str, filter: dict) -> int {
@@ -158,10 +164,7 @@ impl Db.count_documents(col_name: str, filter: dict) -> int {
 """Create an index. Idempotent — pymongo returns the existing index's name
 if one with the same spec already exists."""
 impl Db.create_index(
-    col_name: str,
-    keys: dict,
-    unique: bool = False,
-    name: str | None = None
+    col_name: str, keys: dict, unique: bool = False, name: str | None = None
 ) -> str {
     if self.db_type == DatabaseType.REDIS {
         raise NotImplementedError("create_index() is not supported for Redis.");

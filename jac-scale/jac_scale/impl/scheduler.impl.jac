@@ -93,10 +93,7 @@ impl TriggerSpec.apscheduler_kwargs -> dict {
 impl MongoJobStore.postinit -> None {
     try {
         self._db.create_index(
-            self._collection,
-            {'job_id': 1},
-            unique=True,
-            name='job_id_unique'
+            self._collection, {'job_id': 1}, unique=True, name='job_id_unique'
         );
     } except Exception as e {
         logger.warning(f"Could not ensure job_id index: {e}");
@@ -123,32 +120,20 @@ impl MongoJobStore.find_active(
     }
     # Count matching docs first so callers can paginate without rerunning the filter set.
     total = self._db.count_documents(self._collection, query);
-    # Chain skip/limit on the pymongo cursor so pagination happens DB-side.
-    cursor: Any = self._db.find(self._collection, query);
+    cursor: Any = self._db.find(self._collection, query, {'_id': 0});
     if offset > 0 {
         cursor = cursor.skip(offset);
     }
     if limit is not None {
         cursor = cursor.limit(limit);
     }
-    jobs: list[dict] = [];
-    for doc in cursor {
-        # Drop Mongo's internal _id — callers only deal with job_id.
-        doc.pop('_id', None);
-        jobs.append(doc);
-    }
-    return (jobs, total);
+    return ([doc for doc in cursor], total);
 }
 
 impl MongoJobStore.find_active_one(job_id: str) -> dict | None {
-    doc = self._db.find_one(
-        self._collection, {'job_id': job_id, 'status': 'active'}
+    return self._db.find_one(
+        self._collection, {'job_id': job_id, 'status': 'active'}, {'_id': 0}
     );
-    if doc {
-        doc.pop('_id', None);
-        return doc;
-    }
-    return None;
 }
 
 impl MongoJobStore.update(job_id: str, updates: dict) -> bool {
@@ -404,7 +389,6 @@ impl JacScaleScheduler.register_static_tasks(
         return target;
     }
 
-    registered: list[str] = [];
     for (registry, is_walker) in [(walkers, True), (functions, False)] {
         label = 'walker' if is_walker else 'function';
         for item_name in registry {
@@ -420,16 +404,12 @@ impl JacScaleScheduler.register_static_tasks(
                 continue;
             }
             logger.debug(f"Registered static {label}: {item_name}");
-            # Pass is_walker=False here: our target closure runs the walker
-            # through execution_manager itself, so the base Scheduler must not
-            # try to Jac.spawn on the return value (which would be None).
             base_scheduler.register(
                 name=item_name,
                 target=_make_target(item_name, is_walker),
                 spec=spec,
                 is_walker=False
             );
-            registered.append(f"{label}:{item_name}");
         }
     }
 
