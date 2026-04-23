@@ -198,9 +198,11 @@ test "dynamic jobs - all trigger types for walker and function" {
     try {
         token = _get_token(base_url, "job_user", "pass123");
         h = {"Authorization": f"Bearer {token}"};
-        run_date = (datetime.datetime.now() + datetime.timedelta(hours=1)).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        );
+        # Scheduler default TZ is UTC — compute the run_date in UTC so the
+        # "1 hour in the future" semantics are stable regardless of CI/dev TZ.
+        run_date = (
+            datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
+        ).strftime("%Y-%m-%d %H:%M:%S");
 
         cases = [
             # (name, trigger_payload)
@@ -489,3 +491,4 @@ test "ownership enforcement across users" {
         _cleanup();
     }
 }
+

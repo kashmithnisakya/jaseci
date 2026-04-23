@@ -67,7 +67,9 @@ impl TriggerSpec.to_dict -> dict {
     };
 }
 
-"""Build the kwargs for APScheduler.add_job(..., trigger=..., **kwargs)."""
+"""Build the kwargs for APScheduler.add_job(..., trigger=..., **kwargs).
+Cron and date inputs are interpreted in the scheduler's default timezone (UTC).
+"""
 impl TriggerSpec.apscheduler_kwargs -> dict {
     if self.trigger == 'interval' {
         # validate() guarantees interval is not None for trigger='interval'.
@@ -318,11 +320,15 @@ impl JacScaleScheduler.setup(system_user_id: str, server: Any | None = None) -> 
             'max_instances': 1,
             'misfire_grace_time': misfire
         };
+        # Default timezone is UTC. Per-job overrides flow through TriggerSpec
+        # and are applied when the job is added (see apscheduler_kwargs).
         self._apscheduler = BackgroundScheduler(
-            executors=executors, job_defaults=job_defaults
+            executors=executors,
+            job_defaults=job_defaults,
+            timezone=datetime.timezone.utc
         );
         logger.debug(
-            f"APScheduler initialized (pool_size={pool_size}, misfire_grace={misfire}s)"
+            f"APScheduler initialized (pool_size={pool_size}, misfire_grace={misfire}s, tz=UTC)"
         );
     } else {
         self._apscheduler = None;
@@ -338,7 +344,7 @@ impl JacScaleScheduler.start -> None {
     if self._apscheduler is not None {
         try {
             self._apscheduler.start();
-            logger.debug("Scheduler started");
+            logger.info("APScheduler started (timezone=UTC)");
         } except Exception as e {
             logger.error(f"Failed to start APScheduler: {e}");
         }
@@ -380,6 +386,7 @@ impl JacScaleScheduler.register_static_tasks(
         return target;
     }
 
+    registered: list[str] = [];
     for (registry, is_walker) in [(walkers, True), (functions, False)] {
         label = 'walker' if is_walker else 'function';
         for item_name in registry {
@@ -394,21 +401,27 @@ impl JacScaleScheduler.register_static_tasks(
                 );
                 continue;
             }
-            logger.debug(f"Registering static {label} task: {item_name}");
+            logger.info(f"Registered static {label}: {item_name}");
+            # Pass is_walker=False here: our target closure runs the walker
+            # through execution_manager itself, so the base Scheduler must not
+            # try to Jac.spawn on the return value (which would be None).
             base_scheduler.register(
                 name=item_name,
                 target=_make_target(item_name, is_walker),
                 spec=spec,
-                is_walker=is_walker
+                is_walker=False
             );
+            registered.append(f"{label}:{item_name}");
         }
     }
 
     if base_scheduler._tasks {
         base_scheduler.start();
-        logger.debug(
+        logger.info(
             f"Base Scheduler started with {len(base_scheduler._tasks)} static task(s)"
         );
+    } else {
+        logger.info("No static scheduled tasks registered");
     }
 }
 
@@ -418,6 +431,8 @@ impl JacScaleScheduler.register_dynamic_tasks_from_db -> None {
         return;
     }
     (jobs, _total) = self._store.find_active();
+    restored = 0;
+    failed = 0;
     for job_data in jobs {
         job_id = str(job_data.get('_id', str(uuid4())));
         name = job_data.get('name', '');
@@ -433,11 +448,20 @@ impl JacScaleScheduler.register_dynamic_tasks_from_db -> None {
                     user_id=user_id,
                     is_walker=is_walker
                 );
-                logger.debug(f"Restored dynamic job: {name} (id={job_id})");
+                logger.info(f"Restored dynamic job: {name} (id={job_id})");
+                restored += 1;
             } except Exception as e {
                 logger.error(f"Failed to restore job '{name}': {e}");
+                failed += 1;
             }
         }
+    }
+    if restored or failed {
+        logger.info(
+            f"Dynamic job restoration complete: {restored} restored, {failed} failed"
+        );
+    } else {
+        logger.info("No persisted dynamic jobs to restore");
     }
 }
 

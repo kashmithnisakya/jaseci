@@ -492,6 +492,7 @@ impl JacAPIServerCore._refresh_dev_endpoints -> None {
 
 """Create the __system__ user, initialise JacScaleScheduler, and register /jobs endpoints."""
 impl JacAPIServerCore._setup_scheduler -> None {
+    logger.info("Initializing scheduler subsystem");
     # System user is created with a sentinel password that no one will type.
     # It is not loginable over HTTP because the login handler rejects role=='system'.
     try {
@@ -510,13 +511,16 @@ impl JacAPIServerCore._setup_scheduler -> None {
     jac_scheduler.setup(system_user_id=system_user_id, server=self);
 
     # Register static tasks (walkers/functions with STATIC trigger)
-    jac_scheduler.register_static_tasks(self.get_walkers(), self.get_functions(), self);
+    jac_scheduler.register_static_tasks(
+        self.introspector._walkers or {}, self.introspector._functions or {}, self
+    );
 
     # Reload persisted dynamic jobs from DB
     jac_scheduler.register_dynamic_tasks_from_db();
 
     # Start APScheduler background thread
     jac_scheduler.start();
+    logger.info("Scheduler subsystem ready");
 
     # Drain scheduled jobs on SIGTERM/graceful shutdown. Timeout is configurable
     # via [plugins.scale.scheduler] shutdown_timeout in jac.toml (default 10s).
