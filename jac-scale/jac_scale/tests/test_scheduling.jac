@@ -491,3 +491,51 @@ test "ownership enforcement across users" {
         _cleanup();
     }
 }
+
+# =============================================================================
+# Test 5: Static walkers AND functions actually fire on their schedule
+# =============================================================================
+test "static walkers and functions actually execute" {
+    port = get_free_port();
+    base_url = f"http://localhost:{port}";
+    _cleanup();
+    sp = _start_server(port);
+    try {
+        token = _get_token(base_url, "exec_user", "pass123");
+        h = {"Authorization": f"Bearer {token}"};
+
+        # Interval is 0.3s — wait long enough for several ticks of both the
+        # static walker and the static function.
+        time.sleep(2.0);
+
+        resp = requests.post(
+            f"{base_url}/function/get_execution_log",
+            json={},
+            headers=h,
+            timeout=5
+        ).json();
+        assert resp.get("ok") , f"get_execution_log call failed: {resp}";
+        # Function endpoints wrap their return as data.result.<...>
+        log = _data(resp).get("result", {}).get("log", []);
+        assert isinstance(log, list) , f"Expected log list, got: {log}";
+
+        # Both walker and function side-effects must be present — proves both
+        # registration paths and execution paths are wired correctly.
+        assert "static-interval-walker" in log , (
+            f"static walker did not fire; log={log}"
+        );
+        assert "static-interval-func" in log , (
+            f"static function did not fire; log={log}"
+        );
+
+        # Loose sanity check: at 0.3s interval over ~2s, expect at least 3
+        # invocations of each — if we see only 1, something's gating execution.
+        walker_count = sum(1 for e in log if e == "static-interval-walker");
+        func_count = sum(1 for e in log if e == "static-interval-func");
+        assert walker_count >= 3 , f"Expected >=3 walker fires, got {walker_count}";
+        assert func_count >= 3 , f"Expected >=3 function fires, got {func_count}";
+    } finally {
+        _stop_server(sp);
+        _cleanup();
+    }
+}

@@ -398,3 +398,9 @@ walker:pub NormalWalker {
 def normal_func -> dict {
     return {"message": "normal function endpoint"};
 }
+
+# Exposes the in-memory execution_log so tests can verify scheduled tasks
+# actually fired (not just that they were registered).
+def get_execution_log -> dict {
+    return {"log": list(execution_log)};
+}
