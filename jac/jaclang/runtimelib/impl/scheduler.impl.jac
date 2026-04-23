@@ -151,10 +151,7 @@ impl Scheduler._compute_next_run(
     return None;
 }
 
-"""Compute next run for a date-based spec.
-Naive date strings are treated as UTC so the scheduler's clock is consistent
-regardless of process-local timezone.
-"""
+"""Compute next run for a date-based spec."""
 impl Scheduler._compute_date(
     date_str: str, now: datetime.datetime
 ) -> (datetime.datetime | None) {
@@ -164,8 +161,12 @@ impl Scheduler._compute_date(
         logger.warning(f"Invalid date format: {date_str}");
         return None;
     }
-    if run_at.tzinfo is None {
-        run_at = run_at.replace(tzinfo=datetime.timezone.utc);
+    run_at_aware = run_at.tzinfo is not None;
+    now_aware = now.tzinfo is not None;
+    if now_aware and not run_at_aware {
+        run_at = run_at.astimezone(datetime.timezone.utc);
+    } elif run_at_aware and not now_aware {
+        run_at = run_at.replace(tzinfo=None);
     }
     if run_at > now {
         return run_at;
