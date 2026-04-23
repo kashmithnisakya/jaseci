@@ -90,9 +90,22 @@ impl TriggerSpec.apscheduler_kwargs -> dict {
 }
 
 """MongoJobStore — DB-backed, authoritative when configured."""
+impl MongoJobStore.postinit -> None {
+    try {
+        self._db.create_index(
+            self._collection,
+            {'job_id': 1},
+            unique=True,
+            name='job_id_unique'
+        );
+    } except Exception as e {
+        logger.warning(f"Could not ensure job_id index: {e}");
+    }
+}
+
 impl MongoJobStore.insert(job: dict) -> str {
-    result = self._db.insert_one(self._collection, dict(job));
-    return str(result.inserted_id);
+    self._db.insert_one(self._collection, dict(job));
+    return str(job['job_id']);
 }
 
 impl MongoJobStore.find_active(
@@ -120,28 +133,33 @@ impl MongoJobStore.find_active(
     }
     jobs: list[dict] = [];
     for doc in cursor {
-        doc['_id'] = str(doc['_id']);
+        # Drop Mongo's internal _id — callers only deal with job_id.
+        doc.pop('_id', None);
         jobs.append(doc);
     }
     return (jobs, total);
 }
 
 impl MongoJobStore.find_active_one(job_id: str) -> dict | None {
-    doc = self._db.find_one(self._collection, {'_id': job_id, 'status': 'active'});
+    doc = self._db.find_one(
+        self._collection, {'job_id': job_id, 'status': 'active'}
+    );
     if doc {
-        doc['_id'] = str(doc['_id']);
+        doc.pop('_id', None);
         return doc;
     }
     return None;
 }
 
 impl MongoJobStore.update(job_id: str, updates: dict) -> bool {
-    result = self._db.update_one(self._collection, {'_id': job_id}, {'$set': updates});
+    result = self._db.update_one(
+        self._collection, {'job_id': job_id}, {'$set': updates}
+    );
     return result.modified_count > 0;
 }
 
 impl MongoJobStore.delete(job_id: str) -> bool {
-    result = self._db.delete_one(self._collection, {'_id': job_id});
+    result = self._db.delete_one(self._collection, {'job_id': job_id});
     return result.deleted_count > 0;
 }
 
@@ -151,7 +169,7 @@ impl MongoJobStore.record_run(
     # One atomic round-trip: $inc on run_count, $set on the last_* fields.
     self._db.update_one(
         self._collection,
-        {'_id': job_id},
+        {'job_id': job_id},
         {
             '$inc': {'run_count': 1},
             '$set': {
@@ -170,7 +188,7 @@ impl MemoryJobStore.postinit -> None {
 }
 
 impl MemoryJobStore.insert(job: dict) -> str {
-    job_id = str(job.get('_id', str(uuid4())));
+    job_id = str(job['job_id']);
     self._jobs[job_id] = dict(job);
     return job_id;
 }
@@ -434,7 +452,7 @@ impl JacScaleScheduler.register_dynamic_tasks_from_db -> None {
     restored = 0;
     failed = 0;
     for job_data in jobs {
-        job_id = str(job_data.get('_id', str(uuid4())));
+        job_id = str(job_data.get('job_id', str(uuid4())));
         name = job_data.get('name', '');
         user_id = job_data.get('created_by', self._system_user_id);
         is_walker = job_data.get('is_walker', True);
@@ -483,7 +501,7 @@ impl JacScaleScheduler.create_job(
     is_walker = name in (introspector._walkers or {}) if introspector else False;
 
     job_data: dict = {
-        '_id': job_id,
+        'job_id': job_id,
         'name': name,
         'created_by': created_by,
         'is_walker': is_walker,
@@ -496,7 +514,7 @@ impl JacScaleScheduler.create_job(
         # Persist first so the DB is authoritative. If this raises (e.g. Mongo
         # is down), nothing is scheduled and the caller gets a storage error.
         persisted_id = self._store.insert(job_data);
-        job_data['_id'] = persisted_id;
+        job_data['job_id'] = persisted_id;
         # Schedule with APScheduler. Dynamic jobs execute as the creating user
         # (created_by), not the system user. On failure, roll back the DB
         # insert so we don't leave a zombie record.

@@ -42,6 +42,7 @@ obj MongoJobStore(JobStore) {
     has _db: Any,
         _collection: str;
 
+    def postinit -> None;
     def insert(job: dict) -> str;
     def find_active(
         limit: int | None = None,

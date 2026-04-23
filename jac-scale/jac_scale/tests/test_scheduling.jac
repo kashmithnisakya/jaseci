@@ -223,8 +223,8 @@ test "dynamic jobs - all trigger types for walker and function" {
             job = _data(body);
             assert job["name"] == name;
             assert job["trigger"] == tpayload["trigger"];
-            assert "_id" in job and job["status"] == "active";
-            created_ids.append(job["_id"]);
+            assert "job_id" in job and job["status"] == "active";
+            created_ids.append(job["job_id"]);
         }
 
         # GET /jobs lists all created jobs
@@ -262,12 +262,12 @@ test "jobs crud lifecycle" {
         );
         assert body.get("ok") , f"Create failed: {body}";
         job = _data(body);
-        job_id = job["_id"];
+        job_id = job["job_id"];
         assert job["interval"] == 60 and job.get("created_by");
 
         # Get single
         body = requests.get(f"{base_url}/jobs/{job_id}", headers=h, timeout=5).json();
-        assert body.get("ok") and _data(body)["_id"] == job_id;
+        assert body.get("ok") and _data(body)["job_id"] == job_id;
 
         # List
         body = requests.get(f"{base_url}/jobs", headers=h, timeout=5).json();
@@ -444,7 +444,7 @@ test "ownership enforcement across users" {
             }
         );
         assert body_a.get("ok") , f"Alice failed to create job: {body_a}";
-        job_id = _data(body_a).get("_id");
+        job_id = _data(body_a).get("job_id");
         assert job_id , "Expected job id on create";
 
         # Bob GET single → must not see it
@@ -484,7 +484,7 @@ test "ownership enforcement across users" {
         resp = requests.get(f"{base_url}/jobs", headers=hb, timeout=5).json();
         assert resp.get("ok") , f"Bob list call failed: {resp}";
         bob_jobs = _data(resp).get("jobs", []);
-        assert all(j.get("_id") != job_id for j in bob_jobs) , (
+        assert all(j.get("job_id") != job_id for j in bob_jobs) , (
             "Bob's /jobs list leaked Alice's job"
         );
 
@@ -493,7 +493,7 @@ test "ownership enforcement across users" {
             f"{base_url}/jobs/{job_id}", headers=ha, timeout=5
         ).json();
         assert resp.get("ok") , "Alice must see her own job";
-        assert _data(resp).get("_id") == job_id;
+        assert _data(resp).get("job_id") == job_id;
 
         # Alice can delete her own job
         resp = requests.delete(

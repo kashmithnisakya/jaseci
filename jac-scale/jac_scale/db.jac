@@ -169,6 +169,14 @@ obj Db {
     """Count documents matching filter."""
     def count_documents(col_name: str, filter: dict) -> int;
 
+    """Create (or no-op if exists) a pymongo index."""
+    def create_index(
+        col_name: str,
+        keys: dict,
+        unique: bool = False,
+        name: str | None = None
+    ) -> str;
+
     """Insert a single document."""
     def insert_one(
         col_name: str, document: dict

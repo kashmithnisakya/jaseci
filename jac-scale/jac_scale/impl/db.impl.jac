@@ -155,6 +155,26 @@ impl Db.count_documents(col_name: str, filter: dict) -> int {
     return col.count_documents(filter);
 }
 
+"""Create an index. Idempotent — pymongo returns the existing index's name
+if one with the same spec already exists."""
+impl Db.create_index(
+    col_name: str,
+    keys: dict,
+    unique: bool = False,
+    name: str | None = None
+) -> str {
+    if self.db_type == DatabaseType.REDIS {
+        raise NotImplementedError("create_index() is not supported for Redis.");
+    }
+    # pymongo wants list[tuple[str, int]] for the keys argument.
+    key_spec = [(k, v) for (k, v) in keys.items()];
+    col: Any = self._get_mongo_collection(col_name);
+    if name is not None {
+        return col.create_index(key_spec, unique=unique, name=name);
+    }
+    return col.create_index(key_spec, unique=unique);
+}
+
 impl Db.insert_one(
     col_name: str, document: dict
 ) -> PyMongoInsertOneResult | InsertResult {
