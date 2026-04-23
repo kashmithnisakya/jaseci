@@ -38,7 +38,7 @@ import from fastapi { WebSocket, WebSocketDisconnect }  # jac:runtime
 import from jac_scale.admin.admin_portal { JacAPIServerAdmin }
 import from jac_scale.admin.llm_telemetry { JacAPIServerLLMTelemetry }
 import from jac_scale.enums { Platforms, Operations }
-import from jac_scale.scheduler { JacScaleScheduler, TriggerSpec }
+import from jac_scale.scheduler.scheduler { JacScaleScheduler, TriggerSpec }
 import from jaclang.runtimelib.builtin { ScheduleTrigger }
 import from jaclang.jac0core.constant { Constants as Con }
 import traceback;
@@ -49,7 +49,7 @@ import from jac_scale.auth_models {
     LoginRequest,
     UpdatePasswordRequest
 }
-import from jac_scale.scheduler_models { CreateJobRequest, UpdateJobRequest }
+import from jac_scale.scheduler.scheduler_models { CreateJobRequest, UpdateJobRequest }
 
 # Load configuration from jac.toml with env var overrides
 glob _jwt_config = get_scale_config().get_jwt_config(),
