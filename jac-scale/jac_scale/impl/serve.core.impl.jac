@@ -493,15 +493,18 @@ impl JacAPIServerCore._refresh_dev_endpoints -> None {
 """Create the __system__ user, initialise JacScaleScheduler, and register /jobs endpoints."""
 impl JacAPIServerCore._setup_scheduler -> None {
     logger.info("Initializing scheduler subsystem");
-    # System user is created with a sentinel password that no one will type.
-    # It is not loginable over HTTP because the login handler rejects role=='system'.
+    scheduler_cfg = get_scale_config().get_scheduler_config();
     try {
         self.user_manager.create_internal_user(
-            '__system__', '__no_login__', role='system'
+            '__system__',
+            scheduler_cfg.get('system_user_password', '__no_login__'),
+            role='system'
         );
     } except Exception { }
-    # Resolve the actual user_id for the system user (stable UUID, not the '__system__' identity string).
     system_user = self.user_manager.get_user('__system__');
+    if system_user is None {
+        logger.error("Scheduler: __system__ user not found; using sentinel id");
+    }
     system_user_id = system_user.get('user_id', '__system__')
         if system_user
         else '__system__';
@@ -524,7 +527,6 @@ impl JacAPIServerCore._setup_scheduler -> None {
 
     # Drain scheduled jobs on SIGTERM/graceful shutdown. Timeout is configurable
     # via [plugins.scale.scheduler] shutdown_timeout in jac.toml (default 10s).
-    scheduler_cfg = get_scale_config().get_scheduler_config();
     timeout_sec = int(scheduler_cfg.get('shutdown_timeout', 10));
     async def _shutdown_scheduler {
         import asyncio;

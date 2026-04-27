@@ -106,7 +106,13 @@ impl JacScaleConfig.get_default_config(self: JacScaleConfig) -> dict[str, Any] {
             'session_expiry_hours': 24,
             'require_password_reset': True
         },
-        'scheduler': {'collection': 'scheduled_jobs'},
+        'scheduler': {
+            'collection': 'scheduled_jobs',
+            'thread_pool_size': 10,
+            'misfire_grace_time': 60,
+            'shutdown_timeout': 10,
+            'system_user_password': '__no_login__'
+        },
         'telemetry': {'max_traces': 1000}
     };
 }
@@ -315,7 +321,10 @@ impl JacScaleConfig.get_scheduler_config(self: JacScaleConfig) -> dict[str, Any]
         'collection': scheduler_config.get('collection', 'scheduled_jobs'),
         'thread_pool_size': int(scheduler_config.get('thread_pool_size', 10)),
         'misfire_grace_time': int(scheduler_config.get('misfire_grace_time', 60)),
-        'shutdown_timeout': int(scheduler_config.get('shutdown_timeout', 10))
+        'shutdown_timeout': int(scheduler_config.get('shutdown_timeout', 10)),
+        'system_user_password': scheduler_config.get(
+            'system_user_password', '__no_login__'
+        )
     };
 }
 

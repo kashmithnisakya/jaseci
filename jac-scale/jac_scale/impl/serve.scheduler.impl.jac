@@ -37,8 +37,11 @@ def _err_response(e: Exception) -> TransportResponse {
     if storage {
         return storage;
     }
+    logger.error(f"Scheduler endpoint error: {type(e).__name__}: {e}");
     return TransportResponse.fail(
-        code='SCHEDULER_ERROR', message=str(e), meta=Meta(extra={'http_status': 500})
+        code='SCHEDULER_ERROR',
+        message='Internal scheduler error',
+        meta=Meta(extra={'http_status': 500})
     );
 }
 

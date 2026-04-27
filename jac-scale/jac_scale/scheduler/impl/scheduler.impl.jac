@@ -365,7 +365,7 @@ impl JacScaleScheduler.stop(drain: bool = False) -> None {
             self._apscheduler.shutdown(wait=drain);
             logger.info(f"Scheduler stopped (drain={drain})");
         } except Exception as e {
-            logger.error(f"Error stopping APScheduler: {e}");
+            logger.debug(f"Error stopping APScheduler: {e}");
         }
     }
     try {
@@ -430,33 +430,50 @@ impl JacScaleScheduler.register_dynamic_tasks_from_db -> None {
     }
     (jobs, _total) = self._store.find_active();
     restored = 0;
+    orphaned = 0;
     failed = 0;
     for job_data in jobs {
         job_id = str(job_data.get('job_id', str(uuid4())));
         name = job_data.get('name', '');
         user_id = job_data.get('created_by', self._system_user_id);
         is_walker = job_data.get('is_walker', True);
-        if name {
+        if not name {
+            continue;
+        }
+        if user_id != self._system_user_id and not self._user_is_live(user_id) {
             try {
-                spec = TriggerSpec.from_dict(job_data);
-                self._schedule_apscheduler_job(
-                    job_id=job_id,
-                    name=name,
-                    spec=spec,
-                    user_id=user_id,
-                    is_walker=is_walker
+                self._store.update(
+                    job_id, {'status': 'orphaned', 'orphaned_at': _utc_now_iso()}
                 );
-                logger.debug(f"Restored dynamic job: {name} (id={job_id})");
-                restored += 1;
             } except Exception as e {
-                logger.error(f"Failed to restore job '{name}': {e}");
-                failed += 1;
+                logger.debug(f"Could not mark job {job_id} orphaned: {e}");
             }
+            logger.warning(
+                f"Skipping restore of '{name}' (id={job_id}): creator '{user_id}' no longer exists"
+            );
+            orphaned += 1;
+            continue;
+        }
+        try {
+            spec = TriggerSpec.from_dict(job_data);
+            self._schedule_apscheduler_job(
+                job_id=job_id,
+                name=name,
+                spec=spec,
+                user_id=user_id,
+                is_walker=is_walker
+            );
+            logger.debug(f"Restored dynamic job: {name} (id={job_id})");
+            restored += 1;
+        } except Exception as e {
+            logger.error(f"Failed to restore job '{name}': {e}");
+            failed += 1;
         }
     }
-    if restored or failed {
+    if restored or failed or orphaned {
         logger.info(
-            f"Dynamic job restoration complete: {restored} restored, {failed} failed"
+            f"Dynamic job restoration complete: {restored} restored, "
+            f"{orphaned} orphaned, {failed} failed"
         );
     } else {
         logger.info("No persisted dynamic jobs to restore");
@@ -547,16 +564,10 @@ impl JacScaleScheduler.update_job(job_id: str, spec: TriggerSpec) -> (dict | Non
     updates.update(spec.to_dict());
 
     with self._lock {
-        # DB is authoritative — update it first. If this raises, APScheduler
+        # DB is authoritative - update it first. If this raises, APScheduler
         # is untouched and the job continues on its old schedule.
         self._store.update(job_id, updates);
-        # Remove old APScheduler job and re-add with new schedule.
         if self._apscheduler is not None {
-            try {
-                self._apscheduler.remove_job(job_id);
-            } except Exception as e {
-                logger.debug(f"Could not remove old APScheduler job {job_id}: {e}");
-            }
             self._schedule_apscheduler_job(
                 job_id=job_id,
                 name=name,
