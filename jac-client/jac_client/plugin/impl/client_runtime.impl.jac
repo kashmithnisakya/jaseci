@@ -352,7 +352,9 @@ impl __normalizeCredential(x: Any) -> dict {
 }
 
 impl jacSignup(
-    identities_or_username: (str | list), credential_or_password: (str | dict)
+    identities_or_username: (str | list),
+    credential_or_password: (str | dict),
+    profile: (dict | None) = None
 ) -> dict {
     base_url = __getApiBaseUrl();
     credential = __normalizeCredential(credential_or_password);
@@ -362,31 +364,30 @@ impl jacSignup(
             else [__normalizeIdentity(identities_or_username)]
     );
     primary_username = identities[0]["value"] if len(identities) > 0 else "";
+    body = {"identities": identities, "credential": credential};
+    if profile != None {
+        body["profile"] = profile;
+    }
     response = await fetch(
         f"{base_url}/user/register",
         {
             "method": "POST",
             "headers": {"Content-Type": "application/json"},
-            "body": JSON.stringify({"identities": identities, "credential": credential})
+            "body": JSON.stringify(body)
         }
     );
     if response.ok {
-        data = JSON.parse(await response.text());
-        token = None;
-        if data["data"] and data["data"]["token"] {
-            token = data["data"]["token"];
+        # /user/register does not return a token. Auto-login so the caller
+        # ends up authenticated, matching the previous DX expectation.
+        logged_in = await jacLogin(identities[0], credential);
+        if logged_in {
+            return {
+                "success": True,
+                "token": __getLocalStorage("jac_token"),
+                "username": primary_username
+            };
         }
-        if token {
-            # Clear cache on auth change
-            state = __getCacheState();
-            for key in Object.keys(state["cache"]) {
-                Reflect.deleteProperty(state["cache"], key);
-            }
-            state["order"].splice(0, state["order"].length);
-            __setLocalStorage("jac_token", token);
-            return {"success": True, "token": token, "username": primary_username};
-        }
-        return {"success": False, "error": "No token received"};
+        return {"success": False, "error": "Registered but auto-login failed"};
     } else {
         error_text = await response.text();
         try {
@@ -454,6 +455,43 @@ impl jacLogout -> None {
 impl jacIsLoggedIn -> bool {
     token = __getLocalStorage("jac_token");
     return token != None and token != "";
+}
+
+impl jacMe -> dict {
+    base_url = __getApiBaseUrl();
+    token = __getLocalStorage("jac_token");
+    if not token {
+        return {"success": False, "error": "Not authenticated"};
+    }
+    response = await fetch(
+        f"{base_url}/user/me",
+        {
+            "method": "GET",
+            "headers": {"Authorization": f"Bearer {token}"}
+        }
+    );
+    if response.ok {
+        try {
+            data = JSON.parse(await response.text());
+            user = data["data"] if data["data"] != None else {};
+            return {"success": True, "user": user};
+        } except Exception as e {
+            return {"success": False, "error": f"Failed to parse response: {e}"};
+        }
+    } else {
+        error_text = await response.text();
+        try {
+            error_data = JSON.parse(error_text);
+            return {
+                "success": False,
+                "error": error_data["error"]
+                    if error_data["error"] != None
+                    else "Failed to fetch user"
+            };
+        } except Exception {
+            return {"success": False, "error": error_text};
+        }
+    }
 }
 
 impl __getLocalStorage(key: str) -> str {
