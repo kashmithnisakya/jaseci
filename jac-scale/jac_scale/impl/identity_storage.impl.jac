@@ -86,8 +86,6 @@ impl IdentityStorage.create_user(
     Jac.commit(user_root);
     root_id = user_root.__jac__.id.hex;
 
-    # Profile is stored as its own sub-document. NEVER spread into the user
-    # doc root — keys like 'role' would otherwise enable privilege escalation.
     user_doc = {
         'user_id': user_id,
         'status': 'active',

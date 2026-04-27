@@ -378,9 +378,9 @@ impl jacSignup(
     if response.ok {
         try {
             data = JSON.parse(await response.text());
-            user_id = data["data"]["user_id"] if (
-                data["data"] and data["data"]["user_id"]
-            ) else None;
+            user_id = data["data"]["user_id"]
+                if (data["data"] and data["data"]["user_id"])
+                else None;
         } except Exception {
             user_id = None;
         }
