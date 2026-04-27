@@ -11,8 +11,8 @@ import from jac_scale.enums { CredentialType }
 glob PROFILE_MAX_KEYS: int = 20,
      PROFILE_MAX_KEY_LENGTH: int = 64,
      PROFILE_MAX_VALUE_LENGTH: int = 1024,
-     PROFILE_MAX_JSON_BYTES: int = 8192;
-glob PROFILE_KEY_PATTERN = re.compile(r'^[a-zA-Z][a-zA-Z0-9_]{0,63}$');
+     PROFILE_MAX_JSON_BYTES: int = 8192,
+     PROFILE_KEY_PATTERN = re.compile(r'^[a-zA-Z][a-zA-Z0-9_]{0,63}$');
 
 
 """Validate a profile dict. Returns the dict unchanged or raises ValueError.
@@ -30,14 +30,12 @@ def validate_profile(profile: dict[str, Any] | None) -> dict[str, Any] | None {
     for (key, value) in profile.items() {
         if not isinstance(key, str) or not PROFILE_KEY_PATTERN.match(key) {
             raise ValueError(
-                f"profile key '{key}' is invalid — keys must match [a-zA-Z][a-zA-Z0-9_]{{0,63}}"
+                f"profile contains an invalid key - keys must start with a letter and contain only letters, digits, and underscores (max {PROFILE_MAX_KEY_LENGTH} characters)"
             );
         }
-        # bool is a subclass of int in Python, so this allows str/int/float/bool only
+        # bool is a subclass of int in Python, so this allows str/int/float/bool only.
         if not isinstance(value, (str, int, float)) {
-            raise ValueError(
-                f"profile['{key}'] must be a string, number, or boolean"
-            );
+            raise ValueError(f"profile['{key}'] must be a string, number, or boolean");
         }
         if isinstance(value, str) and len(value) > PROFILE_MAX_VALUE_LENGTH {
             raise ValueError(

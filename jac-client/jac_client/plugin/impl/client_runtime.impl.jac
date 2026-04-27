@@ -457,43 +457,6 @@ impl jacIsLoggedIn -> bool {
     return token != None and token != "";
 }
 
-impl jacMe -> dict {
-    base_url = __getApiBaseUrl();
-    token = __getLocalStorage("jac_token");
-    if not token {
-        return {"success": False, "error": "Not authenticated"};
-    }
-    response = await fetch(
-        f"{base_url}/user/me",
-        {
-            "method": "GET",
-            "headers": {"Authorization": f"Bearer {token}"}
-        }
-    );
-    if response.ok {
-        try {
-            data = JSON.parse(await response.text());
-            user = data["data"] if data["data"] != None else {};
-            return {"success": True, "user": user};
-        } except Exception as e {
-            return {"success": False, "error": f"Failed to parse response: {e}"};
-        }
-    } else {
-        error_text = await response.text();
-        try {
-            error_data = JSON.parse(error_text);
-            return {
-                "success": False,
-                "error": error_data["error"]
-                    if error_data["error"] != None
-                    else "Failed to fetch user"
-            };
-        } except Exception {
-            return {"success": False, "error": error_text};
-        }
-    }
-}
-
 impl __getLocalStorage(key: str) -> str {
     storage = globalThis.localStorage;
     return storage.getItem(key) if storage else "";

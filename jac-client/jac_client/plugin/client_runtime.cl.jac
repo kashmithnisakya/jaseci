@@ -54,8 +54,6 @@ async def:pub jacLogin(
     identity_or_username: (str | dict), credential_or_password: (str | dict)
 ) -> bool;
 
-async def:pub jacMe -> dict;
-
 def:pub jacLogout -> None;
 def:pub jacIsLoggedIn -> bool;
 def:pub __getApiBaseUrl -> str;
