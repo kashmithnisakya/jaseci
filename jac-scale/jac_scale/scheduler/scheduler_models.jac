@@ -12,8 +12,7 @@ class CreateJobRequest(BaseModel) {
         ...,
         min_length=1,
         description='Name of the walker or function decorated with '
-        '@schedule(trigger=ScheduleTrigger.DYNAMIC).',
-        example='MyScheduledWalker'
+        '@schedule(trigger=ScheduleTrigger.DYNAMIC).'
     ),
         trigger: Literal['interval', 'cron', 'date'] = Field(
             ...,
@@ -24,20 +23,17 @@ class CreateJobRequest(BaseModel) {
         interval: float | None = Field(
             None,
             gt=0,
-            description='Seconds between executions. Required when trigger="interval".',
-            example=60
+            description='Seconds between executions. Required when trigger="interval".'
         ),
         cron: str | None = Field(
             None,
             description='5-field cron expression interpreted in UTC. '
-            'Required when trigger="cron".',
-            example='0 9 * * *'
+            'Required when trigger="cron".'
         ),
         date: str | None = Field(
             None,
             description='ISO-8601 datetime (UTC) to fire once. '
-            'Required when trigger="date".',
-            example='2026-12-31 09:00:00'
+            'Required when trigger="date".'
         ),
         model_config: ConfigDict = ConfigDict(
             json_schema_extra={
@@ -70,19 +66,15 @@ class UpdateJobRequest(BaseModel) {
         interval: float | None = Field(
             None,
             gt=0,
-            description='Seconds between executions. Required when trigger="interval".',
-            example=120
+            description='Seconds between executions. Required when trigger="interval".'
         ),
         cron: str | None = Field(
             None,
             description='5-field cron expression interpreted in UTC. '
-            'Required when trigger="cron".',
-            example='*/15 * * * *'
+            'Required when trigger="cron".'
         ),
         date: str | None = Field(
-            None,
-            description='ISO-8601 datetime (UTC). Required when trigger="date".',
-            example='2027-01-01 00:00:00'
+            None, description='ISO-8601 datetime (UTC). Required when trigger="date".'
         ),
         model_config: ConfigDict = ConfigDict(
             json_schema_extra={
