@@ -376,14 +376,13 @@ impl jacSignup(
         }
     );
     if response.ok {
+        user_id = None;
         try {
             data = JSON.parse(await response.text());
-            user_id = data["data"]["user_id"]
-                if (data["data"] and data["data"]["user_id"])
-                else None;
-        } except Exception {
-            user_id = None;
-        }
+            if data["data"] and data["data"]["user_id"] {
+                user_id = data["data"]["user_id"];
+            }
+        } except Exception { }
         return {"success": True, "user_id": user_id};
     } else {
         error_text = await response.text();
