@@ -39,9 +39,11 @@ impl JacScaleUserManager.postinit -> None {
 # ============================================================================
 """Create a user with identity-based model."""
 impl JacScaleUserManager.create_user(
-    identities: list[dict[str, Any]], credential: dict[str, Any]
+    identities: list[dict[str, Any]],
+    credential: dict[str, Any],
+    profile: dict[str, Any] | None = None
 ) -> dict[str, Any] {
-    return self._identity_storage.create_user(identities, credential);
+    return self._identity_storage.create_user(identities, credential, profile);
 }
 
 """Convenience method for creating internal users (guest, system, admin)."""
