@@ -1,9 +1,9 @@
 """Auth request/response models for the identity-based auth system."""
 import json;
 import re;
-import from typing { Any }
-import from pydantic { BaseModel, Field }
-import from jac_scale.enums { IdentityType, CredentialType }
+import from typing { Annotated, Any, Literal, Union }
+import from pydantic { BaseModel, Field, EmailStr }
+import from jac_scale.enums { CredentialType }
 
 
 # Profile validation limits — devs can put arbitrary fields (firstname,
@@ -54,10 +54,22 @@ def validate_profile(profile: dict[str, Any] | None) -> dict[str, Any] | None {
 }
 
 
-class IdentityInput(BaseModel) {
-    has type: IdentityType = Field(..., description='Identity type: username, email'),
-        value: str = Field(..., min_length=1, description='Identity value');
+class EmailIdentityInput(BaseModel) {
+    has type: Literal['email'] = Field('email', description='Identity type: email'),
+        value: EmailStr = Field(..., description='Email address');
 }
+
+class UsernameIdentityInput(BaseModel) {
+    has type: Literal['username'] = Field(
+        'username', description='Identity type: username'
+    ),
+        value: str = Field(..., min_length=1, description='Username');
+}
+
+glob IdentityInput = Annotated[
+         Union[EmailIdentityInput, UsernameIdentityInput],
+         Field(..., discriminator='type')
+     ];
 
 class CredentialInput(BaseModel) {
     has type: CredentialType = Field(..., description='Credential type: password'),
