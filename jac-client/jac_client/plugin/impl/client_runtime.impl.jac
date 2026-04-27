@@ -377,17 +377,15 @@ impl jacSignup(
         }
     );
     if response.ok {
-        # /user/register does not return a token. Auto-login so the caller
-        # ends up authenticated, matching the previous DX expectation.
-        logged_in = await jacLogin(identities[0], credential);
-        if logged_in {
-            return {
-                "success": True,
-                "token": __getLocalStorage("jac_token"),
-                "username": primary_username
-            };
+        try {
+            data = JSON.parse(await response.text());
+            user_id = data["data"]["user_id"] if (
+                data["data"] and data["data"]["user_id"]
+            ) else None;
+        } except Exception {
+            user_id = None;
         }
-        return {"success": False, "error": "Registered but auto-login failed"};
+        return {"success": True, "user_id": user_id, "username": primary_username};
     } else {
         error_text = await response.text();
         try {
