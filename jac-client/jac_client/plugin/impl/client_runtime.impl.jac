@@ -363,7 +363,6 @@ impl jacSignup(
             if Array.isArray(identities_or_username)
             else [__normalizeIdentity(identities_or_username)]
     );
-    primary_username = identities[0]["value"] if len(identities) > 0 else "";
     body = {"identities": identities, "credential": credential};
     if profile != None {
         body["profile"] = profile;
@@ -385,7 +384,7 @@ impl jacSignup(
         } except Exception {
             user_id = None;
         }
-        return {"success": True, "user_id": user_id, "username": primary_username};
+        return {"success": True, "user_id": user_id};
     } else {
         error_text = await response.text();
         try {
