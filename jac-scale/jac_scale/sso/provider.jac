@@ -14,7 +14,10 @@ class SSOUserInfo {
     has email: str,
         external_id: str,
         platform: str,
-        display_name: (str | None) = None;
+        display_name: (str | None) = None,
+        first_name: (str | None) = None,
+        last_name: (str | None) = None,
+        picture: (str | None) = None;
 }
 
 """Abstract base class for SSO providers.

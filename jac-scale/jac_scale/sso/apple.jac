@@ -67,7 +67,10 @@ obj AppleSSOProvider(SSOProvider) {
                 email=user_info.email,
                 external_id=user_info.id,
                 platform=self.get_platform_name(),
-                display_name=user_info?.display_name
+                display_name=user_info?.display_name,
+                first_name=user_info?.first_name,
+                last_name=user_info?.last_name,
+                picture=user_info?.picture
             );
         }
     }
