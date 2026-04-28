@@ -100,6 +100,22 @@ impl MongoIdentityStorage._add_identity(
     return result.matched_count > 0;
 }
 
+"""Mark a single identity (matched by value_normalized) as verified."""
+impl MongoIdentityStorage._set_identity_verified(
+    user_id: str, value_normalized: str
+) -> bool {
+    result = self.users_col.update_one(
+        {'user_id': user_id, 'identities.value_normalized': value_normalized},
+        {
+            '$set': {
+                'identities.$.verified': True,
+                'updated_at': datetime.now(UTC).isoformat()
+            }
+        }
+    );
+    return result.matched_count > 0;
+}
+
 """Remove an SSO identity matching the provider from a user."""
 impl MongoIdentityStorage._remove_sso_identity(user_id: str, platform: str) -> bool {
     result = self.users_col.update_one(

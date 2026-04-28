@@ -257,6 +257,41 @@ impl SqliteIdentityStorage._add_identity(
     }
 }
 
+"""Mark a single identity (matched by value_normalized) as verified."""
+impl SqliteIdentityStorage._set_identity_verified(
+    user_id: str, value_normalized: str
+) -> bool {
+    t = self._table;
+    with self._engine.begin() as conn {
+        row = conn.execute(
+            select(t.c.identities).where(t.c.user_id == user_id)
+        ).first();
+        if not row {
+            return False;
+        }
+        identities = list(row[0] or []);
+        changed = False;
+        for identity in identities {
+            if identity.get('value_normalized') == value_normalized {
+                if not identity.get('verified') {
+                    identity['verified'] = True;
+                    changed = True;
+                }
+            }
+        }
+        if not changed {
+            return False;
+        }
+        now = datetime.now(UTC).isoformat();
+        conn.execute(
+            update(t).where(t.c.user_id == user_id).values(
+                identities=identities, updated_at=now
+            )
+        );
+        return True;
+    }
+}
+
 """Remove an SSO identity and sync sso_lookups."""
 impl SqliteIdentityStorage._remove_sso_identity(user_id: str, platform: str) -> bool {
     t = self._table;

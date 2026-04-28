@@ -53,6 +53,7 @@ obj IdentityStorage {
     def _add_identity(user_id: str, identity: dict[str, Any]) -> bool;
     def _remove_sso_identity(user_id: str, platform: str) -> bool;
     def _find_sso_link(platform: str, external_id: str) -> dict[str, Any] | None;
+    def _set_identity_verified(user_id: str, value_normalized: str) -> bool;
     def ensure_indexes -> None;
     # Public methods implemented by subclasses directly
     def get_user_by_id(user_id: str) -> dict[str, Any] | None;
@@ -98,6 +99,7 @@ obj MongoIdentityStorage(IdentityStorage) {
     def _add_identity(user_id: str, identity: dict[str, Any]) -> bool;
     def _remove_sso_identity(user_id: str, platform: str) -> bool;
     def _find_sso_link(platform: str, external_id: str) -> dict[str, Any] | None;
+    def _set_identity_verified(user_id: str, value_normalized: str) -> bool;
     def ensure_indexes -> None;
     # Public methods implemented directly
     def get_user_by_id(user_id: str) -> dict[str, Any] | None;
@@ -128,6 +130,7 @@ obj SqliteIdentityStorage(IdentityStorage) {
     def _add_identity(user_id: str, identity: dict[str, Any]) -> bool;
     def _remove_sso_identity(user_id: str, platform: str) -> bool;
     def _find_sso_link(platform: str, external_id: str) -> dict[str, Any] | None;
+    def _set_identity_verified(user_id: str, value_normalized: str) -> bool;
     def ensure_indexes -> None;
     # Public methods implemented directly
     def get_user_by_id(user_id: str) -> dict[str, Any] | None;

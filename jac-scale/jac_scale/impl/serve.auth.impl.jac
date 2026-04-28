@@ -6,6 +6,10 @@ impl JacAPIServerAuth.register_auth_endpoints -> None {
     self.register_login_endpoint();
     self.register_refresh_token_endpoint();
     self.register_update_password_endpoint();
+    self.register_add_identity_endpoint();
+    self.register_verify_identity_endpoint();
+    self.register_forgot_password_endpoint();
+    self.register_reset_password_endpoint();
     self.register_sso_endpoints();
     self.register_api_key_endpoints();
 }
