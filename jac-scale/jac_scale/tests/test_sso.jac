@@ -5,6 +5,7 @@ import os;
 import shutil;
 import asyncio;
 import from tempfile { mkdtemp }
+import from typing { Any }
 import from dataclasses { dataclass }
 import from types { TracebackType }
 import unittest.mock;
@@ -68,11 +69,22 @@ obj MockUserInfo {
     has email: str,
         id: str = "mock_sso_id",
         external_id: str = "mock_external_id",
-        platform: str = "google",
         first_name: str = "Test",
         last_name: str = "User",
         display_name: str = "Test User",
         picture: str = "https://example.com/picture.jpg";
+
+    """Mirror SSOUserInfo.profile_fields() so production code can call it."""
+    def profile_fields -> dict[str, Any] {
+        fields: dict[str, Any] = {};
+        for key in ['display_name', 'first_name', 'last_name', 'picture'] {
+            val = getattr(self, key, None);
+            if val {
+                fields[key] = val;
+            }
+        }
+        return fields;
+    }
 }
 
 """Mock GoogleSSO for testing - implements SSOProvider interface."""
@@ -107,11 +119,6 @@ obj MockGoogleSSO {
     """Mock handle_callback method (SSOProvider interface)."""
     async def _default_handle_callback(request: Request) -> MockUserInfo {
         return await self.verify_and_process(request);
-    }
-
-    """Mock get_platform_name method (SSOProvider interface)."""
-    def get_platform_name -> str {
-        return "google";
     }
 
     def __enter__ -> "MockGoogleSSO" {
@@ -161,11 +168,6 @@ obj MockAppleSSO {
         return await self.verify_and_process(request);
     }
 
-    """Mock get_platform_name method (SSOProvider interface)."""
-    def get_platform_name -> str {
-        return "apple";
-    }
-
     def __enter__ -> "MockAppleSSO" {
         return self;
     }
@@ -211,11 +213,6 @@ obj MockGithubSSO {
     """Mock handle_callback method (SSOProvider interface)."""
     async def _default_handle_callback(request: Request) -> MockUserInfo {
         return await self.verify_and_process(request);
-    }
-
-    """Mock get_platform_name method (SSOProvider interface)."""
-    def get_platform_name -> str {
-        return "github";
     }
 
     def __enter__ -> "MockGithubSSO" {
@@ -983,18 +980,7 @@ test "google sso provider handle callback" {
         mock_inner_sso.verify_and_process.assert_called_once_with(mock_request);
         assert result.email == "test@example.com";
         assert result.external_id == "12345";
-        assert result.platform == "google";
         assert result.display_name == "Test User";
-    }
-}
-
-"""Test Google get_platform_name returns google."""
-test "google sso provider get platform name" {
-    with unittest.mock.patch("jac_scale.sso.google.GoogleSSO") as mock_cls {
-        mock_inner_sso = unittest.mock.Mock();
-        mock_cls.return_value = mock_inner_sso;
-        provider = GoogleSSOProvider("id", "secret", "uri");
-        assert provider.get_platform_name() == "google";
     }
 }
 
@@ -1070,9 +1056,7 @@ test "apple sso callback login existing user" {
         user_manager.link_sso_account = unittest.mock.Mock(return_value={});
         mock_sso = MockAppleSSO("id", "secret", "uri");
         mock_sso.verify_and_process = unittest.mock.AsyncMock(
-            return_value=MockUserInfo(
-                email="test@privaterelay.appleid.com", platform="apple"
-            )
+            return_value=MockUserInfo(email="test@privaterelay.appleid.com")
         );
         with unittest.mock.patch.object(
             user_manager._identity_storage, "update_user_fields", return_value=True
@@ -1112,9 +1096,7 @@ test "apple sso callback auto register new user" {
         user_manager.link_sso_account = unittest.mock.Mock(return_value={});
         mock_sso = MockAppleSSO("id", "secret", "uri");
         mock_sso.verify_and_process = unittest.mock.AsyncMock(
-            return_value=MockUserInfo(
-                email="newuser@privaterelay.appleid.com", platform="apple"
-            )
+            return_value=MockUserInfo(email="newuser@privaterelay.appleid.com")
         );
         with unittest.mock.patch.object(
             user_manager, "get_sso", return_value=mock_sso
@@ -1187,18 +1169,7 @@ test "apple sso provider handle callback" {
         mock_inner_sso.verify_and_process.assert_called_once_with(mock_request);
         assert result.email == "test@privaterelay.appleid.com";
         assert result.external_id == "apple_12345";
-        assert result.platform == "apple";
         assert result.display_name == "Apple User";
-    }
-}
-
-"""Test Apple get_platform_name returns apple."""
-test "apple sso provider get platform name" {
-    with unittest.mock.patch("jac_scale.sso.apple.AppleSSO") as mock_cls {
-        mock_inner_sso = unittest.mock.Mock();
-        mock_cls.return_value = mock_inner_sso;
-        provider = AppleSSOProvider("id", "secret", "uri");
-        assert provider.get_platform_name() == "apple";
     }
 }
 
@@ -1313,7 +1284,7 @@ test "github sso callback login existing user" {
         user_manager.link_sso_account = unittest.mock.Mock(return_value={});
         mock_sso = MockGithubSSO("id", "secret", "uri");
         mock_sso.verify_and_process = unittest.mock.AsyncMock(
-            return_value=MockUserInfo(email="test@github.com", platform="github")
+            return_value=MockUserInfo(email="test@github.com")
         );
         with unittest.mock.patch.object(
             user_manager._identity_storage, "update_user_fields", return_value=True
@@ -1353,9 +1324,7 @@ test "github sso callback auto register new user" {
         user_manager.link_sso_account = unittest.mock.Mock(return_value={});
         mock_sso = MockGithubSSO("id", "secret", "uri");
         mock_sso.verify_and_process = unittest.mock.AsyncMock(
-            return_value=MockUserInfo(
-                email="newuser@github.com", platform="github"
-            )
+            return_value=MockUserInfo(email="newuser@github.com")
         );
         with unittest.mock.patch.object(
             user_manager, "get_sso", return_value=mock_sso
@@ -1428,18 +1397,7 @@ test "github sso provider handle callback" {
         mock_inner_sso.verify_and_process.assert_called_once_with(mock_request);
         assert result.email == "test@github.com";
         assert result.external_id == "github_12345";
-        assert result.platform == "github";
         assert result.display_name == "GitHub User";
-    }
-}
-
-"""Test GitHub get_platform_name returns github."""
-test "github sso provider get platform name" {
-    with unittest.mock.patch("jac_scale.sso.github.GithubSSO") as mock_cls {
-        mock_inner_sso = unittest.mock.Mock();
-        mock_cls.return_value = mock_inner_sso;
-        provider = GithubSSOProvider("id", "secret", "uri");
-        assert provider.get_platform_name() == "github";
     }
 }
 

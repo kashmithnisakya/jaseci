@@ -269,22 +269,6 @@ impl JacScaleUserManager.sso_initiate(
     return await sso.initiate_auth();
 }
 
-"""Build a profile sub-document from an SSOUserInfo."""
-def _profile_from_sso(info: Any) -> dict[str, Any] {
-    fields: dict[str, Any] = {};
-    for key in ['display_name', 'first_name', 'last_name', 'picture'] {
-        val = getattr(info, key, None);
-        if val {
-            fields[key] = val;
-        }
-    }
-    if not fields {
-        return {};
-    }
-    return {'sso': {info.platform: fields}};
-}
-
-
 impl JacScaleUserManager.sso_callback(
     request: Request, platform: str
 ) -> TransportResponse {
@@ -324,7 +308,7 @@ impl JacScaleUserManager.sso_callback(
             );
         }
         external_id = user_info.external_id;
-        sso_profile = _profile_from_sso(user_info);
+        sso_fields = user_info.profile_fields();
         existing = self.find_user_by_identity(email);
         if existing {
             user_id = existing.get('user_id', '');
@@ -333,10 +317,10 @@ impl JacScaleUserManager.sso_callback(
             # Refresh profile.sso.<platform> from the latest provider data so
             # display_name/picture stay current. Only the SSO namespace is
             # touched — developer-set profile fields are untouched.
-            if sso_profile {
+            if sso_fields {
                 current_profile = (existing.get('profile') or {}) if existing else {};
                 current_sso = current_profile.get('sso') or {};
-                current_sso[platform] = sso_profile['sso'][platform];
+                current_sso[platform] = sso_fields;
                 current_profile['sso'] = current_sso;
                 self._identity_storage.update_user_fields(
                     user_id, {'profile': current_profile}
@@ -355,6 +339,7 @@ impl JacScaleUserManager.sso_callback(
             );
         }
         # Create user with verified email identity (provider already verified it)
+        sso_profile = {'sso': {platform: sso_fields}} if sso_fields else None;
         result = self.create_user(
             identities=[{'type': 'email', 'value': email, 'verified': True}],
             credential={'type': 'password', 'password': generate_random_password()},
