@@ -1,6 +1,6 @@
 """End-to-end tests for /user/add-identity, /user/verify-identity,
 /user/forgot-password, and /user/reset-password against a server running
-with a fake in-process emailer (see fixtures/identity_api/test_emailer_fake.py).
+with a fake in-process emailer (see fixtures/identity_api/test_emailer_fake.jac).
 """
 
 import contextlib;
@@ -14,6 +14,10 @@ import time;
 import requests;
 import from pathlib { Path }
 import from typing { Any }
+import from jac_scale.tests.auth_test_helpers {
+    data as _data,
+    register_and_login as _register_and_login
+}
 
 glob FIXTURES_DIR: Path = Path(__file__).parent / "fixtures" / "identity_api";
 
@@ -26,13 +30,6 @@ def get_free_port -> int {
         s.listen(1);
         return s.getsockname()[1];
     }
-}
-
-def _data(resp: dict[str, Any]) -> Any {
-    if isinstance(resp, dict) and "data" in resp {
-        return resp["data"];
-    }
-    return resp;
 }
 
 def _cleanup {
@@ -108,28 +105,8 @@ def _stop_server(proc: subprocess.Popen | None) {
     gc.collect();
 }
 
-def _register_and_login(base_url: str, user: str, pwd: str = "pw12345") -> str {
-    requests.post(
-        f"{base_url}/user/register",
-        json={
-            "identities": [{"type": "username", "value": user}],
-            "credential": {"type": "password", "password": pwd}
-        },
-        timeout=5
-    );
-    resp = requests.post(
-        f"{base_url}/user/login",
-        json={
-            "identity": {"type": "username", "value": user},
-            "credential": {"type": "password", "password": pwd}
-        },
-        timeout=5
-    ).json();
-    return _data(resp)["token"];
-}
-
 # =============================================================================
-# Test 1: add-identity contract — auth, validation, dup detection, mail send
+# Test 1: add-identity contract - auth, validation, dup detection, mail send
 # =============================================================================
 test "add_identity_contract" {
     _cleanup();
@@ -141,7 +118,7 @@ test "add_identity_contract" {
         primary = _unique_user("alice");
         secondary = f"{primary}_alt";
         email_addr = f"{primary}@example.com";
-        token = _register_and_login(base, primary);
+        token = _register_and_login(base, primary, "pw12345");
 
         # 1. Unauthenticated → 401
         r = requests.post(
@@ -198,7 +175,7 @@ test "forgot_and_reset_password_contract" {
     try {
         proc = _start_server(port);
         bob_user = _unique_user("bob");
-        _register_and_login(base, bob_user);
+        _register_and_login(base, bob_user, "pw12345");
 
         # forgot-password for known user → 200.
         r = requests.post(

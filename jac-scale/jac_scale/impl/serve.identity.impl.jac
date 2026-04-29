@@ -1,14 +1,14 @@
 """User identity & password-reset endpoints.
 
-- POST /user/add-identity     (auth) — attach a new identity (e.g. email) to the
+- POST /user/add-identity     (auth) - attach a new identity (e.g. email) to the
                               calling user. Email identities trigger a
                               verification mail and start unverified.
-- POST /user/verify-identity         — consume a verification token and flip the
+- POST /user/verify-identity         - consume a verification token and flip the
                               matching identity to verified=True.
-- POST /user/forgot-password         — issue a one-time reset token to the email
+- POST /user/forgot-password         - issue a one-time reset token to the email
                               address tied to the identity, if any. Always
                               returns 200 (never leaks existence).
-- POST /user/reset-password          — consume a reset token and set a new password.
+- POST /user/reset-password          - consume a reset token and set a new password.
 """
 
 import from jac_scale.auth_tokens { AuthTokenStore }
@@ -41,7 +41,7 @@ impl JacAPIServerAuth.register_add_identity_endpoint -> None {
             );
         }
         # Reject if any user already owns this identity.
-        if self.user_manager._identity_storage.identity_taken(normalized) {
+        if self.user_manager.is_identity_taken(normalized) {
             return TransportResponse.fail(
                 code='IDENTITY_TAKEN',
                 message=f"This {id_type} is already registered",
@@ -64,9 +64,7 @@ impl JacAPIServerAuth.register_add_identity_endpoint -> None {
             'verified': False,
             'is_recovery': bool(body_data.is_recovery)
         };
-        if not self.user_manager._identity_storage._add_identity(
-            user_id, identity_doc
-        ) {
+        if not self.user_manager.add_identity(user_id, identity_doc) {
             return TransportResponse.fail(
                 code='NOT_FOUND',
                 message='User not found',
@@ -122,7 +120,7 @@ impl JacAPIServerAuth.register_add_identity_endpoint -> None {
 }
 
 # ============================================================================
-# /user/verify-identity  (no auth — token is the credential)
+# /user/verify-identity  (no auth - token is the credential)
 # ============================================================================
 impl JacAPIServerAuth.register_verify_identity_endpoint -> None {
     async def verify_identity_handler(
@@ -145,9 +143,7 @@ impl JacAPIServerAuth.register_verify_identity_endpoint -> None {
                 meta=Meta(extra={'http_status': 400})
             );
         }
-        ok = self.user_manager._identity_storage._set_identity_verified(
-            user_id, identity_value
-        );
+        ok = self.user_manager.set_identity_verified(user_id, identity_value);
         if not ok {
             return TransportResponse.fail(
                 code='NOT_FOUND',
@@ -175,7 +171,7 @@ impl JacAPIServerAuth.register_verify_identity_endpoint -> None {
 }
 
 # ============================================================================
-# /user/forgot-password  (always returns 200 — never leaks account existence)
+# /user/forgot-password  (always returns 200 - never leaks account existence)
 # ============================================================================
 impl JacAPIServerAuth.register_forgot_password_endpoint -> None {
     async def forgot_password_handler(
@@ -200,7 +196,7 @@ impl JacAPIServerAuth.register_forgot_password_endpoint -> None {
             );
             return ok_response;
         }
-        user = self.user_manager._identity_storage.find_user_by_identity(normalized);
+        user = self.user_manager.find_user_by_identity(normalized);
         if user is None {
             return ok_response;
         }
@@ -243,7 +239,7 @@ impl JacAPIServerAuth.register_forgot_password_endpoint -> None {
         body_text = (
             f"Hello,\n\nUse the link below to reset your password:\n\n"
             f"{link}\n\nThis link expires in {ttl // 60} minutes.\n\n"
-            "If you did not request this, you can ignore this message — your "
+            "If you did not request this, you can ignore this message - your "
             "password will remain unchanged."
         );
         emailer.send_email(
@@ -288,25 +284,7 @@ impl JacAPIServerAuth.register_reset_password_endpoint -> None {
                 meta=Meta(extra={'http_status': 400})
             );
         }
-        storage = self.user_manager._identity_storage;
-        # NOTE: _identity_storage is the internal handle on JacScaleUserManager;
-        # we reach across the underscore boundary because the user-manager
-        # public API doesn't expose a 'set password by user_id without current'
-        # method (update_password() requires the current password).
-        credentials = storage._get_credentials(user_id);
-        new_hash = storage.hash_password(body_data.new_password);
-        password_set = False;
-        for cred in credentials {
-            if cred.get('type') == 'password' {
-                cred['password_hash'] = new_hash;
-                cred.pop('algorithm', None);
-                password_set = True;
-            }
-        }
-        if not password_set {
-            credentials.append({'type': 'password', 'password_hash': new_hash});
-        }
-        storage._update_credentials(user_id, credentials);
+        self.user_manager.reset_password_by_user_id(user_id, body_data.new_password);
         # Drop any other outstanding reset tokens for this user.
         AuthTokenStore.instance().revoke_user_tokens(user_id, 'reset');
         return TransportResponse.success(

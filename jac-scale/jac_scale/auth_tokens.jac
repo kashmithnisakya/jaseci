@@ -48,12 +48,11 @@ obj AuthTokenStore {
     """Drop all tokens for a user with a given purpose (e.g. on password reset)."""
     def revoke_user_tokens(user_id: str, purpose: str) -> int;
 
-    # Internal storage primitives — fall back to in-memory when Mongo is unavailable.
+    # Internal storage primitives - fall back to in-memory when Mongo is unavailable.
     def _persist(record: dict[str, Any]) -> None;
     def _find(token_hash: str, purpose: str) -> (dict[str, Any] | None);
     def _delete(token_hash: str) -> bool;
     def _delete_user(user_id: str, purpose: str) -> int;
-    static def _is_expired(record: dict[str, Any]) -> bool;
 }
 
 """Reset the singleton (test helper)."""

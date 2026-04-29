@@ -8,7 +8,7 @@ impl AuthTokenStore.postinit -> None {
     if db_cfg.get('mongodb_uri') {
         try {
             self._db = Db(client=get_mongo_client(), db_name='jac_scale');
-            # TTL index on expires_at — Mongo prunes expired records automatically.
+            # TTL index on expires_at - Mongo prunes expired records automatically.
             try {
                 self._db.client['jac_scale'][self._collection].create_index(
                     'expires_at', expireAfterSeconds=0
@@ -69,7 +69,7 @@ impl AuthTokenStore.peek_token(token: str, purpose: str) -> (dict[str, Any] | No
     if record is None {
         return None;
     }
-    if AuthTokenStore._is_expired(record) {
+    if _is_expired(record) {
         # Best-effort clean-up; in-memory store needs explicit deletion.
         self._delete(record.get('token_hash', ''));
         return None;
@@ -185,8 +185,4 @@ def _is_expired(record: dict[str, Any]) -> bool {
         expires_at = expires_at.replace(tzinfo=UTC);
     }
     return datetime.now(UTC) >= expires_at;
-}
-
-impl AuthTokenStore._is_expired(record: dict[str, Any]) -> bool {
-    return _is_expired(record);
 }
