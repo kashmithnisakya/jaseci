@@ -62,7 +62,6 @@ obj JacScaleUserManager(UserManager) {
 
     def reset_password_by_user_id(user_id: str, new_password: str) -> dict[str, str];
     def add_identity(user_id: str, identity: dict[str, Any]) -> bool;
-
     def is_identity_taken(value: str) -> bool;
     def set_identity_verified(user_id: str, value_normalized: str) -> bool;
     def close -> None;
