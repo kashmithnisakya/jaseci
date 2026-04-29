@@ -7,6 +7,7 @@ token out of the body).
 
 Loaded via `provider = "test_emailer_fake:FakeEmailer"` in jac.toml.
 """
+
 from __future__ import annotations
 
 from jac_scale.abstractions.emailer import Emailer
