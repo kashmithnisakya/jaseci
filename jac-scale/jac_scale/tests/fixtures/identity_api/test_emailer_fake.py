@@ -17,7 +17,12 @@ SENT: list[dict] = []
 
 
 class FakeEmailer(Emailer):
-    def __init__(self, config=None, from_address: str = "", enabled: bool = True):
+    def __init__(
+        self,
+        config: dict | None = None,
+        from_address: str = "",
+        enabled: bool = True,
+    ) -> None:
         self.config = config or {}
         self.from_address = from_address
         self.enabled = enabled
