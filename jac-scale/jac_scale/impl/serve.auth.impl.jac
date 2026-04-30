@@ -217,17 +217,21 @@ impl JacAPIServerAuth.register_me_endpoint -> None {
             );
         }
         # Strip credentials and other internal fields. Identities are
-        # returned without value_normalized to keep the response clean.
+        # returned without value_normalized or external_id to keep the
+        # response clean.
         identities_out = [];
         for ident in user.get('identities', []) {
-            identities_out.append(
-                {
-                    'type': ident.get('type'),
-                    'value': ident.get('value_raw'),
-                    'verified': ident.get('verified', False),
-                    'is_recovery': ident.get('is_recovery', False)
-                }
-            );
+            identity_out: dict[str, Any] = {
+                'type': ident.get('type'),
+                'verified': ident.get('verified', False),
+                'is_recovery': ident.get('is_recovery', False)
+            };
+            if ident.get('type') == 'sso' {
+                identity_out['provider'] = ident.get('provider');
+            } else {
+                identity_out['value'] = ident.get('value_raw');
+            }
+            identities_out.append(identity_out);
         }
         data = {
             'user_id': user.get('user_id'),
