@@ -5,9 +5,6 @@ import from typing { Annotated, Any, Literal, Union }
 import from pydantic { BaseModel, Field, EmailStr, AfterValidator }
 import from jac_scale.enums { CredentialType }
 
-
-# Profile validation limits — devs can put arbitrary fields (firstname,
-# lastname, address, postcode, etc.), but bounded to prevent abuse.
 glob PROFILE_MAX_KEYS: int = 20,
      PROFILE_MAX_KEY_LENGTH: int = 64,
      PROFILE_MAX_VALUE_LENGTH: int = 1024,
@@ -57,11 +54,12 @@ def validate_profile(profile: dict[str, Any] | None) -> dict[str, Any] | None {
     return profile;
 }
 
-
-# Reusable Annotated alias so RegisterRequest and UpdateProfileRequest share
-# the same Pydantic-driven validation (FastAPI auto-returns 422 on failure).
 glob ValidatedProfile = Annotated[
          dict[str, Any] | None,
+         AfterValidator(validate_profile)
+     ],
+     RequiredValidatedProfile = Annotated[
+         dict[str, Any],
          AfterValidator(validate_profile)
      ];
 
@@ -114,10 +112,17 @@ class UpdatePasswordRequest(BaseModel) {
 }
 
 class UpdateProfileRequest(BaseModel) {
-    has profile: ValidatedProfile = Field(
+    has profile: RequiredValidatedProfile = Field(
         ...,
-        description='Profile fields to merge into the existing profile. Reserved keys (e.g. sso) are rejected.'
+        description='Profile fields to merge into the existing profile. Reserved keys (e.g. sso) are rejected. Must not be null.'
     );
+}
+
+class UpdateProfileResponse(BaseModel) {
+    has message: str = Field(..., description='Result message'),
+        profile: dict[str, Any] = Field(
+            {}, description='The user\'s profile after the merge'
+        );
 }
 
 class MeIdentity(BaseModel) {

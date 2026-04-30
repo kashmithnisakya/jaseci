@@ -49,6 +49,7 @@ import from jac_scale.auth_models {
     LoginRequest,
     UpdatePasswordRequest,
     UpdateProfileRequest,
+    UpdateProfileResponse,
     MeResponse
 }
 

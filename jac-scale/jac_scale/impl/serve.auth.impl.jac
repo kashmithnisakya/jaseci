@@ -235,7 +235,8 @@ impl JacAPIServerAuth.register_me_endpoint -> None {
             updated_at=user.get('updated_at')
         );
         return TransportResponse.success(
-            data=me.model_dump(mode='json'), meta=Meta(extra={'http_status': 200})
+            data=me.model_dump(mode='json', exclude_none=True),
+            meta=Meta(extra={'http_status': 200})
         );
     }
     self.server.add_endpoint(
@@ -267,35 +268,20 @@ impl JacAPIServerAuth.register_update_me_endpoint -> None {
         if error {
             return error;
         }
-        user = self.user_manager.get_user(user_id);
-        if not user {
+        result = self.user_manager.update_profile(user_id, body_data.profile);
+        if 'error' in result {
+            err_msg = result.get('error', 'Profile update failed');
+            status = 404 if err_msg == 'User not found' else 400;
+            code = 'NOT_FOUND' if status == 404 else 'UPDATE_FAILED';
             return TransportResponse.fail(
-                code='NOT_FOUND',
-                message='User not found',
-                meta=Meta(extra={'http_status': 404})
+                code=code, message=err_msg, meta=Meta(extra={'http_status': status})
             );
         }
-        # Merge new profile keys into existing profile so server-managed
-        # namespaces (e.g. profile.sso) are preserved across updates.
-        current_profile = user.get('profile') or {};
-        incoming = body_data.profile or {};
-        merged = dict(current_profile);
-        for (key, value) in incoming.items() {
-            merged[key] = value;
-        }
-        success = self.user_manager._identity_storage.update_user_fields(
-            user_id, {'profile': merged}
+        response = UpdateProfileResponse(
+            message='Profile updated', profile=result.get('profile') or {}
         );
-        if not success {
-            return TransportResponse.fail(
-                code='UPDATE_FAILED',
-                message='Profile update failed',
-                meta=Meta(extra={'http_status': 400})
-            );
-        }
         return TransportResponse.success(
-            data={'message': 'Profile updated', 'profile': merged},
-            meta=Meta(extra={'http_status': 200})
+            data=response.model_dump(mode='json'), meta=Meta(extra={'http_status': 200})
         );
     }
     self.server.add_endpoint(
@@ -304,7 +290,7 @@ impl JacAPIServerAuth.register_update_me_endpoint -> None {
             path='/user/me',
             callback=update_me_handler,
             request_model=UpdateProfileRequest,
-            response_model=None,
+            response_model=UpdateProfileResponse,
             tags=['User APIs'],
             summary='Update current user profile',
             description='Merges the supplied profile fields into the authenticated user\'s profile. Reserved keys (e.g. sso) are rejected by the validator. Requires Bearer token.'
