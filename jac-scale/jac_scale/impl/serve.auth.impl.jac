@@ -7,6 +7,7 @@ impl JacAPIServerAuth.register_auth_endpoints -> None {
     self.register_refresh_token_endpoint();
     self.register_update_password_endpoint();
     self.register_me_endpoint();
+    self.register_update_me_endpoint();
     self.register_sso_endpoints();
     self.register_api_key_endpoints();
 }
@@ -19,16 +20,9 @@ impl JacAPIServerAuth.register_register_endpoint -> None {
         identities = [i.model_dump(mode='json') for i in body_data.identities];
         credential = body_data.credential.model_dump(mode='json');
         try {
-            profile = validate_profile(body_data.profile);
-        } except ValueError as ve {
-            return TransportResponse.fail(
-                code='VALIDATION_ERROR',
-                message=str(ve),
-                meta=Meta(extra={'http_status': 400})
+            result = self.user_manager.create_user(
+                identities, credential, body_data.profile
             );
-        }
-        try {
-            result = self.user_manager.create_user(identities, credential, profile);
             if 'error' in result {
                 return TransportResponse.fail(
                     code=result.get('code', 'REGISTRATION_FAILED'),
@@ -157,14 +151,13 @@ impl JacAPIServerAuth.register_update_password_endpoint -> None {
     async def update_password_handler(
         request: Request, body_data: UpdatePasswordRequest
     ) -> TransportResponse {
-        authorization = request.headers.get('Authorization');
-        user_id = extract_bearer_token(authorization, self.user_manager);
-        if not user_id {
-            return TransportResponse.fail(
-                code='UNAUTHORIZED',
-                message='Invalid or expired token',
-                meta=Meta(extra={'http_status': 401})
-            );
+        (user_id, error) = authenticate_or_fail(
+            request.headers.get('Authorization'),
+            self.user_manager,
+            message='Invalid or expired token'
+        );
+        if error {
+            return error;
         }
         result = self.user_manager.update_password(
             user_id, body_data.current_password, body_data.new_password
@@ -199,14 +192,13 @@ impl JacAPIServerAuth.register_update_password_endpoint -> None {
 # ============================================================================
 impl JacAPIServerAuth.register_me_endpoint -> None {
     async def me_handler(request: Request) -> TransportResponse {
-        authorization = request.headers.get('Authorization');
-        user_id = extract_bearer_token(authorization, self.user_manager);
-        if not user_id {
-            return TransportResponse.fail(
-                code='UNAUTHORIZED',
-                message='Invalid or expired token',
-                meta=Meta(extra={'http_status': 401})
-            );
+        (user_id, error) = authenticate_or_fail(
+            request.headers.get('Authorization'),
+            self.user_manager,
+            message='Invalid or expired token'
+        );
+        if error {
+            return error;
         }
         user = self.user_manager.get_user(user_id);
         if not user {
@@ -233,17 +225,17 @@ impl JacAPIServerAuth.register_me_endpoint -> None {
             }
             identities_out.append(identity_out);
         }
-        data = {
-            'user_id': user.get('user_id'),
-            'role': user.get('role', 'user'),
-            'status': user.get('status', 'active'),
-            'identities': identities_out,
-            'profile': user.get('profile') or {},
-            'created_at': user.get('created_at'),
-            'updated_at': user.get('updated_at')
-        };
+        me = MeResponse(
+            user_id=user.get('user_id'),
+            role=user.get('role', 'user'),
+            status=user.get('status', 'active'),
+            identities=identities_out,
+            profile=user.get('profile') or {},
+            created_at=user.get('created_at'),
+            updated_at=user.get('updated_at')
+        );
         return TransportResponse.success(
-            data=dict[(str, JsonValue)](data), meta=Meta(extra={'http_status': 200})
+            data=me.model_dump(mode='json'), meta=Meta(extra={'http_status': 200})
         );
     }
     self.server.add_endpoint(
@@ -252,10 +244,70 @@ impl JacAPIServerAuth.register_me_endpoint -> None {
             path='/user/me',
             callback=me_handler,
             parameters=[],
-            response_model=None,
+            response_model=MeResponse,
             tags=['User APIs'],
             summary='Get current user',
             description='Returns the authenticated user\'s identities, role, and profile. Requires Bearer token.'
+        )
+    );
+}
+
+# ============================================================================
+# Update current user (/user/me) — partial update of profile fields
+# ============================================================================
+impl JacAPIServerAuth.register_update_me_endpoint -> None {
+    async def update_me_handler(
+        request: Request, body_data: UpdateProfileRequest
+    ) -> TransportResponse {
+        (user_id, error) = authenticate_or_fail(
+            request.headers.get('Authorization'),
+            self.user_manager,
+            message='Invalid or expired token'
+        );
+        if error {
+            return error;
+        }
+        user = self.user_manager.get_user(user_id);
+        if not user {
+            return TransportResponse.fail(
+                code='NOT_FOUND',
+                message='User not found',
+                meta=Meta(extra={'http_status': 404})
+            );
+        }
+        # Merge new profile keys into existing profile so server-managed
+        # namespaces (e.g. profile.sso) are preserved across updates.
+        current_profile = user.get('profile') or {};
+        incoming = body_data.profile or {};
+        merged = dict(current_profile);
+        for (key, value) in incoming.items() {
+            merged[key] = value;
+        }
+        success = self.user_manager._identity_storage.update_user_fields(
+            user_id, {'profile': merged}
+        );
+        if not success {
+            return TransportResponse.fail(
+                code='UPDATE_FAILED',
+                message='Profile update failed',
+                meta=Meta(extra={'http_status': 400})
+            );
+        }
+        return TransportResponse.success(
+            data={'message': 'Profile updated', 'profile': merged},
+            meta=Meta(extra={'http_status': 200})
+        );
+    }
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.PATCH,
+            path='/user/me',
+            callback=update_me_handler,
+            request_model=UpdateProfileRequest,
+            response_model=None,
+            tags=['User APIs'],
+            summary='Update current user profile',
+            description='Merges the supplied profile fields into the authenticated user\'s profile. Reserved keys (e.g. sso) are rejected by the validator. Requires Bearer token.'
         )
     );
 }
@@ -378,13 +430,13 @@ impl JacAPIServerAuth.get_api_key_manager -> ApiKeyManager {
 impl JacAPIServerAuth.create_api_key(
     name: str, expiry_days: int | None = None, Authorization: str | None = None
 ) -> TransportResponse {
-    user_id = extract_bearer_token(Authorization, self.user_manager);
-    if not user_id {
-        return TransportResponse.fail(
-            code='UNAUTHORIZED',
-            message='Valid authentication required to create API keys',
-            meta=Meta(extra={'http_status': 401})
-        );
+    (user_id, error) = authenticate_or_fail(
+        Authorization,
+        self.user_manager,
+        message='Valid authentication required to create API keys'
+    );
+    if error {
+        return error;
     }
     return self.get_api_key_manager().create_api_key(
         username=user_id, name=name, expiry_days=expiry_days
@@ -394,13 +446,13 @@ impl JacAPIServerAuth.create_api_key(
 impl JacAPIServerAuth.list_api_keys(
     Authorization: str | None = None
 ) -> TransportResponse {
-    user_id = extract_bearer_token(Authorization, self.user_manager);
-    if not user_id {
-        return TransportResponse.fail(
-            code='UNAUTHORIZED',
-            message='Valid authentication required to list API keys',
-            meta=Meta(extra={'http_status': 401})
-        );
+    (user_id, error) = authenticate_or_fail(
+        Authorization,
+        self.user_manager,
+        message='Valid authentication required to list API keys'
+    );
+    if error {
+        return error;
     }
     return self.get_api_key_manager().list_api_keys(user_id);
 }
@@ -408,13 +460,13 @@ impl JacAPIServerAuth.list_api_keys(
 impl JacAPIServerAuth.revoke_api_key(
     api_key_id: str, Authorization: str | None = None
 ) -> TransportResponse {
-    user_id = extract_bearer_token(Authorization, self.user_manager);
-    if not user_id {
-        return TransportResponse.fail(
-            code='UNAUTHORIZED',
-            message='Valid authentication required to revoke API keys',
-            meta=Meta(extra={'http_status': 401})
-        );
+    (user_id, error) = authenticate_or_fail(
+        Authorization,
+        self.user_manager,
+        message='Valid authentication required to revoke API keys'
+    );
+    if error {
+        return error;
     }
     return self.get_api_key_manager().revoke_api_key(user_id, api_key_id);
 }
