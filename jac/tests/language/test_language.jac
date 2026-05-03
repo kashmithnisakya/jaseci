@@ -241,6 +241,21 @@ test "enum inside arch" {
     assert "2 Accessing privileged Data" in output;
 }
 
+test "enum typed base shorthand" {
+    output = run_jac(os.path.join(FIXTURES, "enum_typed_base.jac"));
+    # `enum X: int` makes members int instances (no .value needed).
+    assert "int_member: True True 0" in output;
+    # `enum X: str` makes members str instances.
+    assert "str_member: True True" in output;
+    # Custom mixin `enum X: T` makes members T instances.
+    assert "mixin_member: True" in output;
+    # Plain `enum X { ... }` keeps the old behavior — members are NOT int.
+    assert "plain_keeps_old: False False" in output;
+    # Comprehension iteration over typed enum yields proper members.
+    assert "color_names: ['RED', 'GREEN', 'BLUE']" in output;
+    assert "tag_values: ['open', 'close']" in output;
+}
+
 test "refs target" {
     output = run_jac(os.path.join(FIXTURES, "refs_target.jac"));
     assert "[c(val=0), c(val=1), c(val=2)]" in output;
