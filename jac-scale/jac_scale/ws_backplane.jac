@@ -222,9 +222,30 @@ obj RedisBackplane(BaseBackplane) {
 }
 
 def build_backplane(cfg: dict) -> BaseBackplane {
-    # Auto-detect: if a Redis URL is configured (via [plugins.scale.database])
-    # use RedisBackplane for multi-worker fan-out; otherwise run in-process.
+    # Selection precedence:
+    #   1. Explicit `[plugins.scale.websocket].backplane = 'memory' | 'redis'`
+    #   2. Auto-detect from a Redis URL (WS section first, then DB fallback)
+    backplane = cfg.get('backplane');
     url = cfg.get('redis_url');
+    if backplane == 'memory' {
+        return MemoryBackplane();
+    }
+    if backplane == 'redis' {
+        if not url {
+            raise ValueError(
+                "[plugins.scale.websocket].backplane = 'redis' but no redis_url "
+                "is configured (set it in [plugins.scale.websocket] or "
+                "[plugins.scale.database])."
+            );
+        }
+        return RedisBackplane(url=url);
+    }
+    if backplane is not None {
+        raise ValueError(
+            f"Unknown [plugins.scale.websocket].backplane value: {backplane!r}. "
+            "Expected 'memory' or 'redis'."
+        );
+    }
     if url {
         return RedisBackplane(url=url);
     }
