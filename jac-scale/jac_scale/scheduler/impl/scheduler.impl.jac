@@ -136,7 +136,9 @@ impl MongoJobStore.find_active_one(job_id: str) -> dict | None {
     );
 }
 
-impl MongoJobStore.update(job_id: str, updates: dict, where: dict | None = None) -> bool {
+impl MongoJobStore.update(
+    job_id: str, updates: dict, where: dict | None = None
+) -> bool {
     filter: dict[str, Any] = {'job_id': job_id};
     if where {
         filter.update(where);
@@ -217,7 +219,9 @@ impl MemoryJobStore.find_active_one(job_id: str) -> dict | None {
     return None;
 }
 
-impl MemoryJobStore.update(job_id: str, updates: dict, where: dict | None = None) -> bool {
+impl MemoryJobStore.update(
+    job_id: str, updates: dict, where: dict | None = None
+) -> bool {
     job = self._jobs.get(job_id);
     if job is None {
         return False;
@@ -633,11 +637,7 @@ impl JacScaleScheduler.update_job(
     }
     if self._apscheduler is not None {
         self._schedule_apscheduler_job(
-            job_id=job_id,
-            name=name,
-            spec=spec,
-            user_id=user_id,
-            is_walker=is_walker
+            job_id=job_id, name=name, spec=spec, user_id=user_id, is_walker=is_walker
         );
     }
 
