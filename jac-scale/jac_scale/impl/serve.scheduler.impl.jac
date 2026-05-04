@@ -379,13 +379,12 @@ impl JacAPIServerScheduler.update_job_callback -> Callable[..., TransportRespons
         }
 
         try {
+            is_admin = self.user_manager.get_user_role(user_id) == 'admin';
+            acting_as = None if is_admin else user_id;
             scheduler = JacScaleScheduler.instance();
-            existing = scheduler.get_job(job_id);
-            access_err = _ensure_authorized(existing, user_id, self.user_manager);
-            if access_err {
-                return access_err;
-            }
-            updated = scheduler.update_job(job_id=job_id, spec=spec);
+            updated = scheduler.update_job(
+                job_id=job_id, spec=spec, acting_as=acting_as
+            );
             if updated is None {
                 return TransportResponse.fail(
                     code='NOT_FOUND',
@@ -412,13 +411,10 @@ impl JacAPIServerScheduler.delete_job_callback -> Callable[..., TransportRespons
         }
 
         try {
+            is_admin = self.user_manager.get_user_role(user_id) == 'admin';
+            acting_as = None if is_admin else user_id;
             scheduler = JacScaleScheduler.instance();
-            existing = scheduler.get_job(job_id);
-            auth_err = _ensure_authorized(existing, user_id, self.user_manager);
-            if auth_err {
-                return auth_err;
-            }
-            deleted = scheduler.delete_job(job_id);
+            deleted = scheduler.delete_job(job_id, acting_as=acting_as);
             if not deleted {
                 return TransportResponse.fail(
                     code='NOT_FOUND',

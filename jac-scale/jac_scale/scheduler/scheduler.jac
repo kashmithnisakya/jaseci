@@ -1,6 +1,5 @@
 import logging;
 import datetime;
-import threading;
 import from typing { Any }
 import from uuid { uuid4 }
 import from jac_scale._optdeps.apscheduler {
@@ -32,8 +31,8 @@ obj JobStore {
     ) -> tuple[list[dict], int];
 
     def find_active_one(job_id: str) -> dict | None;
-    def update(job_id: str, updates: dict) -> bool;
-    def delete(job_id: str) -> bool;
+    def update(job_id: str, updates: dict, where: dict | None = None) -> bool;
+    def delete(job_id: str, where: dict | None = None) -> bool;
     # Single atomic run-history update: increments run_count and sets last_*.
     def record_run(job_id: str, status: str, error: str | None = None) -> None;
 }
@@ -52,8 +51,8 @@ obj MongoJobStore(JobStore) {
     ) -> tuple[list[dict], int];
 
     def find_active_one(job_id: str) -> dict | None;
-    def update(job_id: str, updates: dict) -> bool;
-    def delete(job_id: str) -> bool;
+    def update(job_id: str, updates: dict, where: dict | None = None) -> bool;
+    def delete(job_id: str, where: dict | None = None) -> bool;
     def record_run(job_id: str, status: str, error: str | None = None) -> None;
 }
 
@@ -70,8 +69,8 @@ obj MemoryJobStore(JobStore) {
     ) -> tuple[list[dict], int];
 
     def find_active_one(job_id: str) -> dict | None;
-    def update(job_id: str, updates: dict) -> bool;
-    def delete(job_id: str) -> bool;
+    def update(job_id: str, updates: dict, where: dict | None = None) -> bool;
+    def delete(job_id: str, where: dict | None = None) -> bool;
     def record_run(job_id: str, status: str, error: str | None = None) -> None;
 }
 
@@ -104,7 +103,6 @@ obj JacScaleScheduler {
         _system_user_id: str = '__system__',
         _store: JobStore = MemoryJobStore(),
         _server: Any | None = None,
-        _lock: threading.RLock = threading.RLock(),
         # Positive cache: user_id -> expiry epoch seconds. Negative results are
         # not cached (user was just deleted → transition immediately).
         _user_exists_cache: dict[str, float] = {},
@@ -128,8 +126,13 @@ obj JacScaleScheduler {
     ) -> tuple[list[dict], int];
 
     def get_job(job_id: str) -> (dict | None);
-    def update_job(job_id: str, spec: TriggerSpec) -> (dict | None);
-    def delete_job(job_id: str) -> bool;
+    # `acting_as` is the user_id whose ownership the write must match.
+    # None means no ownership predicate (admin/system path).
+    def update_job(
+        job_id: str, spec: TriggerSpec, acting_as: str | None = None
+    ) -> (dict | None);
+
+    def delete_job(job_id: str, acting_as: str | None = None) -> bool;
     # Internal execution helpers
     def _execute_task(
         name: str, user_id: str, is_walker: bool, job_id: str | None = None

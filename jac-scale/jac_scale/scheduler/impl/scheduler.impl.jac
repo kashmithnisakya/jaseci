@@ -136,15 +136,21 @@ impl MongoJobStore.find_active_one(job_id: str) -> dict | None {
     );
 }
 
-impl MongoJobStore.update(job_id: str, updates: dict) -> bool {
-    result = self._db.update_one(
-        self._collection, {'job_id': job_id}, {'$set': updates}
-    );
+impl MongoJobStore.update(job_id: str, updates: dict, where: dict | None = None) -> bool {
+    filter: dict[str, Any] = {'job_id': job_id};
+    if where {
+        filter.update(where);
+    }
+    result = self._db.update_one(self._collection, filter, {'$set': updates});
     return result.modified_count > 0;
 }
 
-impl MongoJobStore.delete(job_id: str) -> bool {
-    result = self._db.delete_one(self._collection, {'job_id': job_id});
+impl MongoJobStore.delete(job_id: str, where: dict | None = None) -> bool {
+    filter: dict[str, Any] = {'job_id': job_id};
+    if where {
+        filter.update(where);
+    }
+    result = self._db.delete_one(self._collection, filter);
     return result.deleted_count > 0;
 }
 
@@ -211,20 +217,36 @@ impl MemoryJobStore.find_active_one(job_id: str) -> dict | None {
     return None;
 }
 
-impl MemoryJobStore.update(job_id: str, updates: dict) -> bool {
-    if job_id in self._jobs {
-        self._jobs[job_id].update(updates);
-        return True;
+impl MemoryJobStore.update(job_id: str, updates: dict, where: dict | None = None) -> bool {
+    job = self._jobs.get(job_id);
+    if job is None {
+        return False;
     }
-    return False;
+    if where {
+        for (k, v) in where.items() {
+            if job.get(k) != v {
+                return False;
+            }
+        }
+    }
+    job.update(updates);
+    return True;
 }
 
-impl MemoryJobStore.delete(job_id: str) -> bool {
-    if job_id in self._jobs {
-        del self._jobs[job_id];
-        return True;
+impl MemoryJobStore.delete(job_id: str, where: dict | None = None) -> bool {
+    job = self._jobs.get(job_id);
+    if job is None {
+        return False;
     }
-    return False;
+    if where {
+        for (k, v) in where.items() {
+            if job.get(k) != v {
+                return False;
+            }
+        }
+    }
+    del self._jobs[job_id];
+    return True;
 }
 
 impl MemoryJobStore.record_run(
@@ -243,9 +265,6 @@ impl MemoryJobStore.record_run(
 """Silence APScheduler's verbose logs on instantiation."""
 impl JacScaleScheduler.postinit -> None {
     logging.getLogger('apscheduler').setLevel(logging.ERROR);
-    # Serializes mutations of self._apscheduler and the store across FastAPI
-    # request threads and APScheduler worker threads.
-    self._lock = threading.RLock();
     # Each instance gets its own cache dict (avoid mutable default sharing).
     self._user_exists_cache = {};
 }
@@ -507,26 +526,24 @@ impl JacScaleScheduler.create_job(
     };
     job_data.update(spec.to_dict());
 
-    with self._lock {
-        # Persist first so the DB is authoritative. If this raises (e.g. Mongo
-        # is down), nothing is scheduled and the caller gets a storage error.
-        persisted_id = self._store.insert(job_data);
-        job_data['job_id'] = persisted_id;
-        # Schedule with APScheduler. Dynamic jobs execute as the creating user
-        # (created_by), not the system user. On failure, roll back the DB
-        # insert so we don't leave a zombie record.
-        try {
-            self._schedule_apscheduler_job(
-                job_id=persisted_id,
-                name=name,
-                spec=spec,
-                user_id=created_by,
-                is_walker=is_walker
-            );
-        } except Exception {
-            self._store.delete(persisted_id);
-            raise;
-        }
+    # No per-process lock: insert is atomic via the unique job_id index, and
+    # APScheduler.add_job handles its own thread safety.
+    persisted_id = self._store.insert(job_data);
+    job_data['job_id'] = persisted_id;
+    # Schedule with APScheduler. Dynamic jobs execute as the creating user
+    # (created_by), not the system user. On failure, roll back the DB
+    # insert so we don't leave a zombie record.
+    try {
+        self._schedule_apscheduler_job(
+            job_id=persisted_id,
+            name=name,
+            spec=spec,
+            user_id=created_by,
+            is_walker=is_walker
+        );
+    } except Exception {
+        self._store.delete(persisted_id);
+        raise;
     }
 
     logger.debug(f"Created dynamic job: {name} (id={persisted_id})");
@@ -550,10 +567,21 @@ impl JacScaleScheduler.get_job(job_id: str) -> (dict | None) {
     return self._store.find_active_one(job_id);
 }
 
-"""Update schedule for an existing dynamic job."""
-impl JacScaleScheduler.update_job(job_id: str, spec: TriggerSpec) -> (dict | None) {
+"""Update schedule for an existing dynamic job.
+
+If `acting_as` is set, the write is conditional on the job belonging to that
+user — the predicate is evaluated atomically by the store, so an unauthorized
+or racing write returns 0 modified rows and surfaces as None to the caller.
+APScheduler.add_job is internally thread-safe, so no per-process lock is taken.
+"""
+impl JacScaleScheduler.update_job(
+    job_id: str, spec: TriggerSpec, acting_as: str | None = None
+) -> (dict | None) {
     existing = self.get_job(job_id);
     if existing is None {
+        return None;
+    }
+    if acting_as is not None and existing.get('created_by') != acting_as {
         return None;
     }
 
@@ -563,19 +591,20 @@ impl JacScaleScheduler.update_job(job_id: str, spec: TriggerSpec) -> (dict | Non
     updates: dict[str, Any] = {'updated_at': _utc_now_iso()};
     updates.update(spec.to_dict());
 
-    with self._lock {
-        # DB is authoritative - update it first. If this raises, APScheduler
-        # is untouched and the job continues on its old schedule.
-        self._store.update(job_id, updates);
-        if self._apscheduler is not None {
-            self._schedule_apscheduler_job(
-                job_id=job_id,
-                name=name,
-                spec=spec,
-                user_id=user_id,
-                is_walker=is_walker
-            );
-        }
+    where = {'created_by': acting_as} if acting_as is not None else None;
+    # DB is authoritative. If the predicate no longer holds (deleted, transferred,
+    # auth bypass attempt) the write is a no-op and we return None.
+    if not self._store.update(job_id, updates, where=where) {
+        return None;
+    }
+    if self._apscheduler is not None {
+        self._schedule_apscheduler_job(
+            job_id=job_id,
+            name=name,
+            spec=spec,
+            user_id=user_id,
+            is_walker=is_walker
+        );
     }
 
     updated = dict(existing);
@@ -584,22 +613,23 @@ impl JacScaleScheduler.update_job(job_id: str, spec: TriggerSpec) -> (dict | Non
     return updated;
 }
 
-"""Delete a dynamic scheduled job."""
-impl JacScaleScheduler.delete_job(job_id: str) -> bool {
-    with self._lock {
-        # DB first: if deletion fails, APScheduler still fires the job — safe.
-        # If we removed APScheduler first and the DB delete failed, the job
-        # would resurrect on next restart via register_dynamic_tasks_from_db.
-        result = self._store.delete(job_id);
-        if result and self._apscheduler is not None {
-            try {
-                self._apscheduler.remove_job(job_id);
-            } except Exception as e {
-                logger.debug(f"Could not remove APScheduler job {job_id}: {e}");
-            }
+"""Delete a dynamic scheduled job.
+
+If `acting_as` is set, the delete only applies when the job belongs to that
+user (single atomic mongo op). APScheduler.remove_job is internally thread-safe.
+"""
+impl JacScaleScheduler.delete_job(job_id: str, acting_as: str | None = None) -> bool {
+    where = {'created_by': acting_as} if acting_as is not None else None;
+    # DB first: if deletion fails, APScheduler still fires the job — safe.
+    # If we removed APScheduler first and the DB delete failed, the job
+    # would resurrect on next restart via register_dynamic_tasks_from_db.
+    result = self._store.delete(job_id, where=where);
+    if result and self._apscheduler is not None {
+        try {
+            self._apscheduler.remove_job(job_id);
+        } except Exception as e {
+            logger.debug(f"Could not remove APScheduler job {job_id}: {e}");
         }
-    }
-    if result {
         logger.debug(f"Deleted dynamic job id={job_id}");
     }
     return result;
@@ -701,19 +731,20 @@ impl JacScaleScheduler._schedule_apscheduler_job(
                 logger.warning(
                     f"Job '{name}' (id={job_id}) creator '{user_id}' no longer exists — marking orphaned"
                 );
-                # Take the RLock so the orphan transition races cleanly with
-                # concurrent create_job/update_job/delete_job calls.
-                with self._lock {
-                    self._store.update(
-                        job_id, {'status': 'orphaned', 'orphaned_at': _utc_now_iso()}
+                # Conditional update: only flip status if it's still active so
+                # concurrent orphan-detection in another replica is idempotent.
+                # APScheduler.remove_job is internally thread-safe.
+                self._store.update(
+                    job_id,
+                    {'status': 'orphaned', 'orphaned_at': _utc_now_iso()},
+                    where={'status': 'active'}
+                );
+                try {
+                    self._apscheduler.remove_job(job_id);
+                } except Exception as e {
+                    logger.debug(
+                        f"Could not remove orphaned APScheduler job {job_id}: {e}"
                     );
-                    try {
-                        self._apscheduler.remove_job(job_id);
-                    } except Exception as e {
-                        logger.debug(
-                            f"Could not remove orphaned APScheduler job {job_id}: {e}"
-                        );
-                    }
                 }
                 return;
             }
