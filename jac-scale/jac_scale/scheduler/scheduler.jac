@@ -101,7 +101,7 @@ obj TriggerSpec {
 obj JacScaleScheduler {
     has _apscheduler: Any | None = None,
         _system_user_id: str = '__system__',
-        _store: JobStore = MemoryJobStore(),
+        _store: JobStore | None = None,
         _server: Any | None = None,
         # Positive cache: user_id -> expiry epoch seconds. Negative results are
         # not cached (user was just deleted → transition immediately).
@@ -146,4 +146,5 @@ obj JacScaleScheduler {
     # Checks user_manager.user_exists with a short TTL cache to avoid
     # a DB round-trip on every scheduled-job tick.
     def _user_is_live(user_id: str) -> bool;
+    def _require_store -> JobStore;
 }

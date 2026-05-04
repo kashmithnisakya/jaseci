@@ -265,7 +265,6 @@ impl MemoryJobStore.record_run(
 """Silence APScheduler's verbose logs on instantiation."""
 impl JacScaleScheduler.postinit -> None {
     logging.getLogger('apscheduler').setLevel(logging.ERROR);
-    # Each instance gets its own cache dict (avoid mutable default sharing).
     self._user_exists_cache = {};
 }
 
@@ -291,6 +290,20 @@ impl JacScaleScheduler._user_is_live(user_id: str) -> bool {
     # Negative: evict any stale positive entry.
     self._user_exists_cache.pop(user_id, None);
     return False;
+}
+
+"""Return the configured store. Raises if setup() was never called.
+
+Use this everywhere instead of `self._store.X(...)` so the type narrows to
+JobStore (non-Optional) and accidental pre-setup use fails loudly.
+"""
+impl JacScaleScheduler._require_store -> JobStore {
+    if self._store is None {
+        raise RuntimeError(
+            "JacScaleScheduler not initialized — call setup() before using the store"
+        );
+    }
+    return self._store;
 }
 
 """Return or create the module-level singleton JacScaleScheduler."""
@@ -447,7 +460,7 @@ impl JacScaleScheduler.register_dynamic_tasks_from_db -> None {
     if self._apscheduler is None {
         return;
     }
-    (jobs, _total) = self._store.find_active();
+    (jobs, _total) = self._require_store().find_active();
     restored = 0;
     orphaned = 0;
     failed = 0;
@@ -461,7 +474,7 @@ impl JacScaleScheduler.register_dynamic_tasks_from_db -> None {
         }
         if user_id != self._system_user_id and not self._user_is_live(user_id) {
             try {
-                self._store.update(
+                self._require_store().update(
                     job_id, {'status': 'orphaned', 'orphaned_at': _utc_now_iso()}
                 );
             } except Exception as e {
@@ -528,7 +541,8 @@ impl JacScaleScheduler.create_job(
 
     # No per-process lock: insert is atomic via the unique job_id index, and
     # APScheduler.add_job handles its own thread safety.
-    persisted_id = self._store.insert(job_data);
+    store = self._require_store();
+    persisted_id = store.insert(job_data);
     job_data['job_id'] = persisted_id;
     # Schedule with APScheduler. Dynamic jobs execute as the creating user
     # (created_by), not the system user. On failure, roll back the DB
@@ -542,7 +556,7 @@ impl JacScaleScheduler.create_job(
             is_walker=is_walker
         );
     } except Exception {
-        self._store.delete(persisted_id);
+        store.delete(persisted_id);
         raise;
     }
 
@@ -557,14 +571,14 @@ impl JacScaleScheduler.list_jobs(
     trigger: str | None = None,
     created_by: str | None = None
 ) -> tuple[list[dict], int] {
-    return self._store.find_active(
+    return self._require_store().find_active(
         limit=limit, offset=offset, trigger=trigger, created_by=created_by
     );
 }
 
 """Get a single dynamic job by ID."""
 impl JacScaleScheduler.get_job(job_id: str) -> (dict | None) {
-    return self._store.find_active_one(job_id);
+    return self._require_store().find_active_one(job_id);
 }
 
 """Update schedule for an existing dynamic job.
@@ -594,7 +608,7 @@ impl JacScaleScheduler.update_job(
     where = {'created_by': acting_as} if acting_as is not None else None;
     # DB is authoritative. If the predicate no longer holds (deleted, transferred,
     # auth bypass attempt) the write is a no-op and we return None.
-    if not self._store.update(job_id, updates, where=where) {
+    if not self._require_store().update(job_id, updates, where=where) {
         return None;
     }
     if self._apscheduler is not None {
@@ -623,7 +637,7 @@ impl JacScaleScheduler.delete_job(job_id: str, acting_as: str | None = None) -> 
     # DB first: if deletion fails, APScheduler still fires the job — safe.
     # If we removed APScheduler first and the DB delete failed, the job
     # would resurrect on next restart via register_dynamic_tasks_from_db.
-    result = self._store.delete(job_id, where=where);
+    result = self._require_store().delete(job_id, where=where);
     if result and self._apscheduler is not None {
         try {
             self._apscheduler.remove_job(job_id);
@@ -709,7 +723,7 @@ impl JacScaleScheduler._record_run(
     job_id: str, status: str, error: str | None = None
 ) -> None {
     try {
-        self._store.record_run(job_id, status, error);
+        self._require_store().record_run(job_id, status, error);
     } except Exception as e {
         logger.debug(f"Could not record run for job {job_id}: {e}");
     }
@@ -734,7 +748,7 @@ impl JacScaleScheduler._schedule_apscheduler_job(
                 # Conditional update: only flip status if it's still active so
                 # concurrent orphan-detection in another replica is idempotent.
                 # APScheduler.remove_job is internally thread-safe.
-                self._store.update(
+                self._require_store().update(
                     job_id,
                     {'status': 'orphaned', 'orphaned_at': _utc_now_iso()},
                     where={'status': 'active'}
