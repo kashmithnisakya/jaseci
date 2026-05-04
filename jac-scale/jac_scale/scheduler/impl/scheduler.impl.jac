@@ -547,8 +547,19 @@ impl JacScaleScheduler.create_job(
     persisted_id = store.insert(job_data);
     job_data['job_id'] = persisted_id;
     # Schedule with APScheduler. Dynamic jobs execute as the creating user
-    # (created_by), not the system user. On failure, roll back the DB
-    # insert so we don't leave a zombie record.
+    # (created_by), not the system user.
+    #
+    # The outer except catches the rare cases where add_job fails *after*
+    # validation passed: APS shutdown race, internal APS errors, etc. (Cron
+    # and date inputs are already parsed by TriggerSpec.validate, so format
+    # errors don't reach here.) Rolling back the DB row prevents a retried
+    # request from creating a duplicate record alongside the zombie one.
+    #
+    # The inner try/except guards the rollback itself: if mongo blips during
+    # the delete, we log the leaked job_id (orphan-detection on next restart
+    # will clean it up) and let the original scheduling error propagate to
+    # the caller. Without this, the rollback exception would replace the
+    # original one, hiding the real root cause from the user and from logs.
     try {
         self._schedule_apscheduler_job(
             job_id=persisted_id,
@@ -558,7 +569,14 @@ impl JacScaleScheduler.create_job(
             is_walker=is_walker
         );
     } except Exception {
-        store.delete(persisted_id);
+        try {
+            store.delete(persisted_id);
+        } except Exception as rollback_err {
+            logger.error(
+                f"Failed to roll back zombie job record {persisted_id} after "
+                f"schedule failure: {type(rollback_err).__name__}: {rollback_err}"
+            );
+        }
         raise;
     }
 
