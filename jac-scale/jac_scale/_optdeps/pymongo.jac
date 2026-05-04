@@ -23,8 +23,8 @@ with entry {
         Cursor = None;
         Collection = None;
         ConnectionFailure = Exception;
-        class _PyMongoErrorUnavailable(Exception) {}
-        PyMongoError = _PyMongoErrorUnavailable;
+        class _PyMongoUnavailableError(Exception) {}
+        PyMongoError = _PyMongoUnavailableError;
         HAS_PYMONGO = False;
     }
 

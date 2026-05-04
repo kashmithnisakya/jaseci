@@ -30,10 +30,10 @@ except ImportError:
     Collection = None
     ConnectionFailure = Exception
 
-    class _PyMongoErrorUnavailable(Exception):
+    class _PyMongoUnavailableError(Exception):
         """Sentinel so isinstance(e, PyMongoError) is always False when pymongo is missing."""
 
-    PyMongoError = _PyMongoErrorUnavailable
+    PyMongoError = _PyMongoUnavailableError
 
     HAS_PYMONGO = False
 
