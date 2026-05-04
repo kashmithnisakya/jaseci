@@ -36,6 +36,7 @@ class CreateJobRequest(BaseModel) {
             'Required when trigger="date".'
         ),
         model_config: ConfigDict = ConfigDict(
+            extra='forbid',
             json_schema_extra={
                 "examples": [
                     {
@@ -77,6 +78,7 @@ class UpdateJobRequest(BaseModel) {
             None, description='ISO-8601 datetime (UTC). Required when trigger="date".'
         ),
         model_config: ConfigDict = ConfigDict(
+            extra='forbid',
             json_schema_extra={
                 "examples": [
                     {"trigger": "interval", "interval": 120},
