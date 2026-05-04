@@ -5,7 +5,7 @@ with entry {
         import from pymongo { MongoClient, UpdateOne }
         import from pymongo.collection { Collection }
         import from pymongo.cursor { Cursor }
-        import from pymongo.errors { ConnectionFailure }
+        import from pymongo.errors { ConnectionFailure, PyMongoError }
         import from pymongo.results {
             InsertOneResult as PyMongoInsertOneResult,
             InsertManyResult as PyMongoInsertManyResult,
@@ -23,6 +23,8 @@ with entry {
         Cursor = None;
         Collection = None;
         ConnectionFailure = Exception;
+        class _PyMongoErrorUnavailable(Exception) {}
+        PyMongoError = _PyMongoErrorUnavailable;
         HAS_PYMONGO = False;
     }
 

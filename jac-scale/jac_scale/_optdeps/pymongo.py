@@ -4,7 +4,7 @@ try:
     from pymongo import MongoClient, UpdateOne
     from pymongo.collection import Collection
     from pymongo.cursor import Cursor
-    from pymongo.errors import ConnectionFailure
+    from pymongo.errors import ConnectionFailure, PyMongoError
     from pymongo.results import (
         DeleteResult as PyMongoDeleteResult,
     )
@@ -29,6 +29,11 @@ except ImportError:
     Cursor = None
     Collection = None
     ConnectionFailure = Exception
+
+    class _PyMongoErrorUnavailable(Exception):
+        """Sentinel so isinstance(e, PyMongoError) is always False when pymongo is missing."""
+
+    PyMongoError = _PyMongoErrorUnavailable
 
     HAS_PYMONGO = False
 

@@ -1,28 +1,17 @@
 import from jac_scale.utils { authenticate_or_fail }
+import from jac_scale._optdeps.pymongo { PyMongoError }
 
 """Classify an exception as a storage failure (Mongo down, network error, etc).
 
 Returns a 503 response for storage failures, else None (caller should treat as 500).
 """
 def _storage_failure_response(e: Exception) -> TransportResponse | None {
-    err_name = type(e).__name__;
-    storage_markers = (
-        'Mongo',
-        'ServerSelection',
-        'NetworkTimeout',
-        'ConnectionFailure',
-        'AutoReconnect',
-        'OperationFailure',
-        'WriteError'
-    );
-    for marker in storage_markers {
-        if marker in err_name {
-            return TransportResponse.fail(
-                code='STORAGE_UNAVAILABLE',
-                message='Job store temporarily unavailable',
-                meta=Meta(extra={'http_status': 503})
-            );
-        }
+    if isinstance(e, PyMongoError) {
+        return TransportResponse.fail(
+            code='STORAGE_UNAVAILABLE',
+            message='Job store temporarily unavailable',
+            meta=Meta(extra={'http_status': 503})
+        );
     }
     return None;
 }
