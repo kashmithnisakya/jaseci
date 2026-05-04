@@ -24,6 +24,7 @@ Single call site for the catch-block in every /jobs endpoint.
 def _err_response(e: Exception) -> TransportResponse {
     storage = _storage_failure_response(e);
     if storage {
+        logger.error(f"Storage failure on /jobs: {type(e).__name__}: {e}");
         return storage;
     }
     logger.error(f"Scheduler endpoint error: {type(e).__name__}: {e}");
