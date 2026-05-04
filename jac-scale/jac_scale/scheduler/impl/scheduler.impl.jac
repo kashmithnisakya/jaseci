@@ -344,6 +344,8 @@ impl JacScaleScheduler.setup(system_user_id: str, server: Any | None = None) -> 
     } else {
         self._store = MemoryJobStore();
     }
+    self._user_exists_ttl = float(scheduler_cfg.get('user_exists_ttl', 30.0));
+
     # APScheduler uses an in-memory job store — persistence goes through self._store,
     # avoiding serialisation issues with closures.
     if HAS_APSCHEDULER {

@@ -111,7 +111,8 @@ impl JacScaleConfig.get_default_config(self: JacScaleConfig) -> dict[str, Any] {
             'thread_pool_size': 10,
             'misfire_grace_time': 60,
             'shutdown_timeout': 10,
-            'system_user_password': '__no_login__'
+            'system_user_password': '__no_login__',
+            'user_exists_ttl': 30.0
         },
         'telemetry': {'max_traces': 1000},
         'microservices': {
@@ -331,7 +332,8 @@ impl JacScaleConfig.get_scheduler_config(self: JacScaleConfig) -> dict[str, Any]
         'shutdown_timeout': int(scheduler_config.get('shutdown_timeout', 10)),
         'system_user_password': scheduler_config.get(
             'system_user_password', '__no_login__'
-        )
+        ),
+        'user_exists_ttl': float(scheduler_config.get('user_exists_ttl', 30.0))
     };
 }
 
