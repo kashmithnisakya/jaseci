@@ -2818,6 +2818,24 @@ impl EsastGenPass.exit_ability(nd: uni.Ability) -> None {
                 )
             ];
         } else {
+            # Single-`props` JSX component: the param is passed through verbatim
+            # rather than destructured, which means JSX call sites cannot be
+            # validated per-prop by the type-checker (the param_map keys on
+            # parameter name, so `<MyComp title="..." />` would E1101 against
+            # any single-`props` signature). Surface W5015 so the author picks
+            # direct named params explicitly — or suppresses with
+            # `# jac:ignore[W5015]` for legitimate forwarding/HOC cases.
+            if (
+                is_jsx_in_return
+                and len(nd.signature.params) == 1
+                and nd.signature.params[0].name.sym_name == 'props'
+            ) {
+                self.emit(
+                    W5015,
+                    node_override=nd.signature.params[0],
+                    component=nd.name_ref.sym_name
+                );
+            }
             for param in nd.signature.params {
                 if param.gen.es_ast {
                     params.append(cast(es.Pattern, param.gen.es_ast));
@@ -4457,7 +4475,10 @@ impl EsastGenPass._resolve_spawn_target(
 
 """Check if an expression refers to the root node."""
 impl EsastGenPass._is_root_reference(expr: uni.Expr) -> bool {
-    return bool(isinstance(expr, uni.Name) and (expr.sym_name == 'root'));
+    if (isinstance(expr, uni.Name) and (expr.sym_name == 'root')) {
+        return True;
+    }
+    return bool((isinstance(expr, uni.SpecialVarRef) and (expr.sym_name == 'root')));
 }
 
 """Return walker call info if the expression instantiates a walker."""
