@@ -844,6 +844,15 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
         heartbeat_task = asyncio.create_task(
             _ws_heartbeat_loop(ctx, HEARTBEAT_SECONDS, HEARTBEAT_MISSED_ALLOWED)
         );
+        # broadcast=True fans the result out to every subscriber on
+        # `walker:{name}`; otherwise it goes back to the caller only.
+        async def send_result(payload: dict) {
+            if is_broadcast {
+                await ws_manager.broadcast('walker', walker_name, payload);
+            } else {
+                await websocket.send_json(payload);
+            }
+        }
         try {
             while True {
                 if first_data is not None {
@@ -887,6 +896,7 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
                     continue;
                 }
                 if isinstance(result, dict) and 'error' in result {
+                    # Errors stay private to the caller, even on broadcast targets.
                     await websocket.send_json(
                         _ws_error_frame(
                             'EXECUTION_ERROR',
@@ -894,12 +904,7 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
                         )
                     );
                 } else {
-                    response = {'ok': True, 'data': result};
-                    if is_broadcast {
-                        await ws_manager.broadcast('walker', walker_name, response);
-                    } else {
-                        await websocket.send_json(response);
-                    }
+                    await send_result({'ok': True, 'data': result});
                 }
             }
         } except WebSocketDisconnect {
@@ -979,6 +984,15 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
         heartbeat_task = asyncio.create_task(
             _ws_heartbeat_loop(ctx, HEARTBEAT_SECONDS, HEARTBEAT_MISSED_ALLOWED)
         );
+        # broadcast=True fans the result out to every subscriber on
+        # `function:{name}`; otherwise it goes back to the caller only.
+        async def send_result(payload: dict) {
+            if is_broadcast {
+                await ws_manager.broadcast('function', func_name, payload);
+            } else {
+                await websocket.send_json(payload);
+            }
+        }
         try {
             while True {
                 if first_data is not None {
@@ -1009,15 +1023,6 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
                 if control == 'continue' {
                     continue;
                 }
-                # broadcast=True fans the result out to every subscriber on
-                # `function:{name}`; otherwise it goes back to the caller only.
-                async def send_result(payload: dict) {
-                    if is_broadcast {
-                        await ws_manager.broadcast('function', func_name, payload);
-                    } else {
-                        await websocket.send_json(payload);
-                    }
-                }
                 kwargs = dict(data);
                 if is_streaming {
                     kwargs['transport'] = WebSocketTransport(
@@ -1043,7 +1048,9 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
                     continue;
                 }
                 if isinstance(result, dict) and 'error' in result {
-                    await send_result(
+                    # Errors stay private to the caller, even on broadcast targets,
+                    # because they typically reflect the caller's bad input.
+                    await websocket.send_json(
                         _ws_error_frame(
                             'EXECUTION_ERROR',
                             result.get('error', 'Function execution failed')
