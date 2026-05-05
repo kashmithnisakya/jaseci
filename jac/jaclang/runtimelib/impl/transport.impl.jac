@@ -195,26 +195,27 @@ impl WebSocketTransport.connect -> None {
     }
 }
 
-"""Send an envelope or raw JSON message over the WebSocket.
-
-Accepts a TransportResponse (serialized via the shared envelope helper), a
-dict (sent as-is), or any JSON-serializable value.
-"""
+"""Send an envelope or raw JSON message over the WebSocket."""
 impl WebSocketTransport.send(data: Any) -> None {
-    if self.websocket is None {
-        err_cb = self.on_error;
-        if err_cb {
-            err_cb(RuntimeError('WebSocketTransport has no websocket'));
-        }
-        return;
-    }
     payload = (
         serialize_transport_response(data)
             if isinstance(data, TransportResponse)
             else data
     );
+    custom_sender = self.sender;
+    if custom_sender is None and self.websocket is None {
+        err_cb = self.on_error;
+        if err_cb {
+            err_cb(RuntimeError('WebSocketTransport has no websocket or sender'));
+        }
+        return;
+    }
     try {
-        await self.websocket.send_json(payload);
+        if custom_sender is not None {
+            await custom_sender(payload);
+        } else {
+            await self.websocket.send_json(payload);
+        }
         msg_cb = self.on_message;
         if msg_cb {
             msg_cb(payload);

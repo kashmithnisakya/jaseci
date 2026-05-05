@@ -94,7 +94,8 @@ obj StreamTransport(BaseTransport) {
 
 """WebSocket Transport for bidirectional communication."""
 obj WebSocketTransport(BaseTransport) {
-    has websocket: Any = None;
+    has websocket: Any = None,
+        sender: (Callable[(..., Any)] | None) = None;
 
     async def connect -> None;
     async def send(data: Any) -> None;

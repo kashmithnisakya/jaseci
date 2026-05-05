@@ -760,11 +760,7 @@ async def _ws_cleanup(
 Sends a structured EXECUTION_TIMEOUT or INTERNAL_ERROR frame to the client on
 failure. Returns (True, result) on success and (False, None) on either error."""
 async def _ws_execute_target(
-    websocket: WebSocket,
-    label: str,
-    name: str,
-    awaitable: Any,
-    target_timeout: float
+    websocket: WebSocket, label: str, name: str, awaitable: Any, target_timeout: float
 ) -> (bool, Any) {
     try {
         result = await asyncio.wait_for(awaitable, timeout=target_timeout);
@@ -934,13 +930,6 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
     restspec = func_obj.restspec if func_obj?.restspec and func_obj.restspec else None;
     is_broadcast = restspec.broadcast if restspec and restspec?.broadcast else False;
     is_streaming = restspec.streaming if restspec and restspec?.streaming else False;
-    if is_broadcast and not is_streaming {
-        raise ValueError(
-            f"Function WS '{func_name}' has broadcast=True without "
-            f"streaming=True. broadcast is only meaningful for streaming "
-            f"endpoints; either set streaming=True or drop broadcast=True."
-        );
-    }
     user_manager = self.user_manager;
     execution_manager = self.execution_manager;
     async def websocket_handler(websocket: WebSocket) {
@@ -1020,11 +1009,20 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
                 if control == 'continue' {
                     continue;
                 }
-                # Streaming functions get a WebSocketTransport so they can emit
-                # CHUNK frames during execution; RPC-style functions get kwargs only.
+                # broadcast=True fans the result out to every subscriber on
+                # `function:{name}`; otherwise it goes back to the caller only.
+                async def send_result(payload: dict) {
+                    if is_broadcast {
+                        await ws_manager.broadcast('function', func_name, payload);
+                    } else {
+                        await websocket.send_json(payload);
+                    }
+                }
                 kwargs = dict(data);
                 if is_streaming {
-                    kwargs['transport'] = WebSocketTransport(websocket=websocket);
+                    kwargs['transport'] = WebSocketTransport(
+                        websocket=websocket, sender=send_result
+                    );
                 }
                 (ok, result) = await _ws_execute_target(
                     websocket,
@@ -1041,20 +1039,18 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
                 if is_streaming {
                     # Streaming functions emit their payload via the transport;
                     # send a DONE marker so clients know to stop reading.
-                    await websocket.send_json(
-                        {'type': MessageType.DONE.value, 'ok': True}
-                    );
+                    await send_result({'type': MessageType.DONE.value, 'ok': True});
                     continue;
                 }
                 if isinstance(result, dict) and 'error' in result {
-                    await websocket.send_json(
+                    await send_result(
                         _ws_error_frame(
                             'EXECUTION_ERROR',
                             result.get('error', 'Function execution failed')
                         )
                     );
                 } else {
-                    await websocket.send_json({'ok': True, 'data': result});
+                    await send_result({'ok': True, 'data': result});
                 }
             }
         } except WebSocketDisconnect {
