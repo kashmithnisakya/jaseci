@@ -921,9 +921,10 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
     is_broadcast = restspec.broadcast if restspec and restspec?.broadcast else False;
     is_streaming = restspec.streaming if restspec and restspec?.streaming else False;
     if is_broadcast and not is_streaming {
-        logger.warning(
+        raise ValueError(
             f"Function WS '{func_name}' has broadcast=True without "
-            f"streaming=True; broadcast ignored for RPC-style function endpoints."
+            f"streaming=True. broadcast is only meaningful for streaming "
+            f"endpoints; either set streaming=True or drop broadcast=True."
         );
     }
     user_manager = self.user_manager;
