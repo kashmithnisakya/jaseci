@@ -595,10 +595,10 @@ async def _ws_heartbeat_loop(
             }
             now = time.monotonic();
             max_idle = heartbeat_seconds * float(missed_allowed + 1);
-            if now - ctx.last_pong > max_idle {
+            if now - ctx.last_seen > max_idle {
                 logger.info(
                     f"WS idle close conn_id={ctx.conn_id}; "
-                    f"no message for {now - ctx.last_pong:.1f}s"
+                    f"no message for {now - ctx.last_seen:.1f}s"
                 );
                 try {
                     await ctx.websocket.close(
@@ -837,7 +837,7 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
                         continue;
                     }
                 }
-                ctx.last_pong = time.monotonic();
+                ctx.last_seen = time.monotonic();
                 control = await _ws_handle_control(
                     websocket,
                     ctx,
@@ -989,7 +989,7 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
                         continue;
                     }
                 }
-                ctx.last_pong = time.monotonic();
+                ctx.last_seen = time.monotonic();
                 control = await _ws_handle_control(
                     websocket,
                     ctx,

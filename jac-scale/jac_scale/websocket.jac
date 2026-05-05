@@ -32,7 +32,7 @@ obj ConnectionContext {
         exp: (float | None) = None,
         rate_tokens: float = 0.0,
         rate_last_refill: float = 0.0,
-        last_pong: float = 0.0,
+        last_seen: float = 0.0,
         closed: bool = False;
 
     def postinit {
@@ -41,7 +41,7 @@ obj ConnectionContext {
         }
         now = time.monotonic();
         self.rate_last_refill = now;
-        self.last_pong = now;
+        self.last_seen = now;
     }
 }
 
