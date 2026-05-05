@@ -756,6 +756,34 @@ async def _ws_cleanup(
     await ws_manager.unregister(ctx);
 }
 
+"""Run an awaitable target (walker spawn or function execute) with a timeout.
+Sends a structured EXECUTION_TIMEOUT or INTERNAL_ERROR frame to the client on
+failure. Returns (True, result) on success and (False, None) on either error."""
+async def _ws_execute_target(
+    websocket: WebSocket,
+    label: str,
+    name: str,
+    awaitable: Any,
+    target_timeout: float
+) -> (bool, Any) {
+    try {
+        result = await asyncio.wait_for(awaitable, timeout=target_timeout);
+        return (True, result);
+    } except asyncio.TimeoutError {
+        await websocket.send_json(
+            _ws_error_frame(
+                'EXECUTION_TIMEOUT',
+                f"{label} '{name}' timed out after {int(target_timeout)}s"
+            )
+        );
+        return (False, None);
+    } except Exception as e {
+        logger.error(f"WS {label.lower()} execution error '{name}': {e}");
+        await websocket.send_json(_ws_error_frame('INTERNAL_ERROR', str(e)));
+        return (False, None);
+    }
+}
+
 """Create a WebSocket handler for a specific walker."""
 impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callable {
     import from jac_scale.ws_metrics { auth_failure }
@@ -850,27 +878,16 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
                 if control == 'continue' {
                     continue;
                 }
-                try {
-                    result = await asyncio.wait_for(
-                        execution_manager.spawn_walker(
-                            walker_cls, data, (ctx.user_id or Con.GUEST.value)
-                        ),
-                        timeout=target_timeout
-                    );
-                } except asyncio.TimeoutError {
-                    await websocket.send_json(
-                        _ws_error_frame(
-                            'EXECUTION_TIMEOUT',
-                            f"Walker '{walker_name}' timed out after "
-                            f"{int(target_timeout)}s"
-                        )
-                    );
-                    continue;
-                } except Exception as e {
-                    logger.error(f"WS walker execution error '{walker_name}': {e}");
-                    await websocket.send_json(
-                        _ws_error_frame('INTERNAL_ERROR', str(e))
-                    );
+                (ok, result) = await _ws_execute_target(
+                    websocket,
+                    'Walker',
+                    walker_name,
+                    execution_manager.spawn_walker(
+                        walker_cls, data, (ctx.user_id or Con.GUEST.value)
+                    ),
+                    target_timeout
+                );
+                if not ok {
                     continue;
                 }
                 if isinstance(result, dict) and 'error' in result {
@@ -1009,27 +1026,16 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
                 if is_streaming {
                     kwargs['transport'] = WebSocketTransport(websocket=websocket);
                 }
-                try {
-                    result = await asyncio.wait_for(
-                        execution_manager.execute_function(
-                            func_obj, kwargs, (ctx.user_id or Con.GUEST.value)
-                        ),
-                        timeout=target_timeout
-                    );
-                } except asyncio.TimeoutError {
-                    await websocket.send_json(
-                        _ws_error_frame(
-                            'EXECUTION_TIMEOUT',
-                            f"Function '{func_name}' timed out after "
-                            f"{int(target_timeout)}s"
-                        )
-                    );
-                    continue;
-                } except Exception as e {
-                    logger.error(f"WS function execution error '{func_name}': {e}");
-                    await websocket.send_json(
-                        _ws_error_frame('INTERNAL_ERROR', str(e))
-                    );
+                (ok, result) = await _ws_execute_target(
+                    websocket,
+                    'Function',
+                    func_name,
+                    execution_manager.execute_function(
+                        func_obj, kwargs, (ctx.user_id or Con.GUEST.value)
+                    ),
+                    target_timeout
+                );
+                if not ok {
                     continue;
                 }
                 if is_streaming {
