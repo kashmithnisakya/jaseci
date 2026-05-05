@@ -181,7 +181,7 @@ impl JacScaleUserManager.validate_jwt_token_detail(
         decoded = jwt.decode(
             token, JWT_SECRET, algorithms=[JWT_ALGORITHM], options={"verify_exp": True}
         );
-    } except jwt.ExpiredSignatureError as e {
+    } except jwt.ExpiredSignatureError {
         return {
             'status': 'expired',
             'user_id': None,

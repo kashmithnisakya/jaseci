@@ -2,7 +2,7 @@
 import asyncio;
 import json;
 import logging;
-import from typing { Any, Callable }
+import from typing { Any }
 
 glob logger = logging.getLogger(__name__);
 

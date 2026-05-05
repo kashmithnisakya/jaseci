@@ -106,9 +106,6 @@ obj WebSocketConnectionManager {
     """Remove a connection from the manager (idempotent)."""
     async def unregister(ctx: ConnectionContext) -> None;
 
-    """Snapshot of connections for a target. Safe to iterate without the lock."""
-    def snapshot(target_kind: str, target_name: str) -> list[ConnectionContext];
-
     """Parallel broadcast with per-send timeout; one slow client doesn't block others."""
     async def broadcast(target_kind: str, target_name: str, message: dict) -> None;
 
@@ -204,14 +201,6 @@ impl WebSocketConnectionManager.unregister(ctx: ConnectionContext) -> None {
         f"WS disconnected target={ctx.target_kind}:{ctx.target_name} "
         f"user_id={ctx.user_id} conn_id={ctx.conn_id}"
     );
-}
-
-impl WebSocketConnectionManager.snapshot(
-    target_kind: str, target_name: str
-) -> list[ConnectionContext] {
-    target_key = f"{target_kind}:{target_name}";
-    per_target = self._by_target.get(target_key, {});
-    return list(per_target.values());
 }
 
 impl WebSocketConnectionManager.ensure_backplane_started -> None {
