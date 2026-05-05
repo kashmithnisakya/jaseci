@@ -49,9 +49,11 @@ obj ConnectionContext {
 obj WebSocketConnectionManager {
     has _by_target: dict[str, dict[str, ConnectionContext]] = {},
         _by_user: dict[str, int] = {},
+        _anon_by_target: dict[str, int] = {},
         _lock: (Lock | None) = None,
         max_per_target: int = 5000,
         max_per_user: int = 10,
+        max_anonymous_per_target: int = 100,
         send_timeout: float = 5.0,
         backplane: (BaseBackplane | None) = None,
         _subscribed: set[str] = set(),
@@ -121,9 +123,21 @@ impl WebSocketConnectionManager.register(ctx: ConnectionContext) -> (str | None)
             rejection = 'per_target_limit';
         } elif ctx.user_id and self._by_user.get(ctx.user_id, 0) >= self.max_per_user {
             rejection = 'per_user_limit';
+        } elif (
+            not ctx.user_id
+            and self._anon_by_target.get(target_key, 0) >= self.max_anonymous_per_target
+        ) {
+            # Anonymous connections share a much tighter cap so a single
+            # misbehaving client cannot exhaust the per-target budget on
+            # public (`pub`) endpoints.
+            rejection = 'anonymous_target_limit';
         } else {
             if ctx.user_id {
                 self._by_user[ctx.user_id] = self._by_user.get(ctx.user_id, 0) + 1;
+            } else {
+                self._anon_by_target[target_key] = (
+                    self._anon_by_target.get(target_key, 0) + 1
+                );
             }
             newly_active = len(per_target) == 0;
             per_target[ctx.conn_id] = ctx;
@@ -162,6 +176,11 @@ impl WebSocketConnectionManager.unregister(ctx: ConnectionContext) -> None {
             self._by_user[ctx.user_id] -= 1;
             if self._by_user[ctx.user_id] <= 0 {
                 del self._by_user[ctx.user_id];
+            }
+        } elif not ctx.user_id and self._anon_by_target.get(target_key, 0) > 0 {
+            self._anon_by_target[target_key] -= 1;
+            if self._anon_by_target[target_key] <= 0 {
+                del self._anon_by_target[target_key];
             }
         }
         ctx.closed = True;

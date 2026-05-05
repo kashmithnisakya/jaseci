@@ -493,6 +493,7 @@ impl JacAPIServerEndpoints.get_ws_manager -> WebSocketConnectionManager {
         self._ws_manager = WebSocketConnectionManager(
             max_per_target=ws_cfg['max_connections_per_target'],
             max_per_user=ws_cfg['max_connections_per_user'],
+            max_anonymous_per_target=ws_cfg['max_anonymous_per_target'],
             send_timeout=SEND_TIMEOUT_SECONDS,
             backplane=backplane
         );
