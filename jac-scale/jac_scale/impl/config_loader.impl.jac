@@ -293,6 +293,35 @@ impl JacScaleConfig.get_monitoring_config(self: JacScaleConfig) -> dict[str, Any
     };
 }
 
+"""Get pub/sub configuration from jac.toml.
+
+Mirrors get_monitoring_config: returns a flat dict with defaults
+applied so callers never need to handle missing keys. 'enabled' is
+the master switch; when false, the factory hands back a NoOpBroker.
+"""
+impl JacScaleConfig.get_pubsub_config(self: JacScaleConfig) -> dict[str, Any] {
+    config = self.load();
+    pubsub_config = config.get('pubsub', {});
+    retry_config = pubsub_config.get('retry', {});
+    return {
+        'enabled': pubsub_config.get('enabled', False),
+        'backend': pubsub_config.get('backend', 'redis_streams'),
+        'url': pubsub_config.get('url', 'redis://localhost:6379/0'),
+        'consumer_group': pubsub_config.get('consumer_group', 'jac-scale'),
+        'emit_system_events': pubsub_config.get('emit_system_events', True),
+        'serializer': pubsub_config.get('serializer', 'json'),
+        'retry': {
+            'max_attempts': retry_config.get('max_attempts', 3),
+            'backoff_seconds': retry_config.get(
+                'backoff_seconds', [1.0, 5.0, 30.0]
+            ),
+            'dead_letter_suffix': retry_config.get(
+                'dead_letter_suffix', '.dlq'
+            )
+        }
+    };
+}
+
 """Get or create the global JacScaleConfig instance."""
 impl get_scale_config(project_dir: Path | None = None) -> JacScaleConfig {
     global _scale_config_instance;

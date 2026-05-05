@@ -150,6 +150,23 @@ impl JacAPIServerCore.postinit -> None {
         );
         logger.info(f"Prometheus metrics enabled at {metrics_endpoint} (admin-only)");
     }
+    self._setup_pubsub();
+}
+
+"""Initialize the pub/sub message broker.
+
+Reads [plugins.scale.pubsub] from jac.toml. When disabled (the
+default) hands back a NoOpBroker so call sites can publish
+unconditionally without an `if enabled` check.
+"""
+impl JacAPIServerCore._setup_pubsub -> None {
+    import from jac_scale.factories.utility_factory { UtilityFactory }
+    pubsub_config = get_scale_config().get_pubsub_config();
+    backend_name = pubsub_config.get('backend', 'redis_streams');
+    self._broker = UtilityFactory.create_broker(backend_name, pubsub_config);
+    if self._broker.is_enabled() {
+        logger.info(f"Pub/sub broker enabled (backend={backend_name})");
+    }
 }
 
 impl JacAPIServerCore.start(

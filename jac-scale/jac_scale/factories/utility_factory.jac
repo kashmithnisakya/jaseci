@@ -2,6 +2,7 @@
 import from typing { Any }
 import from jac_scale.abstractions.logger { Logger }
 import from jac_scale.abstractions.metrics { MetricsCollector, NoOpMetricsCollector }
+import from jac_scale.abstractions.pubsub { MessageBroker, NoOpBroker }
 import from jac_scale._optdeps.optional_deps { is_optional_available }
 
 """Factory for creating utility instances."""
@@ -63,6 +64,33 @@ class UtilityFactory {
             return NoOpMetricsCollector();
         } else {
             raise ValueError(f"Unsupported metrics type: {metrics_type}");
+        }
+    }
+
+    """Create a message broker based on type.
+
+    Args:
+        broker_type: Backend identifier ('redis_streams', 'noop', ...)
+        config: Pub/sub configuration from jac.toml
+
+    Returns:
+        MessageBroker instance (NoOpBroker if disabled or backend unavailable)
+    """
+    static def create_broker(
+        broker_type: str = 'redis_streams', config: (dict[str, Any] | None) = None
+    ) -> MessageBroker {
+        if not config or not config.get('enabled', False) {
+            return NoOpBroker();
+        }
+
+        if broker_type == 'noop' {
+            return NoOpBroker();
+        } elif broker_type == 'redis_streams' {
+            # Redis Streams backend lands in Phase 2. Until then, fall
+            # back to no-op so enabling pub/sub never crashes startup.
+            return NoOpBroker();
+        } else {
+            raise ValueError(f"Unsupported broker type: {broker_type}");
         }
     }
 }
