@@ -347,16 +347,15 @@ impl JacScaleConfig.get_websocket_config(self: JacScaleConfig) -> dict[str, Any]
     # Explicit override wins; otherwise fall back to DB redis_url for
     # auto-detect. Setting backplane='memory' forces in-process even when a
     # DB redis_url is present.
-    ws_redis_url = ws_config.get('redis_url') or self.get_database_config().get('redis_url');
+    ws_redis_url = ws_config.get('redis_url')
+    or self.get_database_config().get('redis_url');
     return {
         'max_message_bytes': int(ws_config.get('max_message_bytes', 65536)),
         'max_connections_per_target': int(
             ws_config.get('max_connections_per_target', 5000)
         ),
         'max_connections_per_user': int(ws_config.get('max_connections_per_user', 10)),
-        'max_anonymous_per_target': int(
-            ws_config.get('max_anonymous_per_target', 100)
-        ),
+        'max_anonymous_per_target': int(ws_config.get('max_anonymous_per_target', 100)),
         'target_timeout_seconds': int(ws_config.get('target_timeout_seconds', 30)),
         'messages_per_second': int(ws_config.get('messages_per_second', 20)),
         'backplane': backplane,
