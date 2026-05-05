@@ -510,14 +510,36 @@ def _ws_error_frame(code: str, message: str, reason: (str | None) = None) -> dic
     return {'ok': False, 'error': err};
 }
 
-"""Authenticate a WS connection."""
+"""Validate a query-string token before the socket is accepted.
+
+Returns the auth detail dict if a `?token=...` query parameter is present, or
+None if absent. Callers should reject pre-accept on a non-'ok' status so the
+client sees a clean handshake rejection instead of a post-handshake close.
+"""
+def _ws_pre_accept_auth(websocket: WebSocket, user_manager: Any) -> (dict | None) {
+    query_token = websocket.query_params.get('token');
+    if not query_token {
+        return None;
+    }
+    return user_manager.validate_jwt_token_detail(query_token);
+}
+
+"""Reject a connection before accept(). Triggers an HTTP-layer handshake
+rejection with the close code, which most clients and proxies surface cleanly
+as an auth failure rather than a generic disconnect."""
+async def _ws_reject_pre_accept(websocket: WebSocket, auth_detail: dict) {
+    status = auth_detail.get('status', 'invalid');
+    try {
+        await websocket.close(code=WS_CLOSE_UNAUTHORIZED, reason=status);
+    } except Exception as e {
+        logger.debug(f"WS pre-accept close failed: {e}");
+    }
+}
+
+"""Read auth from the first frame of an already-accepted WS connection."""
 async def _ws_authenticate(
     websocket: WebSocket, user_manager: Any, handshake_timeout: float
 ) -> (dict, dict | None) {
-    query_token = websocket.query_params.get('token');
-    if query_token {
-        return (user_manager.validate_jwt_token_detail(query_token), None);
-    }
     try {
         raw = await asyncio.wait_for(
             websocket.receive_text(), timeout=handshake_timeout
@@ -755,21 +777,35 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
     user_manager = self.user_manager;
     execution_manager = self.execution_manager;
     async def websocket_handler(websocket: WebSocket) {
-        await websocket.accept();
         user_id: (str | None) = None;
         token_exp: (float | None) = None;
         first_data: (dict | None) = None;
+        pre_auth: (dict | None) = None;
         if requires_auth {
-            (auth_detail, first_data) = await _ws_authenticate(
-                websocket, user_manager, AUTH_HANDSHAKE_TIMEOUT_SECONDS
-            );
-            if auth_detail['status'] != 'ok' {
-                auth_failure(auth_detail['status']);
-                await _ws_reject_auth(websocket, auth_detail);
+            pre_auth = _ws_pre_accept_auth(websocket, user_manager);
+            if pre_auth is not None and pre_auth['status'] != 'ok' {
+                auth_failure(pre_auth['status']);
+                await _ws_reject_pre_accept(websocket, pre_auth);
                 return;
             }
-            user_id = auth_detail.get('user_id');
-            token_exp = auth_detail.get('exp');
+        }
+        await websocket.accept();
+        if requires_auth {
+            if pre_auth is not None {
+                user_id = pre_auth.get('user_id');
+                token_exp = pre_auth.get('exp');
+            } else {
+                (auth_detail, first_data) = await _ws_authenticate(
+                    websocket, user_manager, AUTH_HANDSHAKE_TIMEOUT_SECONDS
+                );
+                if auth_detail['status'] != 'ok' {
+                    auth_failure(auth_detail['status']);
+                    await _ws_reject_auth(websocket, auth_detail);
+                    return;
+                }
+                user_id = auth_detail.get('user_id');
+                token_exp = auth_detail.get('exp');
+            }
         }
         ctx = ConnectionContext(
             websocket=websocket,
@@ -893,21 +929,35 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
     user_manager = self.user_manager;
     execution_manager = self.execution_manager;
     async def websocket_handler(websocket: WebSocket) {
-        await websocket.accept();
         user_id: (str | None) = None;
         token_exp: (float | None) = None;
         first_data: (dict | None) = None;
+        pre_auth: (dict | None) = None;
         if requires_auth {
-            (auth_detail, first_data) = await _ws_authenticate(
-                websocket, user_manager, AUTH_HANDSHAKE_TIMEOUT_SECONDS
-            );
-            if auth_detail['status'] != 'ok' {
-                auth_failure(auth_detail['status']);
-                await _ws_reject_auth(websocket, auth_detail);
+            pre_auth = _ws_pre_accept_auth(websocket, user_manager);
+            if pre_auth is not None and pre_auth['status'] != 'ok' {
+                auth_failure(pre_auth['status']);
+                await _ws_reject_pre_accept(websocket, pre_auth);
                 return;
             }
-            user_id = auth_detail.get('user_id');
-            token_exp = auth_detail.get('exp');
+        }
+        await websocket.accept();
+        if requires_auth {
+            if pre_auth is not None {
+                user_id = pre_auth.get('user_id');
+                token_exp = pre_auth.get('exp');
+            } else {
+                (auth_detail, first_data) = await _ws_authenticate(
+                    websocket, user_manager, AUTH_HANDSHAKE_TIMEOUT_SECONDS
+                );
+                if auth_detail['status'] != 'ok' {
+                    auth_failure(auth_detail['status']);
+                    await _ws_reject_auth(websocket, auth_detail);
+                    return;
+                }
+                user_id = auth_detail.get('user_id');
+                token_exp = auth_detail.get('exp');
+            }
         }
         ctx = ConnectionContext(
             websocket=websocket,
