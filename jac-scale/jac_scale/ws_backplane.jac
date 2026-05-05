@@ -11,7 +11,7 @@ obj BaseBackplane {
     async def start -> None;
     async def publish(channel: str, message: dict) -> None;
     async def subscribe(channel: str, handler: Any) -> None;
-    async def unsubscribe(channel: str) -> None;
+    async def unsubscribe(channel: str, handler: Any) -> None;
     async def close -> None;
     def is_distributed -> bool;
 }
@@ -48,8 +48,17 @@ obj MemoryBackplane(BaseBackplane) {
         self._subs[channel].append(handler);
     }
 
-    async def unsubscribe(channel: str) {
-        if channel in self._subs {
+    async def unsubscribe(channel: str, handler: Any) {
+        handlers = self._subs.get(channel);
+        if handlers is None {
+            return;
+        }
+        try {
+            handlers.remove(handler);
+        } except ValueError {
+            return;
+        }
+        if not handlers {
             del self._subs[channel];
         }
     }
@@ -172,17 +181,30 @@ obj RedisBackplane(BaseBackplane) {
         }
     }
 
-    async def unsubscribe(channel: str) {
+    async def unsubscribe(channel: str, handler: Any) {
         lock = self._get_lock();
         await lock.acquire();
         try {
-            if channel in self._handlers {
-                del self._handlers[channel];
-                try {
-                    await self._pubsub.unsubscribe(channel);
-                } except Exception as e {
-                    logger.debug(f"WS Redis unsubscribe failed: {e}");
-                }
+            handlers = self._handlers.get(channel);
+            if handlers is None {
+                return;
+            }
+            try {
+                handlers.remove(handler);
+            } except ValueError {
+                return;
+            }
+            if handlers {
+                return;
+            }
+            del self._handlers[channel];
+            if self._pubsub is None {
+                return;
+            }
+            try {
+                await self._pubsub.unsubscribe(channel);
+            } except Exception as e {
+                logger.debug(f"WS Redis unsubscribe failed: {e}");
             }
         } finally {
             lock.release();

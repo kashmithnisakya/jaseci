@@ -244,7 +244,7 @@ impl WebSocketConnectionManager.maybe_unsubscribe(target_key: str) -> None {
     backplane = self._get_backplane();
     channel = f"ws:{target_key}";
     try {
-        await backplane.unsubscribe(channel);
+        await backplane.unsubscribe(channel, self._on_backplane_message);
     } except Exception as e {
         logger.debug(f"WS unsubscribe {channel} failed: {e}");
     }

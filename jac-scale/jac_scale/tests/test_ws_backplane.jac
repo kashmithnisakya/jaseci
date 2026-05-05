@@ -20,7 +20,7 @@ test "memory backplane pub/sub" {
         await bp.subscribe("ws:walker:X", handler);
         await bp.publish("ws:walker:X", {"hello": 1});
         await bp.publish("ws:walker:X", {"hello": 2});
-        await bp.unsubscribe("ws:walker:X");
+        await bp.unsubscribe("ws:walker:X", handler);
         await bp.publish("ws:walker:X", {"hello": 3});
         await bp.close();
     }
