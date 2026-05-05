@@ -155,8 +155,11 @@ obj RedisBackplane(BaseBackplane) {
         await lock.acquire();
         try {
             if channel not in self._handlers {
-                self._handlers[channel] = [];
+                # Subscribe upstream first so a transient Redis failure can't
+                # leave a stale `_handlers[channel] = []` that makes future
+                # callers think we're subscribed when we aren't.
                 await self._pubsub.subscribe(channel);
+                self._handlers[channel] = [];
             }
             self._handlers[channel].append(handler);
             # Start the reader only once we have a subscription, so
