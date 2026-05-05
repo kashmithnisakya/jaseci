@@ -510,12 +510,9 @@ def _ws_error_frame(code: str, message: str, reason: (str | None) = None) -> dic
     return {'ok': False, 'error': err};
 }
 
-"""Validate a query-string token before the socket is accepted.
-
-Returns the auth detail dict if a `?token=...` query parameter is present, or
-None if absent. Callers should reject pre-accept on a non-'ok' status so the
-client sees a clean handshake rejection instead of a post-handshake close.
-"""
+"""Validate `?token=...` before accepting the socket. Returns auth detail if
+the query param is present, else None. Callers should reject pre-accept on a
+non-'ok' status so the client sees a clean handshake rejection."""
 def _ws_pre_accept_auth(websocket: WebSocket, user_manager: Any) -> (dict | None) {
     query_token = websocket.query_params.get('token');
     if not query_token {
@@ -1066,14 +1063,8 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
 }
 
 """Register WebSocket endpoints for walkers AND functions with protocol=WEBSOCKET.
-
-Walker routes:
-    `/ws/walker/{name}` — canonical
-    `/ws/{name}`        — legacy alias kept for one release
-
-Function routes:
-    `/ws/function/{name}`
-"""
+Walkers: `/ws/walker/{name}` (canonical) and `/ws/{name}` (legacy, kept for
+one release). Functions: `/ws/function/{name}`."""
 impl JacAPIServerEndpoints.register_websocket_endpoints -> None {
     for walker_name in self.get_walkers() {
         protocol = self.get_walker_protocol(walker_name);

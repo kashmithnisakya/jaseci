@@ -34,10 +34,8 @@ test "memory backplane pub/sub" {
 
 
 """RedisBackplane: two instances sharing one Redis URL deliver across the bus.
-
-Gated — only runs when REDIS_URL is set in the environment. A real Redis (or a
-Redis-compatible service) is expected on the other end.
-"""
+Gated, only runs when REDIS_URL is set in the environment. A real Redis (or
+Redis-compatible service) is expected on the other end."""
 test "redis backplane cross-instance fan-out" {
     redis_url = os.environ.get("REDIS_URL");
     if not redis_url {
