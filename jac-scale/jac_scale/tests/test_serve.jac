@@ -1084,9 +1084,13 @@ test "websocket functionality" {
     import websockets;
     sp = setup_serve_server();
     try {
-        # Test: websocket connect and echo
+        # Test: websocket connect and echo on the canonical /ws/walker/{name}
+        # path. The legacy /ws/{name} alias is still exercised by the other
+        # tests in this file.
         async def test_echo {
-            async with websockets.connect(f"{sv_ws_url}/ws/EchoMessage") as ws {
+            async with websockets.connect(
+                f"{sv_ws_url}/ws/walker/EchoMessage"
+            ) as ws {
                 await ws.send(json.dumps({"message": "hello", "client_id": "test-1"}));
                 response = json.loads(await ws.recv());
                 assert response["ok"] is True , f"Expected ok=True, got {response}";
