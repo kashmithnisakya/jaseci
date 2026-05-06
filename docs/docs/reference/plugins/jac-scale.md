@@ -1770,7 +1770,7 @@ walker place_order {
     has order_id: int;
     has amount: float;
 
-    can fire with `root entry {
+    can fire with Root entry {
         publish("orders.placed", Event(
             event_type="orders.placed",
             data={"order_id": self.order_id, "amount": self.amount},
