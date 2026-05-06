@@ -17,6 +17,7 @@ import logging;
 import json;
 import socket;
 import os;
+import time;
 import uuid;
 
 
@@ -143,9 +144,12 @@ obj RedisStreamsBroker(MessageBroker) {
     def stop(drain: bool = True) {
         self._stop_event.set();
         if drain {
+            # Shared deadline so total wait is <=10s regardless of thread count.
+            deadline = time.time() + 10.0;
             for t in self._threads {
+                remaining = max(0.0, deadline - time.time());
                 try {
-                    t.join(timeout=10.0);
+                    t.join(timeout=remaining);
                 } except Exception as e {
                     _logger.warning(f"Thread join failed: {e}");
                 }
@@ -155,11 +159,11 @@ obj RedisStreamsBroker(MessageBroker) {
     }
 
     def publish(topic: str, event: Event, key: str | None = None) {
+        # Fire-and-forget: log and swallow so emit sites don't have to try/except.
         try {
             self._xadd_payload(topic, event);
         } except Exception as e {
             _logger.error(f"XADD failed for topic {topic}: {e}");
-            raise;
         }
     }
 
@@ -223,6 +227,19 @@ obj RedisStreamsBroker(MessageBroker) {
         }
     }
 
+    def _wait_or_stop(seconds: float) -> bool {
+        # Wait up to `seconds`, polling _stop_event in <=1s chunks so a SIGTERM
+        # during a long backoff doesn't block shutdown for the full delay.
+        deadline = time.time() + seconds;
+        while time.time() < deadline {
+            chunk = min(deadline - time.time(), 1.0);
+            if self._stop_event.wait(timeout=chunk) {
+                return True;
+            }
+        }
+        return False;
+    }
+
     def _handle_with_retry(
         topic: str,
         group: str,
@@ -243,7 +260,7 @@ obj RedisStreamsBroker(MessageBroker) {
                 );
                 if attempt + 1 < retry.max_attempts {
                     delay = backoff[min(attempt, len(backoff) - 1)];
-                    if self._stop_event.wait(timeout=delay) {
+                    if self._wait_or_stop(delay) {
                         return;
                     }
                 }
