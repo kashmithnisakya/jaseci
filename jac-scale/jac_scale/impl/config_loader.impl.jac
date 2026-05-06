@@ -295,9 +295,11 @@ impl JacScaleConfig.get_monitoring_config(self: JacScaleConfig) -> dict[str, Any
 
 """Get pub/sub configuration from jac.toml. Returns flat dict with defaults; `enabled` is the master switch."""
 impl JacScaleConfig.get_pubsub_config(self: JacScaleConfig) -> dict[str, Any] {
+    import from jac_scale.abstractions.pubsub { RetryPolicy }
     config = self.load();
     pubsub_config = config.get('pubsub', {});
     retry_config = pubsub_config.get('retry', {});
+    retry_defaults = RetryPolicy();
     return {
         'enabled': pubsub_config.get('enabled', False),
         'backend': pubsub_config.get('backend', 'redis_streams'),
@@ -306,9 +308,15 @@ impl JacScaleConfig.get_pubsub_config(self: JacScaleConfig) -> dict[str, Any] {
         'emit_system_events': pubsub_config.get('emit_system_events', True),
         'serializer': pubsub_config.get('serializer', 'json'),
         'retry': {
-            'max_attempts': retry_config.get('max_attempts', 3),
-            'backoff_seconds': retry_config.get('backoff_seconds', [1.0, 5.0, 30.0]),
-            'dead_letter_suffix': retry_config.get('dead_letter_suffix', '.dlq')
+            'max_attempts': retry_config.get(
+                'max_attempts', retry_defaults.max_attempts
+            ),
+            'backoff_seconds': retry_config.get(
+                'backoff_seconds', retry_defaults.backoff_seconds
+            ),
+            'dead_letter_suffix': retry_config.get(
+                'dead_letter_suffix', retry_defaults.dead_letter_suffix
+            )
         }
     };
 }

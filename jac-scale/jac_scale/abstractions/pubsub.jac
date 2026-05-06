@@ -24,12 +24,11 @@ obj RetryPolicy {
         dead_letter_suffix: str = ".dlq";
 }
 
-"""Handle returned by MessageBroker.subscribe(). `cancel` tears down the consumer."""
+"""Handle returned by MessageBroker.subscribe()."""
 obj Subscription {
     has topic: str,
         group: str | None = None,
-        handler: Callable[..., Any] | None = None,
-        cancel: Callable[..., Any] | None = None;
+        handler: Callable[..., Any] | None = None;
 }
 
 """Result of a health probe."""

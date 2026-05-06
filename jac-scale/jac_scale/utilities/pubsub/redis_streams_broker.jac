@@ -3,7 +3,7 @@
 Maps publish/subscribe/consume/ack to XADD/XREADGROUP/XACK; routes to <topic><dead_letter_suffix> on retry exhaustion.
 """
 import from typing { Any, Callable }
-import from threading { Thread, Event as _ThreadStop, Lock as _BrokerLock }
+import from threading { Thread, Event as _ThreadStop }
 import from jac_scale.abstractions.pubsub {
     MessageBroker,
     Event,
@@ -12,13 +12,21 @@ import from jac_scale.abstractions.pubsub {
     HealthStatus
 }
 import from jac_scale._optdeps.redis { Redis }
-import from jac_scale._optdeps.optional_deps { require_optional }
 import from jac_scale.db { get_redis_client }
 import logging;
 import json;
 import socket;
 import os;
 import uuid;
+
+
+"""Decode bytes to str if needed; pass through everything else as str(x)."""
+def _to_str(value: Any) -> str {
+    if isinstance(value, bytes) {
+        return value.decode("utf-8");
+    }
+    return str(value);
+}
 
 glob _logger = logging.getLogger(__name__);
 
@@ -36,22 +44,25 @@ obj RedisStreamsBroker(MessageBroker) {
         _default_retry: RetryPolicy = RetryPolicy(),
         _stop_event: _ThreadStop = _ThreadStop(),
         _threads: list[Thread] = [],
-        _ensured_groups: dict[str, bool] = {},
-        _lock: _BrokerLock = _BrokerLock();
+        _ensured_groups: set[str] = set();
 
     def postinit {
         try {
             host = socket.gethostname();
-        } except Exception {
+        } except (socket.gaierror, OSError) {
             host = "unknown";
         }
         self._consumer_name = f"{host}-{os.getpid()}-{str(uuid.uuid4())[:8]}";
         self._default_group = self.config.get("consumer_group", "jac-scale");
+        # Pull retry defaults from the abstraction so they live in one place.
         retry_cfg = self.config.get("retry", {});
+        defaults = RetryPolicy();
         self._default_retry = RetryPolicy(
-            max_attempts=retry_cfg.get("max_attempts", 3),
-            backoff_seconds=retry_cfg.get("backoff_seconds", [1.0, 5.0, 30.0]),
-            dead_letter_suffix=retry_cfg.get("dead_letter_suffix", ".dlq")
+            max_attempts=retry_cfg.get("max_attempts", defaults.max_attempts),
+            backoff_seconds=retry_cfg.get("backoff_seconds", defaults.backoff_seconds),
+            dead_letter_suffix=retry_cfg.get(
+                "dead_letter_suffix", defaults.dead_letter_suffix
+            )
         );
     }
 
@@ -79,11 +90,12 @@ obj RedisStreamsBroker(MessageBroker) {
         );
     }
 
+    def _xadd_payload(stream: str, event: Event) {
+        self._get_client().xadd(stream, {"payload": self._serialize_event(event)});
+    }
+
     def _deserialize_event(raw: Any) -> Event {
-        if isinstance(raw, bytes) {
-            raw = raw.decode("utf-8");
-        }
-        d = json.loads(raw);
+        d = json.loads(_to_str(raw));
         return Event(
             event_type=d.get("type", ""),
             data=d.get("data", {}),
@@ -109,24 +121,14 @@ obj RedisStreamsBroker(MessageBroker) {
                 _logger.warning(f"XGROUP CREATE failed for {topic}/{group}: {e}");
             }
         }
-        self._ensured_groups[key] = True;
+        self._ensured_groups.add(key);
     }
 
     def _decode_message(topic: str, group: str, msg_id: Any, fields: dict) -> Event {
         # redis-py returns bytes by default unless decode_responses=True
-        payload = None;
-        for (k, v) in fields.items() {
-            key_str = k.decode("utf-8") if isinstance(k, bytes) else k;
-            if key_str == "payload" {
-                payload = v;
-                break;
-            }
-        }
+        payload = fields.get(b"payload") or fields.get("payload");
         event = self._deserialize_event(payload);
-        msg_id_str = (
-            msg_id.decode("utf-8") if isinstance(msg_id, bytes) else str(msg_id)
-        );
-        event.headers[DELIVERY_ID_HEADER] = msg_id_str;
+        event.headers[DELIVERY_ID_HEADER] = _to_str(msg_id);
         event.headers[DELIVERY_TOPIC_HEADER] = topic;
         event.headers[DELIVERY_GROUP_HEADER] = group;
         return event;
@@ -154,7 +156,7 @@ obj RedisStreamsBroker(MessageBroker) {
 
     def publish(topic: str, event: Event, key: str | None = None) {
         try {
-            self._get_client().xadd(topic, {"payload": self._serialize_event(event)});
+            self._xadd_payload(topic, event);
         } except Exception as e {
             _logger.error(f"XADD failed for topic {topic}: {e}");
             raise;
@@ -215,7 +217,7 @@ obj RedisStreamsBroker(MessageBroker) {
     def _send_to_dlq(topic: str, event: Event, retry: RetryPolicy) {
         dlq = topic + retry.dead_letter_suffix;
         try {
-            self._get_client().xadd(dlq, {"payload": self._serialize_event(event)});
+            self._xadd_payload(dlq, event);
         } except Exception as e {
             _logger.error(f"DLQ publish failed for {dlq}: {e}");
         }
@@ -274,7 +276,6 @@ obj RedisStreamsBroker(MessageBroker) {
         group: str | None = None,
         retry: RetryPolicy | None = None
     ) -> Subscription {
-        require_optional("redis", "data");
         grp = group or self._default_group;
         retry_policy = retry or self._default_retry;
         self._ensure_group(topic, grp);
@@ -287,9 +288,7 @@ obj RedisStreamsBroker(MessageBroker) {
         thread = Thread(
             target=_loop, name=f"jac-scale-broker-{topic}-{grp}", daemon=True
         );
-        with self._lock {
-            self._threads.append(thread);
-        }
+        self._threads.append(thread);
         thread.start();
 
         return Subscription(topic=topic, group=grp, handler=handler);
