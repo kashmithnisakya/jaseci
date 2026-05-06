@@ -1,14 +1,6 @@
 """Redis Streams implementation of MessageBroker.
 
-Maps the abstraction onto Redis primitives:
-- publish        -> XADD topic * payload <json>
-- subscribe      -> XGROUP CREATE + background thread running XREADGROUP
-- consume / ack  -> XREADGROUP / XACK
-- DLQ on retry exhaustion -> XADD <topic><dead_letter_suffix>
-
-Delivery metadata (Redis stream id, topic, group) is stored on the
-returned Event under reserved header keys so ack(event) can resolve
-the right XACK target without a separate handle type.
+Maps publish/subscribe/consume/ack to XADD/XREADGROUP/XACK; routes to <topic><dead_letter_suffix> on retry exhaustion.
 """
 import from typing { Any, Callable }
 import from threading { Thread, Event as _ThreadStop, Lock as _BrokerLock }
@@ -35,11 +27,7 @@ glob DELIVERY_ID_HEADER = "_jac_scale_delivery_id",
      DELIVERY_TOPIC_HEADER = "_jac_scale_delivery_topic",
      DELIVERY_GROUP_HEADER = "_jac_scale_delivery_group";
 
-"""Redis Streams broker.
-
-Each subscribe() spawns a daemon thread that loops on XREADGROUP.
-stop(drain=True) sets the shared stop event and joins all threads.
-"""
+"""Redis Streams broker. subscribe() spawns a daemon thread; stop(drain=True) joins all threads."""
 obj RedisStreamsBroker(MessageBroker) {
     has config: dict[str, Any] = {},
         _client: Redis | None = None,

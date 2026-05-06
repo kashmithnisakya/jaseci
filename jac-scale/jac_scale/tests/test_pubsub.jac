@@ -1,13 +1,6 @@
 """Contract tests for the pub/sub abstraction.
 
-Covers everything that can be exercised without a real broker:
-- Event envelope auto-fills id and time
-- NoOpBroker satisfies the MessageBroker contract safely
-- UtilityFactory.create_broker selects the right impl from config
-- Publisher facade swallows calls when no broker is wired
-- @subscribe decorator records entries in the registry
-
-Real Redis behavior is covered by test_redis_streams_broker.jac.
+Covers Event, NoOpBroker, factory, publisher facade, and @subscribe registry. Redis-specific behavior is in test_redis_streams_broker.jac.
 """
 
 import from jac_scale.abstractions.pubsub {

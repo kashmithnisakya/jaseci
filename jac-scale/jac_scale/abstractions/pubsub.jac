@@ -1,20 +1,12 @@
 """Pub/Sub abstraction for jac_scale.
 
-Provides a clean interface for publishing and consuming messages.
-All broker implementations (Redis Streams, Kafka, NATS, ...) inherit
-from MessageBroker. NoOpBroker is used when pub/sub is disabled so
-call sites never need null checks.
+Defines MessageBroker, Event, and NoOpBroker; concrete impls live in utilities/pubsub.
 """
 import from typing { Any, Callable }
 import from datetime { datetime, UTC }
 import uuid;
 
-"""CloudEvents-style message envelope.
-
-Used for every publish/consume round-trip. Vendor-neutral so external
-consumers (Kafka clients, Redis CLI, ...) do not need to learn a
-jac-scale-specific schema.
-"""
+"""CloudEvents-style envelope used for every publish/consume."""
 obj Event {
     has event_type: str,
         data: dict[str, Any] = {},
@@ -25,23 +17,14 @@ obj Event {
         headers: dict[str, str] = {};
 }
 
-"""Retry policy applied to a subscription.
-
-backoff_seconds is consulted positionally by attempt index, clamped to
-the last entry. After max_attempts failures the message is published
-to '<topic><dead_letter_suffix>'.
-"""
+"""Retry policy applied to a subscription. After max_attempts the message goes to '<topic><dead_letter_suffix>'."""
 obj RetryPolicy {
     has max_attempts: int = 3,
         backoff_seconds: list[float] = [1.0, 5.0, 30.0],
         dead_letter_suffix: str = ".dlq";
 }
 
-"""Handle returned by MessageBroker.subscribe().
-
-Backends populate `cancel` with a callable that tears down the
-consumer (close iterator, stop thread, leave consumer group, etc.).
-"""
+"""Handle returned by MessageBroker.subscribe(). `cancel` tears down the consumer."""
 obj Subscription {
     has topic: str,
         group: str | None = None,
@@ -58,37 +41,21 @@ obj HealthStatus {
 
 """Abstract base for a pub/sub message broker.
 
-Implementations must guarantee at-least-once delivery, ack on
-handler success, and route to dead-letter on retry exhaustion.
+Implementations guarantee at-least-once delivery, auto-ack on handler success, DLQ on retry exhaustion.
 """
 obj MessageBroker {
-    """Start background consumer threads / connections.
-
-    Idempotent. Must be safe to call after subscribe().
-    """
+    """Start background consumer threads / connections. Idempotent."""
     def start -> None;
 
-    """Stop the broker.
-
-    If drain is True, wait for in-flight handlers to finish (with a
-    backend-defined timeout) before closing connections.
-    """
+    """Stop the broker. With drain=True, wait for in-flight handlers to finish."""
     def stop(drain: bool = True) -> None;
 
-    """Publish an event to a topic.
-
-    `key` is used by partitioned backends (Kafka) to route messages
-    to the same partition. Ignored by Redis Streams.
-    """
+    """Publish an event. `key` partitions on Kafka; ignored on Redis Streams."""
     def publish(topic: str, event: Event, key: str | None = None) -> None;
 
     """Register a handler for a topic (push delivery).
 
-    `group` is the consumer group name. Multiple processes sharing a
-    group will load-balance messages; distinct groups each receive a
-    full copy of the stream. None lets the backend pick a default.
-    Successful handler returns auto-ack; raised exceptions trigger
-    retry per `retry` policy.
+    `group` shares load across processes; distinct groups each see the full stream. Handler return acks; raise triggers retry.
     """
     def subscribe(
         topic: str,
@@ -97,13 +64,7 @@ obj MessageBroker {
         retry: RetryPolicy | None = None
     ) -> Subscription;
 
-    """Pull a batch of events synchronously.
-
-    Returns up to `max_messages` events, blocking up to
-    `timeout_seconds` for at least one. Empty list on timeout.
-    Caller MUST call ack(event) after processing or the broker will
-    redeliver the message after its own visibility timeout.
-    """
+    """Pull up to `max_messages` events, blocking up to `timeout_seconds`. Caller MUST ack(event)."""
     def consume(
         topic: str,
         group: str | None = None,
@@ -111,12 +72,7 @@ obj MessageBroker {
         timeout_seconds: float = 5.0
     ) -> list[Event];
 
-    """Acknowledge an event pulled via consume().
-
-    No-op for events delivered through subscribe() (those are
-    auto-acked on handler success). For consume(), this advances
-    the consumer-group offset so the message is not redelivered.
-    """
+    """Ack a consume()d event. No-op for subscribe()-delivered events (auto-acked)."""
     def ack(event: Event) -> None;
 
     """Probe backend health (connection state, consumer lag, etc.)."""
@@ -126,11 +82,7 @@ obj MessageBroker {
     def is_enabled -> bool;
 }
 
-"""No-op broker used when pub/sub is disabled.
-
-All methods are safe to call but perform no work. Lets the rest of
-the codebase publish unconditionally without an `if enabled` check.
-"""
+"""No-op broker used when pub/sub is disabled. All methods are safe but do nothing."""
 obj NoOpBroker(MessageBroker) {
     def start { }
     def stop(drain: bool = True) { }

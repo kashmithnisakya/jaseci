@@ -293,12 +293,7 @@ impl JacScaleConfig.get_monitoring_config(self: JacScaleConfig) -> dict[str, Any
     };
 }
 
-"""Get pub/sub configuration from jac.toml.
-
-Mirrors get_monitoring_config: returns a flat dict with defaults
-applied so callers never need to handle missing keys. 'enabled' is
-the master switch; when false, the factory hands back a NoOpBroker.
-"""
+"""Get pub/sub configuration from jac.toml. Returns flat dict with defaults; `enabled` is the master switch."""
 impl JacScaleConfig.get_pubsub_config(self: JacScaleConfig) -> dict[str, Any] {
     config = self.load();
     pubsub_config = config.get('pubsub', {});

@@ -67,15 +67,7 @@ class UtilityFactory {
         }
     }
 
-    """Create a message broker based on type.
-
-    Args:
-        broker_type: Backend identifier ('redis_streams', 'noop', ...)
-        config: Pub/sub configuration from jac.toml
-
-    Returns:
-        MessageBroker instance (NoOpBroker if disabled or backend unavailable)
-    """
+    """Create a MessageBroker. Returns NoOpBroker when disabled, config is None, or `redis` is missing."""
     static def create_broker(
         broker_type: str = 'redis_streams', config: (dict[str, Any] | None) = None
     ) -> MessageBroker {

@@ -1,18 +1,6 @@
 """Minimal jac-scale pub/sub example.
 
-Run with a local Redis listening on 6379:
-
-    docker run -d --name jac-pubsub-redis -p 6379:6379 redis:7-alpine
-    jac scale start app.jac
-
-Then trigger the publisher:
-
-    curl -X POST http://localhost:8000/walker/place_order \
-         -H 'Content-Type: application/json' \
-         -d '{"order_id": 42, "amount": 99.5}'
-
-The on_order_placed handler will print the event from a daemon
-consumer thread.
+Run a local Redis on 6379, then `jac scale start app.jac` and POST to /walker/place_order. See the README for the full curl.
 """
 
 import logging;

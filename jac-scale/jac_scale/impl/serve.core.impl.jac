@@ -153,18 +153,9 @@ impl JacAPIServerCore.postinit -> None {
     self._setup_pubsub();
 }
 
-"""Initialize the pub/sub message broker.
+"""Initialize the pub/sub broker.
 
-Reads [plugins.scale.pubsub] from jac.toml. When disabled (the
-default) hands back a NoOpBroker so call sites can publish
-unconditionally without an `if enabled` check.
-
-Lifecycle:
-1. Build the broker via UtilityFactory.
-2. Wire the publisher facade so jac code can call publish().
-3. Start the broker (clears the stop event, opens connections).
-4. Register every @subscribe handler that was collected at import.
-5. Drain on process exit via atexit.
+Build via factory, wire publisher facade, start, register @subscribe handlers, atexit drain. NoOpBroker when disabled.
 """
 impl JacAPIServerCore._setup_pubsub -> None {
     import from jac_scale.factories.utility_factory { UtilityFactory }

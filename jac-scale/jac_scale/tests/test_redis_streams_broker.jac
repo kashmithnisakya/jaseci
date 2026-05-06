@@ -1,14 +1,6 @@
 """Integration tests for RedisStreamsBroker against a real Redis (testcontainers).
 
-Mirrors test_direct_db.jac: spins up a Redis container once at import,
-exposes its URI as a global, and exercises the broker end-to-end.
-
-Coverage:
-- publish then consume roundtrips an event with all envelope fields
-- ack advances the consumer-group offset (no redelivery after ack)
-- subscribe drives a handler from a daemon consumer thread
-- retry-exhaustion sends the event to the dead-letter stream
-- health() returns healthy=True with the right backend label
+Covers roundtrip, ack semantics, push delivery, retry-to-DLQ, and health probe. Mirrors test_direct_db.jac for fixture style.
 """
 
 import contextlib;
