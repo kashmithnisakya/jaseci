@@ -158,14 +158,49 @@ impl JacAPIServerCore.postinit -> None {
 Reads [plugins.scale.pubsub] from jac.toml. When disabled (the
 default) hands back a NoOpBroker so call sites can publish
 unconditionally without an `if enabled` check.
+
+Lifecycle:
+1. Build the broker via UtilityFactory.
+2. Wire the publisher facade so jac code can call publish().
+3. Start the broker (clears the stop event, opens connections).
+4. Register every @subscribe handler that was collected at import.
+5. Drain on process exit via atexit.
 """
 impl JacAPIServerCore._setup_pubsub -> None {
     import from jac_scale.factories.utility_factory { UtilityFactory }
+    import from jac_scale.events.publisher { set_broker }
+    import from jac_scale.events.subscriber { get_subscriptions }
+    import atexit;
+
     pubsub_config = get_scale_config().get_pubsub_config();
     backend_name = pubsub_config.get('backend', 'redis_streams');
     self._broker = UtilityFactory.create_broker(backend_name, pubsub_config);
+
+    set_broker(self._broker);
+    self._broker.start();
+
+    subs = get_subscriptions();
+    for entry in subs {
+        try {
+            self._broker.subscribe(
+                entry.topic,
+                entry.handler,
+                group=entry.group,
+                retry=entry.retry
+            );
+        } except Exception as e {
+            logger.error(
+                f"Failed to subscribe handler to '{entry.topic}': {e}"
+            );
+        }
+    }
+
     if self._broker.is_enabled() {
-        logger.info(f"Pub/sub broker enabled (backend={backend_name})");
+        atexit.register(self._broker.stop);
+        logger.info(
+            f"Pub/sub broker enabled "
+            f"(backend={backend_name}, subscriptions={len(subs)})"
+        );
     }
 }
 
