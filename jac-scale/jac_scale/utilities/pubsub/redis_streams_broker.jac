@@ -78,15 +78,17 @@ obj RedisStreamsBroker(MessageBroker) {
     def _serialize_event(event: Event) -> str {
         # Wire format follows CloudEvents ('type' on the wire) even
         # though jac forces the in-memory field to be 'event_type'.
-        return json.dumps({
-            "type": event.event_type,
-            "data": event.data,
-            "id": event.id,
-            "source": event.source,
-            "time": event.time,
-            "trace_id": event.trace_id,
-            "headers": event.headers
-        });
+        return json.dumps(
+            {
+                "type": event.event_type,
+                "data": event.data,
+                "id": event.id,
+                "source": event.source,
+                "time": event.time,
+                "trace_id": event.trace_id,
+                "headers": event.headers
+            }
+        );
     }
 
     def _deserialize_event(raw: Any) -> Event {
@@ -111,24 +113,18 @@ obj RedisStreamsBroker(MessageBroker) {
             return;
         }
         try {
-            self._get_client().xgroup_create(
-                topic, group, id="$", mkstream=True
-            );
+            self._get_client().xgroup_create(topic, group, id="$", mkstream=True);
         } except Exception as e {
             # BUSYGROUP just means the group already exists; anything
             # else is a real error and worth surfacing.
             if "BUSYGROUP" not in str(e) {
-                _logger.warning(
-                    f"XGROUP CREATE failed for {topic}/{group}: {e}"
-                );
+                _logger.warning(f"XGROUP CREATE failed for {topic}/{group}: {e}");
             }
         }
         self._ensured_groups[key] = True;
     }
 
-    def _decode_message(
-        topic: str, group: str, msg_id: Any, fields: dict
-    ) -> Event {
+    def _decode_message(topic: str, group: str, msg_id: Any, fields: dict) -> Event {
         # redis-py returns bytes by default unless decode_responses=True
         payload = None;
         for (k, v) in fields.items() {
@@ -148,13 +144,13 @@ obj RedisStreamsBroker(MessageBroker) {
         return event;
     }
 
-    def start -> None {
+    def start {
         # Threads are spawned in subscribe(); start() just signals
         # 'we are operational' by clearing the stop event.
         self._stop_event.clear();
     }
 
-    def stop(drain: bool = True) -> None {
+    def stop(drain: bool = True) {
         self._stop_event.set();
         if drain {
             for t in self._threads {
@@ -168,11 +164,9 @@ obj RedisStreamsBroker(MessageBroker) {
         self._threads = [];
     }
 
-    def publish(topic: str, event: Event, key: str | None = None) -> None {
+    def publish(topic: str, event: Event, key: str | None = None) {
         try {
-            self._get_client().xadd(
-                topic, {"payload": self._serialize_event(event)}
-            );
+            self._get_client().xadd(topic, {"payload": self._serialize_event(event)});
         } except Exception as e {
             _logger.error(f"XADD failed for topic {topic}: {e}");
             raise;
@@ -207,9 +201,7 @@ obj RedisStreamsBroker(MessageBroker) {
         for (_stream, messages) in result {
             for (msg_id, fields) in messages {
                 try {
-                    events.append(
-                        self._decode_message(topic, grp, msg_id, fields)
-                    );
+                    events.append(self._decode_message(topic, grp, msg_id, fields));
                 } except Exception as e {
                     _logger.error(f"Decode failed for message {msg_id}: {e}");
                 }
@@ -228,18 +220,14 @@ obj RedisStreamsBroker(MessageBroker) {
         try {
             self._get_client().xack(topic, group, msg_id);
         } except Exception as e {
-            _logger.warning(
-                f"XACK failed for {topic}/{group}/{msg_id}: {e}"
-            );
+            _logger.warning(f"XACK failed for {topic}/{group}/{msg_id}: {e}");
         }
     }
 
-    def _send_to_dlq(topic: str, event: Event, retry: RetryPolicy) -> None {
+    def _send_to_dlq(topic: str, event: Event, retry: RetryPolicy) {
         dlq = topic + retry.dead_letter_suffix;
         try {
-            self._get_client().xadd(
-                dlq, {"payload": self._serialize_event(event)}
-            );
+            self._get_client().xadd(dlq, {"payload": self._serialize_event(event)});
         } except Exception as e {
             _logger.error(f"DLQ publish failed for {dlq}: {e}");
         }
@@ -277,10 +265,7 @@ obj RedisStreamsBroker(MessageBroker) {
     }
 
     def _consumer_loop(
-        topic: str,
-        group: str,
-        handler: Callable[[Event], Any],
-        retry: RetryPolicy
+        topic: str, group: str, handler: Callable[[Event], Any], retry: RetryPolicy
     ) -> None {
         while not self._stop_event.is_set() {
             events = self.consume(
@@ -307,14 +292,12 @@ obj RedisStreamsBroker(MessageBroker) {
         self._ensure_group(topic, grp);
 
         broker = self;
-        def _loop -> None {
+        def _loop {
             broker._consumer_loop(topic, grp, handler, retry_policy);
         }
 
         thread = Thread(
-            target=_loop,
-            name=f"jac-scale-broker-{topic}-{grp}",
-            daemon=True
+            target=_loop, name=f"jac-scale-broker-{topic}-{grp}", daemon=True
         );
         with self._lock {
             self._threads.append(thread);
@@ -337,9 +320,7 @@ obj RedisStreamsBroker(MessageBroker) {
             );
         } except Exception as e {
             return HealthStatus(
-                healthy=False,
-                backend="redis_streams",
-                details={"error": str(e)}
+                healthy=False, backend="redis_streams", details={"error": str(e)}
             );
         }
     }

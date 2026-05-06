@@ -183,15 +183,10 @@ impl JacAPIServerCore._setup_pubsub -> None {
     for entry in subs {
         try {
             self._broker.subscribe(
-                entry.topic,
-                entry.handler,
-                group=entry.group,
-                retry=entry.retry
+                entry.topic, entry.handler, group=entry.group, retry=entry.retry
             );
         } except Exception as e {
-            logger.error(
-                f"Failed to subscribe handler to '{entry.topic}': {e}"
-            );
+            logger.error(f"Failed to subscribe handler to '{entry.topic}': {e}");
         }
     }
 

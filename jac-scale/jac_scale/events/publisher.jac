@@ -12,7 +12,7 @@ glob _broker: MessageBroker | None = None,
      _logger = logging.getLogger(__name__);
 
 """Wire the active broker. Called once at startup by _setup_pubsub."""
-def set_broker(broker: MessageBroker) -> None {
+def set_broker(broker: MessageBroker) {
     global _broker;
     _broker = broker;
 }

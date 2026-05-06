@@ -31,6 +31,7 @@ obj _ExplodingBroker(MessageBroker) {
     def publish(topic: str, event: Event, key: str | None = None) {
         raise RuntimeError("boom");
     }
+
     def subscribe(
         topic: str,
         handler: Callable[[Event], Any],
@@ -39,20 +40,27 @@ obj _ExplodingBroker(MessageBroker) {
     ) -> Subscription {
         return Subscription(topic=topic);
     }
+
     def consume(
         topic: str,
         group: str | None = None,
         max_messages: int = 1,
         timeout_seconds: float = 5.0
-    ) -> list[Event] { return []; }
+    ) -> list[Event] {
+        return [];
+    }
+
     def ack(event: Event) { }
-    def health -> HealthStatus { return HealthStatus(healthy=True); }
-    def is_enabled -> bool { return True; }
+    def health -> HealthStatus {
+        return HealthStatus(healthy=True);
+    }
+    def is_enabled -> bool {
+        return True;
+    }
 }
 
 
 # --- Event envelope ---
-
 test "event auto fills id" {
     e1 = Event(event_type="walker.completed");
     e2 = Event(event_type="walker.completed");
@@ -83,7 +91,6 @@ test "event default headers and data are independent" {
 
 
 # --- NoOpBroker contract ---
-
 test "noop broker is_enabled returns false" {
     b = NoOpBroker();
     assert b.is_enabled() is False;
@@ -103,7 +110,7 @@ test "noop broker publish does nothing" {
 
 test "noop broker subscribe returns subscription" {
     b = NoOpBroker();
-    def _handler(ev: Event) -> None { }
+    def _handler(ev: Event) { }
     sub = b.subscribe("my.topic", _handler, group="my.group");
     assert isinstance(sub, Subscription);
     assert sub.topic == "my.topic";
@@ -131,7 +138,6 @@ test "noop broker health is healthy noop" {
 
 
 # --- UtilityFactory.create_broker selection ---
-
 test "factory returns noop when config is None" {
     b = UtilityFactory.create_broker("redis_streams", None);
     assert b.is_enabled() is False;
@@ -156,12 +162,11 @@ test "factory raises on unsupported broker type" {
     } except ValueError {
         raised = True;
     }
-    assert raised, "expected ValueError for unsupported broker type";
+    assert raised , "expected ValueError for unsupported broker type";
 }
 
 
 # --- Publisher facade ---
-
 test "publish via facade with noop is a safe noop" {
     set_broker(NoOpBroker());
     publish("topic.x", Event(event_type="topic.x", data={"k": 1}));
@@ -183,12 +188,11 @@ test "publish swallows backend errors" {
 
 
 # --- @subscribe decorator + registry ---
-
 test "subscribe decorator registers entry" {
     before = len(get_subscriptions());
 
     @subscribe("orders.placed")
-    def _h1(ev: Event) -> None { }
+    def _h1(ev: Event) { }
 
     after = get_subscriptions();
     assert len(after) == before + 1;
@@ -203,7 +207,7 @@ test "subscribe decorator preserves group and retry" {
     policy = RetryPolicy(max_attempts=5, dead_letter_suffix=".dead");
 
     @subscribe("orders.shipped", group="ops", retry=policy)
-    def _h2(ev: Event) -> None { }
+    def _h2(ev: Event) { }
 
     last = get_subscriptions()[-1];
     assert last.topic == "orders.shipped";

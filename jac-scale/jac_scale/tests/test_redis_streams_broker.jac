@@ -17,9 +17,7 @@ import threading;
 import from testcontainers.redis { RedisContainer }
 import from jac_scale.db { close_all_db_connections, get_redis_client }
 import from jac_scale.abstractions.pubsub { Event, RetryPolicy }
-import from jac_scale.utilities.pubsub.redis_streams_broker {
-    RedisStreamsBroker
-}
+import from jac_scale.utilities.pubsub.redis_streams_broker { RedisStreamsBroker }
 
 
 def cleanup_connections {
@@ -43,11 +41,14 @@ glob REDIS_URI = (
      );
 
 
-def _make_broker(group: str = "test_group", retry: dict | None = None) -> RedisStreamsBroker {
+def _make_broker(
+    group: str = "test_group", retry: dict | None = None
+) -> RedisStreamsBroker {
     cfg: dict = {
         "url": REDIS_URI,
         "consumer_group": group,
-        "retry": retry or {
+        "retry": retry
+        or {
             "max_attempts": 3,
             "backoff_seconds": [0.01, 0.01, 0.01],
             "dead_letter_suffix": ".dlq"
@@ -67,7 +68,6 @@ def _flush_redis {
 
 
 # --- publish + consume roundtrip ---
-
 test "publish then consume roundtrips event fields" {
     _flush_redis();
     b = _make_broker(group="t_rt");
@@ -99,7 +99,6 @@ test "publish then consume roundtrips event fields" {
 
 
 # --- ack semantics ---
-
 test "ack prevents redelivery in same group" {
     _flush_redis();
     b = _make_broker(group="t_ack");
@@ -110,9 +109,7 @@ test "ack prevents redelivery in same group" {
     b.ack(first[0]);
 
     # After ack, the consumer group should not see the same message again.
-    second = b.consume(
-        "acks", group="t_ack", max_messages=1, timeout_seconds=0.2
-    );
+    second = b.consume("acks", group="t_ack", max_messages=1, timeout_seconds=0.2);
     assert second == [];
 
     b.stop(drain=False);
@@ -133,7 +130,6 @@ test "consume returns empty on timeout when stream is empty" {
 
 
 # --- subscribe drives handler ---
-
 test "subscribe handler receives published events" {
     _flush_redis();
     b = _make_broker(group="t_sub");
@@ -141,7 +137,7 @@ test "subscribe handler receives published events" {
     received: list[Event] = [];
     done = threading.Event();
 
-    def handler(ev: Event) -> None {
+    def handler(ev: Event) {
         received.append(ev);
         done.set();
     }
@@ -162,7 +158,6 @@ test "subscribe handler receives published events" {
 
 
 # --- retry exhaustion -> dead-letter ---
-
 test "retry exhaustion routes to dlq stream" {
     _flush_redis();
     b = _make_broker(
@@ -177,7 +172,7 @@ test "retry exhaustion routes to dlq stream" {
     failures: list[int] = [];
     done = threading.Event();
 
-    def always_fails(ev: Event) -> None {
+    def always_fails(ev: Event) {
         failures.append(1);
         if len(failures) >= 2 {
             done.set();
@@ -207,7 +202,6 @@ test "retry exhaustion routes to dlq stream" {
 
 
 # --- health probe ---
-
 test "health returns healthy redis_streams" {
     b = _make_broker(group="t_health");
     h = b.health();

@@ -312,12 +312,8 @@ impl JacScaleConfig.get_pubsub_config(self: JacScaleConfig) -> dict[str, Any] {
         'serializer': pubsub_config.get('serializer', 'json'),
         'retry': {
             'max_attempts': retry_config.get('max_attempts', 3),
-            'backoff_seconds': retry_config.get(
-                'backoff_seconds', [1.0, 5.0, 30.0]
-            ),
-            'dead_letter_suffix': retry_config.get(
-                'dead_letter_suffix', '.dlq'
-            )
+            'backoff_seconds': retry_config.get('backoff_seconds', [1.0, 5.0, 30.0]),
+            'dead_letter_suffix': retry_config.get('dead_letter_suffix', '.dlq')
         }
     };
 }

@@ -33,14 +33,12 @@ sharing a consumer group. `retry` overrides the broker default.
 Both default to None so the broker fills in its configured values.
 """
 def subscribe(
-    topic: str,
-    group: str | None = None,
-    retry: RetryPolicy | None = None
+    topic: str, group: str | None = None, retry: RetryPolicy | None = None
 ) -> Callable[..., Any] {
     def _decorator(handler: Callable[[Event], Any]) -> Callable[..., Any] {
-        _registry.append(_SubscriptionEntry(
-            topic=topic, handler=handler, group=group, retry=retry
-        ));
+        _registry.append(
+            _SubscriptionEntry(topic=topic, handler=handler, group=group, retry=retry)
+        );
         return handler;
     }
     return _decorator;

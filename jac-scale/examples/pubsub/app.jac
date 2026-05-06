@@ -27,15 +27,18 @@ glob _logger = logging.getLogger("pubsub-example");
 # needed at the call site; publish() finds the active broker via
 # the events.publisher facade.
 walker place_order {
-    has order_id: int;
-    has amount: float;
+    has order_id: int,
+        amount: float;
 
     can fire with `root entry {
-        publish("orders.placed", Event(
-            event_type="orders.placed",
-            data={"order_id": self.order_id, "amount": self.amount},
-            source="place_order"
-        ));
+        publish(
+            "orders.placed",
+            Event(
+                event_type="orders.placed",
+                data={"order_id": self.order_id, "amount": self.amount},
+                source="place_order"
+            )
+        );
         report {"status": "queued", "order_id": self.order_id};
     }
 }
@@ -44,7 +47,7 @@ walker place_order {
 # A subscriber. Registered at import time; wired up by the framework
 # at server startup. Runs from a daemon consumer thread.
 @subscribe("orders.placed")
-def on_order_placed(event: Event) -> None {
+def on_order_placed(event: Event) {
     _logger.info(
         f"order received: id={event.data.get('order_id')} "
         f"amount={event.data.get('amount')} event_id={event.id}"

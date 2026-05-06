@@ -80,11 +80,7 @@ obj MessageBroker {
     `key` is used by partitioned backends (Kafka) to route messages
     to the same partition. Ignored by Redis Streams.
     """
-    def publish(
-        topic: str,
-        event: Event,
-        key: str | None = None
-    ) -> None;
+    def publish(topic: str, event: Event, key: str | None = None) -> None;
 
     """Register a handler for a topic (push delivery).
 
@@ -138,12 +134,7 @@ the codebase publish unconditionally without an `if enabled` check.
 obj NoOpBroker(MessageBroker) {
     def start { }
     def stop(drain: bool = True) { }
-
-    def publish(
-        topic: str,
-        event: Event,
-        key: str | None = None
-    ) { }
+    def publish(topic: str, event: Event, key: str | None = None) { }
 
     def subscribe(
         topic: str,
@@ -164,7 +155,6 @@ obj NoOpBroker(MessageBroker) {
     }
 
     def ack(event: Event) { }
-
     def health -> HealthStatus {
         return HealthStatus(healthy=True, backend="noop");
     }
