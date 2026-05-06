@@ -1766,11 +1766,18 @@ The Redis Streams backend requires the `[data]` extras: `pip install jac-scale[d
 import from jac_scale.events.publisher { publish }
 import from jac_scale.abstractions.pubsub { Event }
 
-publish("orders.placed", Event(
-    event_type="orders.placed",
-    data={"order_id": 42, "amount": 99.5},
-    trace_id="trace-1"
-));
+walker place_order {
+    has order_id: int;
+    has amount: float;
+
+    can fire with `root entry {
+        publish("orders.placed", Event(
+            event_type="orders.placed",
+            data={"order_id": self.order_id, "amount": self.amount},
+            trace_id="trace-1"
+        ));
+    }
+}
 ```
 
 `publish()` is fire-and-forget. Errors from the backend are logged and swallowed so emit sites do not have to wrap calls in try/except.
@@ -1794,14 +1801,17 @@ Handlers register at import time. At server startup, `_setup_pubsub` walks the r
 ### Consuming (pull)
 
 ```jac
-import from jac_scale.events.publisher { publish }
-import from jac_scale.abstractions.pubsub { Event }
+import from jac_scale.abstractions.pubsub { MessageBroker }
 
-# Inside a walker / function that has access to the broker:
-batch = broker.consume("orders.placed", max_messages=10, timeout_seconds=2.0);
-for ev in batch {
-    # ... process ev ...
-    broker.ack(ev);
+def drain(broker: MessageBroker) -> int {
+    batch = broker.consume(
+        "orders.placed", max_messages=10, timeout_seconds=2.0
+    );
+    for ev in batch {
+        # ... process ev ...
+        broker.ack(ev);
+    }
+    return len(batch);
 }
 ```
 
