@@ -1835,7 +1835,7 @@ def drain(broker: MessageBroker) -> int {
 - **At-least-once delivery.** Handlers may run more than once for the same event. Make handlers idempotent, or dedupe on `event.id`.
 - **Retry.** A failing handler is retried `retry.max_attempts` times with delays from `retry.backoff_seconds`. The thread sleeps responsively to the broker stop event so shutdowns are not blocked by long backoffs.
 - **Dead-letter queue.** After retry exhaustion, the event is published to `<topic><retry.dead_letter_suffix>` and the original is acked so it is not redelivered indefinitely. The DLQ is a regular Redis stream you can `consume()` like any other.
-- **Drain on shutdown.** `_setup_pubsub` registers `atexit.register(broker.stop)`. On process exit, the broker sets its stop event and joins consumer threads (10s timeout per thread).
+- **Drain on shutdown.** `_setup_pubsub` registers `atexit.register(broker.stop)`. On process exit, the broker sets its stop event and joins all consumer threads under a single 10-second deadline (so total wait stays bounded regardless of subscription count). Long retry backoffs are interrupted in <=1-second polling chunks so SIGTERM is responsive.
 
 ### Backends
 
@@ -1847,7 +1847,7 @@ def drain(broker: MessageBroker) -> int {
 ### Operational notes
 
 - Each subscription spawns one daemon thread named `jac-scale-broker-<topic>-<group>`. Inspect via standard threading tools.
-- Delivery metadata (Redis stream id, topic, group) is stashed in `event.headers` under reserved keys (`_jac_scale_delivery_id` etc.) so `ack(event)` does not need a separate handle. Treat headers prefixed with `_jac_scale_` as broker-managed.
+- Delivery metadata (Redis stream id, topic, group) is stashed in `event.headers` under reserved keys (`_jac_scale_delivery_id` etc.) so `ack(event)` does not need a separate handle. Treat headers prefixed with `_jac_scale_` as broker-managed: producers cannot set them through `publish()`, since `_serialize_event` strips that prefix before writing to the wire.
 - Startup logs `Pub/sub broker enabled (backend=..., subscriptions=N)` so it is easy to confirm wiring at a glance.
 - The wire format is CloudEvents-compatible (`type`, `data`, `id`, `source`, `time`, `trace_id`, `headers`), so external Kafka or Redis CLI consumers see standard fields.
 
