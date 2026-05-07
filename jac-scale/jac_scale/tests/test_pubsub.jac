@@ -127,7 +127,7 @@ test "noop broker health is healthy noop" {
     h = b.health();
     assert isinstance(h, HealthStatus);
     assert h.healthy is True;
-    assert h.backend == "noop";
+    assert h.broker == "noop";
 }
 
 
@@ -166,7 +166,7 @@ test "publish via facade with noop is a safe noop" {
     publish("topic.x", Event(event_type="topic.x", data={"k": 1}));
 }
 
-test "publish swallows backend errors" {
+test "publish swallows broker errors" {
     # If the wired broker raises, publish() must log and return cleanly so
     # walker code doesn't blow up on a fire-and-forget emit.
     raised_inside = False;

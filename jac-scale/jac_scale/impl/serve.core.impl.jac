@@ -164,8 +164,8 @@ impl JacAPIServerCore._setup_pubsub -> None {
     import atexit;
 
     pubsub_config = get_scale_config().get_pubsub_config();
-    backend_name = pubsub_config.get('backend', 'redis_streams');
-    self._broker = UtilityFactory.create_broker(backend_name, pubsub_config);
+    broker_name = pubsub_config.get('broker', 'redis_streams');
+    self._broker = UtilityFactory.create_broker(broker_name, pubsub_config);
 
     set_broker(self._broker);
     self._broker.start();
@@ -185,7 +185,7 @@ impl JacAPIServerCore._setup_pubsub -> None {
         atexit.register(self._broker.stop);
         logger.info(
             f"Pub/sub broker enabled "
-            f"(backend={backend_name}, subscriptions={len(subs)})"
+            f"(broker={broker_name}, subscriptions={len(subs)})"
         );
     }
 }

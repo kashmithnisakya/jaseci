@@ -198,7 +198,7 @@ test "health returns healthy redis_streams" {
     b = _make_broker(group="t_health");
     h = b.health();
     assert h.healthy is True;
-    assert h.backend == "redis_streams";
+    assert h.broker == "redis_streams";
     assert "consumer_name" in h.details;
     b.stop(drain=False);
     cleanup_connections();

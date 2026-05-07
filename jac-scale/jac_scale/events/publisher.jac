@@ -14,7 +14,7 @@ def set_broker(broker: MessageBroker) {
     _broker = broker;
 }
 
-"""Publish an event. No-op when pub/sub is disabled; backend errors are logged but not re-raised."""
+"""Publish an event. No-op when pub/sub is disabled; broker errors are logged but not re-raised."""
 def publish(topic: str, event: Event, key: str | None = None) -> None {
     if _broker is None {
         return;

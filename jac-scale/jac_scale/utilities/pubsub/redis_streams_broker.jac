@@ -321,7 +321,7 @@ obj RedisStreamsBroker(MessageBroker) {
             ok = bool(self._get_client().ping());
             return HealthStatus(
                 healthy=ok,
-                backend="redis_streams",
+                broker="redis_streams",
                 details={
                     "consumer_name": self._consumer_name,
                     "threads": len(self._threads)
@@ -329,7 +329,7 @@ obj RedisStreamsBroker(MessageBroker) {
             );
         } except Exception as e {
             return HealthStatus(
-                healthy=False, backend="redis_streams", details={"error": str(e)}
+                healthy=False, broker="redis_streams", details={"error": str(e)}
             );
         }
     }

@@ -326,17 +326,17 @@ class JacScalePluginConfig {
                 "pubsub": {
                     "type": "dict",
                     "default": {},
-                    "description": "Pub/sub message broker configuration. Off by default. When enabled, jac-scale exposes publish() / @subscribe and emits walker lifecycle events through the configured backend.",
+                    "description": "Pub/sub message broker configuration. Off by default. When enabled, jac-scale exposes publish() / @subscribe and emits walker lifecycle events through the configured broker.",
                     "nested": {
                         "enabled": {
                             "type": "bool",
                             "default": False,
                             "description": "Enable the message broker. When false, all publish() calls become no-ops."
                         },
-                        "backend": {
+                        "broker": {
                             "type": "string",
                             "default": "redis_streams",
-                            "description": "Backend identifier. Built-in: 'redis_streams', 'noop'."
+                            "description": "Broker identifier. Built-in: 'redis_streams', 'noop'."
                         },
                         "url": {
                             "type": "string",

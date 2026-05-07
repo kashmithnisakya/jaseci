@@ -36,7 +36,7 @@ Whether you're developing locally with `jac start` or deploying to production wi
 
 - **Module-level API**: Call `publish("topic", event)` from any walker, function, or scheduled task; register handlers with `@subscribe("topic")`
 - **At-least-once delivery**: Configurable retry with automatic dead-letter queue per topic
-- **Pluggable backends**: Redis Streams ships in-tree; the abstraction allows other backends without changing call sites
+- **Pluggable brokers**: Redis Streams ships in-tree; the abstraction allows other brokers without changing call sites
 - **Off by default**: Enable via `[plugins.scale.pubsub]` in `jac.toml`. See the [Pub/Sub Message Broker reference](../docs/docs/reference/plugins/jac-scale.md#pubsub-message-broker) for full details.
 
 ## Prerequisites

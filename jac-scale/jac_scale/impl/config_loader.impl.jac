@@ -302,7 +302,7 @@ impl JacScaleConfig.get_pubsub_config(self: JacScaleConfig) -> dict[str, Any] {
     retry_defaults = RetryPolicy();
     return {
         'enabled': pubsub_config.get('enabled', False),
-        'backend': pubsub_config.get('backend', 'redis_streams'),
+        'broker': pubsub_config.get('broker', 'redis_streams'),
         'url': pubsub_config.get('url', 'redis://localhost:6379/0'),
         'consumer_group': pubsub_config.get('consumer_group', 'jac-scale'),
         'emit_system_events': pubsub_config.get('emit_system_events', True),

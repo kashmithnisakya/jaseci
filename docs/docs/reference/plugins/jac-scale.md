@@ -1730,7 +1730,7 @@ This is the right pattern for autosave debouncing, leader-only reconciliation cy
 
 ## Pub/Sub Message Broker
 
-Optional publish/subscribe layer for emitting and consuming events between jac code and external systems. Off by default. The default backend is Redis Streams; the abstraction (`MessageBroker`) makes it possible to add other backends in the future without changing call sites.
+Optional publish/subscribe layer for emitting and consuming events between jac code and external systems. Off by default. The default broker is Redis Streams; the abstraction (`MessageBroker`) makes it possible to add other brokers in the future without changing call sites.
 
 ### Overview
 
@@ -1747,7 +1747,7 @@ Add the section to `jac.toml`. Master switch is `enabled`; everything else has w
 ```toml
 [plugins.scale.pubsub]
 enabled = true
-backend = "redis_streams"
+broker = "redis_streams"
 url = "redis://localhost:6379/0"
 consumer_group = "jac-scale"
 serializer = "json"
@@ -1758,7 +1758,7 @@ backoff_seconds = [1, 5, 30]
 dead_letter_suffix = ".dlq"
 ```
 
-The Redis Streams backend requires the `[data]` extras: `pip install jac-scale[data]`. If `redis` is not installed, the factory falls back to `NoOpBroker` automatically.
+The Redis Streams broker requires the `[data]` extras: `pip install jac-scale[data]`. If `redis` is not installed, the factory falls back to `NoOpBroker` automatically.
 
 ### Publishing
 
@@ -1780,7 +1780,7 @@ walker place_order {
 }
 ```
 
-`publish()` is fire-and-forget. Errors from the backend are logged and swallowed so emit sites do not have to wrap calls in try/except.
+`publish()` is fire-and-forget. Errors from the broker are logged and swallowed so emit sites do not have to wrap calls in try/except.
 
 ### Subscribing (push)
 
@@ -1822,7 +1822,7 @@ def drain(broker: MessageBroker) -> int {
 | Key | Default | Description |
 |-----|---------|-------------|
 | `enabled` | `false` | Master switch. When `false`, all pub/sub calls are no-ops. |
-| `backend` | `redis_streams` | Backend identifier: `redis_streams` or `noop`. |
+| `broker` | `redis_streams` | Broker identifier: `redis_streams` or `noop`. |
 | `url` | `redis://localhost:6379/0` | Connection URL for the broker. |
 | `consumer_group` | `jac-scale` | Default consumer group name when `@subscribe` does not specify one. |
 | `serializer` | `json` | Wire format. JSON today, MessagePack later. |
@@ -1837,10 +1837,10 @@ def drain(broker: MessageBroker) -> int {
 - **Dead-letter queue.** After retry exhaustion, the event is published to `<topic><retry.dead_letter_suffix>` and the original is acked so it is not redelivered indefinitely. The DLQ is a regular Redis stream you can `consume()` like any other.
 - **Drain on shutdown.** `_setup_pubsub` registers `atexit.register(broker.stop)`. On process exit, the broker sets its stop event and joins all consumer threads under a single 10-second deadline (so total wait stays bounded regardless of subscription count). Long retry backoffs are interrupted in <=1-second polling chunks so SIGTERM is responsive.
 
-### Backends
+### Brokers
 
-| Backend | When | Requires |
-|---------|------|----------|
+| Broker | When | Requires |
+|--------|------|----------|
 | `noop` | Disabled, or fallback when `redis` is missing. Zero overhead. | nothing |
 | `redis_streams` | Default when enabled. Maps to `XADD` / `XREADGROUP` / `XACK` / DLQ via separate stream. | `pip install jac-scale[data]` (Redis 5+ runtime) |
 
@@ -1848,7 +1848,7 @@ def drain(broker: MessageBroker) -> int {
 
 - Each subscription spawns one daemon thread named `jac-scale-broker-<topic>-<group>`. Inspect via standard threading tools.
 - Delivery metadata (Redis stream id, topic, group) is stashed in `event.headers` under reserved keys (`_jac_scale_delivery_id` etc.) so `ack(event)` does not need a separate handle. Treat headers prefixed with `_jac_scale_` as broker-managed: producers cannot set them through `publish()`, since `_serialize_event` strips that prefix before writing to the wire.
-- Startup logs `Pub/sub broker enabled (backend=..., subscriptions=N)` so it is easy to confirm wiring at a glance.
+- Startup logs `Pub/sub broker enabled (broker=..., subscriptions=N)` so it is easy to confirm wiring at a glance.
 - The wire format is CloudEvents-compatible (`type`, `data`, `id`, `source`, `time`, `trace_id`, `headers`), so external Kafka or Redis CLI consumers see standard fields.
 
 ---

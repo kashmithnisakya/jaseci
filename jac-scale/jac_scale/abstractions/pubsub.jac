@@ -33,7 +33,7 @@ obj Subscription {
 """Result of a health probe."""
 obj HealthStatus {
     has healthy: bool,
-        backend: str = "noop",
+        broker: str = "noop",
         details: dict[str, Any] = {};
 }
 
@@ -73,7 +73,7 @@ obj MessageBroker {
     """Ack a consume()d event. No-op for subscribe()-delivered events (auto-acked)."""
     def ack(event: Event) -> None;
 
-    """Probe backend health (connection state, consumer lag, etc.)."""
+    """Probe broker health (connection state, consumer lag, etc.)."""
     def health -> HealthStatus;
 
     """Whether this broker is a real implementation or a no-op."""
@@ -105,7 +105,7 @@ obj NoOpBroker(MessageBroker) {
 
     def ack(event: Event) { }
     def health -> HealthStatus {
-        return HealthStatus(healthy=True, backend="noop");
+        return HealthStatus(healthy=True, broker="noop");
     }
 
     def is_enabled -> bool {

@@ -10,7 +10,7 @@ entry-point = "app.jac"
 # @subscribe become zero-overhead no-ops.
 [plugins.scale.pubsub]
 enabled = true
-backend = "redis_streams"
+broker = "redis_streams"
 url = "redis://localhost:6379/0"
 consumer_group = "pubsub-example"
 
