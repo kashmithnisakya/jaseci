@@ -78,6 +78,11 @@ obj RedisStreamsBroker(MessageBroker) {
     def _serialize_event(event: Event) -> str {
         # Wire format follows CloudEvents ('type' on the wire) even
         # though jac forces the in-memory field to be 'event_type'.
+        clean_headers = {
+            k: v
+            for (k, v) in event.headers.items()
+            if not k.startswith("_jac_scale_")
+        };
         return json.dumps(
             {
                 "type": event.event_type,
@@ -86,7 +91,7 @@ obj RedisStreamsBroker(MessageBroker) {
                 "source": event.source,
                 "time": event.time,
                 "trace_id": event.trace_id,
-                "headers": event.headers
+                "headers": clean_headers
             }
         );
     }
@@ -308,7 +313,7 @@ obj RedisStreamsBroker(MessageBroker) {
         self._threads.append(thread);
         thread.start();
 
-        return Subscription(topic=topic, group=grp, handler=handler);
+        return Subscription(topic=topic, group=grp);
     }
 
     def health -> HealthStatus {

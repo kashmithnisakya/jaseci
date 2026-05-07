@@ -27,8 +27,7 @@ obj RetryPolicy {
 """Handle returned by MessageBroker.subscribe()."""
 obj Subscription {
     has topic: str,
-        group: str | None = None,
-        handler: Callable[..., Any] | None = None;
+        group: str | None = None;
 }
 
 """Result of a health probe."""
@@ -92,7 +91,7 @@ obj NoOpBroker(MessageBroker) {
         group: str | None = None,
         retry: RetryPolicy | None = None
     ) -> Subscription {
-        return Subscription(topic=topic, group=group, handler=handler);
+        return Subscription(topic=topic, group=group);
     }
 
     def consume(

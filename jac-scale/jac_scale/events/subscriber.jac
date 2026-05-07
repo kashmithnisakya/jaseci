@@ -31,3 +31,9 @@ def subscribe(
 def get_subscriptions -> list[_SubscriptionEntry] {
     return _registry;
 }
+
+"""Drop all registered subscriptions. Used by tests to keep registrations isolated across runs."""
+def clear_subscriptions {
+    global _registry;
+    _registry = [];
+}
