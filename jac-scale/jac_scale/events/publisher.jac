@@ -1,5 +1,4 @@
 """Module-level publish facade.
-
 Hides the broker reference so call sites just `publish('topic', event)`. Wired at startup by _setup_events.
 """
 import from jac_scale.events.broker { EventStreamBroker, Event }

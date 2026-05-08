@@ -1730,7 +1730,7 @@ This is the right pattern for autosave debouncing, leader-only reconciliation cy
 
 ## Event Streaming
 
-Optional event-streaming broker for emitting and consuming events between jac code and external systems. Off by default. The user-facing API uses pub/sub-style verbs (`publish()` / `@subscribe`) but the underlying semantics are streaming: durable log, consumer groups, replayable offsets via `start_from`, and at-least-once delivery with retries and a DLQ.
+Optional event-streaming broker for emitting and consuming events between jac code and external systems. Off by default. Provides durable log, consumer groups, replayable offsets via `start_from`, and at-least-once delivery with retries and a DLQ.
 
 Two implementations ship in-tree:
 

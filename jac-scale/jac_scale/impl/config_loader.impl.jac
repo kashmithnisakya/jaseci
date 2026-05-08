@@ -293,9 +293,8 @@ impl JacScaleConfig.get_monitoring_config(self: JacScaleConfig) -> dict[str, Any
     };
 }
 
-"""Get event-streaming configuration from jac.toml. Returns flat dict with defaults; `enabled` is the master switch.
-
-Reads `[plugins.scale.events]`. `url` defaults to `None` so the caller can fall back to `database.redis_url`.
+"""Get event-streaming config from jac.toml.
+Reads `[plugins.scale.events]`. `enabled` is the master switch; `url` defaults to None so the caller can fall back to `database.redis_url`.
 """
 impl JacScaleConfig.get_events_config(self: JacScaleConfig) -> dict[str, Any] {
     import from jac_scale.events.broker { RetryPolicy }

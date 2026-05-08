@@ -1,7 +1,4 @@
-"""Event-streaming broker abstraction for jac_scale.
-
-Defines EventStreamBroker, Event, RetryPolicy, Subscription, HealthStatus. Concrete impls live in events/brokers.
-"""
+"""Event-streaming broker abstraction. Defines EventStreamBroker, Event, RetryPolicy, Subscription, HealthStatus; concrete impls live in events/brokers."""
 import from typing { Any, Callable }
 import from datetime { datetime, UTC }
 import uuid;
@@ -38,8 +35,7 @@ obj HealthStatus {
 }
 
 """Abstract base for an event-streaming broker.
-
-Implementations guarantee at-least-once delivery, auto-ack on handler success, replayable offsets via start_from, and DLQ on retry exhaustion. The semantics are streaming (durable log, consumer groups, offsets) even though the API verbs are pub/sub-shaped.
+Implementations guarantee at-least-once delivery, replayable offsets via start_from, ordered per-group consumption, and DLQ on retry exhaustion.
 """
 obj EventStreamBroker {
     """Start background consumer threads / connections. Idempotent."""
@@ -52,9 +48,7 @@ obj EventStreamBroker {
     def publish(topic: str, event: Event, key: str | None = None) -> None;
 
     """Register a handler for a topic (push delivery).
-
-    `group` shares load across processes; distinct groups each see the full stream. Handler completion acks; raise triggers retry. Returned values are ignored.
-    `start_from` controls where a brand-new consumer group begins reading: 'latest' (only new messages), 'earliest' (replay all retained), or a broker-specific position token. Ignored for groups that already exist.
+    `group` shares load; handler completion acks; raise triggers retry. `start_from` ('latest' | 'earliest' | broker-specific position token) is a one-shot bookmark applied only when the consumer group is first created.
     """
     def subscribe(
         topic: str,

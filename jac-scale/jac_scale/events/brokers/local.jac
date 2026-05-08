@@ -1,6 +1,5 @@
 """In-memory implementation of EventStreamBroker.
-
-Single-process, no persistence, no cross-pod. Uses per-topic append-only lists and per-group integer offsets to mimic Redis Streams semantics. Useful for dev, tests, and single-pod deployments without Redis.
+Single-process, no persistence. Per-topic append-only lists + per-group integer offsets mimic Redis Streams semantics. Right for dev, tests, single-pod deployments without Redis.
 """
 import from typing { Any, Callable }
 import from threading { Thread, Event as _ThreadStop, Lock }

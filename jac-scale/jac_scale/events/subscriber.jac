@@ -1,5 +1,4 @@
 """@subscribe decorator and global handler registry.
-
 Decorator records entries at import time; _setup_events wires each into the broker at server startup.
 """
 import from typing { Any, Callable }
@@ -16,8 +15,7 @@ obj _SubscriptionEntry {
 glob _registry: list[_SubscriptionEntry] = [];
 
 """Register a handler for a topic.
-
-`group` shares load; `retry` overrides defaults; `start_from` controls where a brand-new consumer group starts ('latest', 'earliest', or a broker-specific position token). Existing groups ignore `start_from` and resume from their stored position.
+`group` shares load; `retry` overrides defaults; `start_from` ('latest' | 'earliest' | broker-specific position token) is a one-shot bookmark applied only when the consumer group is first created.
 """
 def subscribe(
     topic: str,

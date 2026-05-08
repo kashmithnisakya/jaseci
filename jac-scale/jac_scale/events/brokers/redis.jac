@@ -1,5 +1,4 @@
 """Redis Streams implementation of EventStreamBroker.
-
 Maps publish/subscribe/consume/ack to XADD/XREADGROUP/XACK; routes to <topic><dead_letter_suffix> on retry exhaustion.
 """
 import from typing { Any, Callable }

@@ -1,6 +1,5 @@
 """Minimal jac-scale event-streaming example.
-
-`jac start app.jac` and POST to /walker/place_order. With no Redis URL set, this runs on the in-memory LocalBroker; configure `[plugins.scale.events].url` (or `[plugins.scale.database].redis_url`) to use Redis Streams instead. See the README for the full curl.
+`jac start app.jac` and POST to /walker/place_order. With no Redis URL set this runs on LocalBroker; set `[plugins.scale.events].url` to use Redis Streams.
 """
 
 import logging;

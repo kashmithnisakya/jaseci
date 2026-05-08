@@ -153,8 +153,7 @@ impl JacAPIServerCore.postinit -> None {
 }
 
 """Initialize the event-streaming broker.
-
-Pick implementation by what's available: RedisBroker if a redis URL resolves and the redis extra is installed, otherwise LocalBroker (in-memory). When events.enabled is false, leave the broker unset and publish() / @subscribe become no-ops via the publisher facade.
+RedisBroker if a redis URL resolves and the redis extra is installed, else LocalBroker. When events.enabled is false the broker stays unset and publish()/@subscribe no-op via the facade.
 """
 impl JacAPIServerCore._setup_events -> None {
     import from jac_scale.events.publisher { set_broker }
