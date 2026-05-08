@@ -53,7 +53,7 @@ obj EventStreamBroker {
 
     """Register a handler for a topic (push delivery).
 
-    `group` shares load across processes; distinct groups each see the full stream. Handler return acks; raise triggers retry.
+    `group` shares load across processes; distinct groups each see the full stream. Handler completion acks; raise triggers retry. Returned values are ignored.
     `start_from` controls where a brand-new consumer group begins reading: 'latest' (only new messages), 'earliest' (replay all retained), or a broker-specific position token. Ignored for groups that already exist.
     """
     def subscribe(

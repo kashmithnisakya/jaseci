@@ -307,7 +307,6 @@ impl JacScaleConfig.get_events_config(self: JacScaleConfig) -> dict[str, Any] {
         'enabled': events_config.get('enabled', False),
         'url': events_config.get('url'),
         'consumer_group': events_config.get('consumer_group', 'jac-scale'),
-        'emit_system_events': events_config.get('emit_system_events', True),
         'serializer': events_config.get('serializer', 'json'),
         'retry': {
             'max_attempts': retry_config.get(

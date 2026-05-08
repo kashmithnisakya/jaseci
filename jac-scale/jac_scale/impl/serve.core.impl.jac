@@ -150,7 +150,6 @@ impl JacAPIServerCore.postinit -> None {
         );
         logger.info(f"Prometheus metrics enabled at {metrics_endpoint} (admin-only)");
     }
-    self._setup_events();
 }
 
 """Initialize the event-streaming broker.
@@ -303,6 +302,7 @@ impl JacAPIServerCore.start(
     }
     self.user_manager.create_internal_user(Con.GUEST.value, '__no_password__');
     self._setup_scheduler();
+    self._setup_events();
     # Find an available port (may differ from requested if port is in use)
     original_port = self.port;
     self.port = _find_available_port(self.port);

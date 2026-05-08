@@ -158,6 +158,41 @@ test "retry exhaustion routes to dlq stream" {
 }
 
 
+# --- async handler is rejected ---
+test "async handler triggers retry path with TypeError" {
+    b = _make_broker(
+        group="t_async",
+        retry={
+            "max_attempts": 2,
+            "backoff_seconds": [0.01],
+            "dead_letter_suffix": ".dlq"
+        }
+    );
+
+    attempts: list[int] = [];
+
+    async def async_handler(ev: Event) {
+        attempts.append(1);
+    }
+
+    b.subscribe("asyncs", async_handler, group="t_async");
+    time.sleep(0.1);
+    b.publish("asyncs", Event(event_type="x"));
+
+    # The handler "runs" twice (returns a coroutine each time, both flagged).
+    # After max_attempts, the event lands in the DLQ.
+    dlq_msgs = b.consume(
+        "asyncs.dlq",
+        group="t_async_reader",
+        max_messages=1,
+        timeout_seconds=3.0,
+        start_from="earliest"
+    );
+    assert len(dlq_msgs) == 1;
+    b.stop(drain=False);
+}
+
+
 # --- health probe ---
 test "health returns healthy local broker" {
     b = _make_broker(group="t_health");

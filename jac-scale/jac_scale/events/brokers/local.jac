@@ -149,12 +149,16 @@ obj LocalBroker(EventStreamBroker) {
         return;
     }
 
-    def _send_to_dlq(topic: str, event: Event, retry: RetryPolicy) {
+    def _send_to_dlq(topic: str, event: Event, retry: RetryPolicy) -> bool {
+        # Returns True iff the DLQ append succeeded. In-memory publish basically
+        # cannot fail, but we keep the bool return for parity with RedisBroker.
         dlq = topic + retry.dead_letter_suffix;
         try {
             self.publish(dlq, event);
+            return True;
         } except Exception as e {
             _logger.error(f"DLQ publish failed for {dlq}: {e}");
+            return False;
         }
     }
 
@@ -176,10 +180,21 @@ obj LocalBroker(EventStreamBroker) {
         handler: Callable[[Event], Any],
         retry: RetryPolicy
     ) -> None {
+        import inspect;
         backoff = retry.backoff_seconds or [1.0];
         for attempt in range(retry.max_attempts) {
             try {
-                handler(event);
+                result = handler(event);
+                # Async handlers would silently no-op (coroutine never awaited),
+                # so reject them loudly. Subscribers must be sync today.
+                if inspect.iscoroutine(result) {
+                    result.close();
+                    raise TypeError(
+                        "subscribed handler returned a coroutine. "
+                        "@subscribe handlers must be synchronous; "
+                        "wrap async work with asyncio.run() or schedule it explicitly."
+                    );
+                }
                 return;
             } except Exception as e {
                 _logger.warning(

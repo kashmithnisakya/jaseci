@@ -75,8 +75,9 @@ obj RedisBroker(EventStreamBroker) {
     }
 
     def _serialize_event(event: Event) -> str {
-        # Wire format follows CloudEvents ('type' on the wire) even
-        # though jac forces the in-memory field to be 'event_type'.
+        # Wire format follows CloudEvents 1.0: required `specversion`/`type`/`source`/`id`
+        # so strict CE consumers (Argo Events, Knative, etc.) can validate. `event_type`
+        # is the in-memory name because `type` is a Python builtin; on the wire it's `type`.
         clean_headers = {
             k: v
             for (k, v) in event.headers.items()
@@ -84,6 +85,7 @@ obj RedisBroker(EventStreamBroker) {
         };
         return json.dumps(
             {
+                "specversion": "1.0",
                 "type": event.event_type,
                 "data": event.data,
                 "id": event.id,
@@ -238,12 +240,17 @@ obj RedisBroker(EventStreamBroker) {
         }
     }
 
-    def _send_to_dlq(topic: str, event: Event, retry: RetryPolicy) {
+    def _send_to_dlq(topic: str, event: Event, retry: RetryPolicy) -> bool {
+        # Returns True iff the DLQ XADD succeeded. Caller must NOT ack the
+        # original event when this returns False; leaving it un-acked makes
+        # Redis redeliver later so at-least-once survives a DLQ outage.
         dlq = topic + retry.dead_letter_suffix;
         try {
             self._xadd_payload(dlq, event);
+            return True;
         } except Exception as e {
             _logger.error(f"DLQ publish failed for {dlq}: {e}");
+            return False;
         }
     }
 
@@ -267,10 +274,21 @@ obj RedisBroker(EventStreamBroker) {
         handler: Callable[[Event], Any],
         retry: RetryPolicy
     ) -> None {
+        import inspect;
         backoff = retry.backoff_seconds or [1.0];
         for attempt in range(retry.max_attempts) {
             try {
-                handler(event);
+                result = handler(event);
+                # Async handlers would silently no-op (coroutine never awaited),
+                # so reject them loudly. Subscribers must be sync today.
+                if inspect.iscoroutine(result) {
+                    result.close();
+                    raise TypeError(
+                        "subscribed handler returned a coroutine. "
+                        "@subscribe handlers must be synchronous; "
+                        "wrap async work with asyncio.run() or schedule it explicitly."
+                    );
+                }
                 self.ack(event);
                 return;
             } except Exception as e {
@@ -286,9 +304,12 @@ obj RedisBroker(EventStreamBroker) {
                 }
             }
         }
-        # Exhausted - DLQ then ack so it doesn't redeliver forever.
-        self._send_to_dlq(topic, event, retry);
-        self.ack(event);
+        # Exhausted. Only ack the original after the DLQ write actually lands;
+        # otherwise leave it un-acked so Redis redelivers and we can retry the
+        # whole cycle (preserves at-least-once during a DLQ outage).
+        if self._send_to_dlq(topic, event, retry) {
+            self.ack(event);
+        }
     }
 
     def _consumer_loop(

@@ -343,11 +343,6 @@ class JacScalePluginConfig {
                             "default": "jac-scale",
                             "description": "Default consumer group name used when @subscribe does not specify one."
                         },
-                        "emit_system_events": {
-                            "type": "bool",
-                            "default": True,
-                            "description": "Auto-publish walker lifecycle events (walker.started / walker.completed / walker.failed) when the broker is enabled."
-                        },
                         "serializer": {
                             "type": "string",
                             "default": "json",
