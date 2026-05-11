@@ -250,6 +250,32 @@ test "start_from latest skips messages published before group existed" {
 }
 
 
+# --- delivery metadata ---
+test "consumed event exposes delivery_id, delivery_topic, delivery_group" {
+    _flush_redis();
+    b = _make_broker(group="t_delivery");
+    b.publish("delivered", Event(event_type="x", data={"k": 1}));
+
+    msgs = b.consume(
+        "delivered",
+        group="t_delivery",
+        max_messages=1,
+        timeout_seconds=2.0,
+        start_from="earliest"
+    );
+    assert len(msgs) == 1;
+    ev = msgs[0];
+    assert ev.delivery_id;
+    assert ev.delivery_topic == "delivered";
+    assert ev.delivery_group == "t_delivery";
+
+    # ack() reads delivery_id off the first-class fields, not headers.
+    b.ack(ev);
+    b.stop(drain=False);
+    cleanup_connections();
+}
+
+
 # --- health probe ---
 test "health returns healthy redis broker" {
     b = _make_broker(group="t_health");

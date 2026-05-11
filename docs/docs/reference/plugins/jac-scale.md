@@ -1906,7 +1906,7 @@ def drain(broker: EventStreamBroker) -> int {
 ### Operational notes
 
 - Each subscription spawns one daemon thread named `jac-scale-broker-<topic>-<group>` (Redis) or `jac-scale-local-<topic>-<group>` (Local). Inspect via standard threading tools.
-- Delivery metadata (Redis stream id, topic, group) is stashed in `event.headers` under reserved keys (`_jac_scale_delivery_id` etc.) so `ack(event)` does not need a separate handle. Treat headers prefixed with `_jac_scale_` as broker-managed: producers cannot set them through `publish()` because the broker strips that prefix before writing to the wire.
+- Delivery metadata is exposed as first-class fields on `Event`: `event.delivery_id`, `event.delivery_topic`, `event.delivery_group`. Handlers that need them for idempotency keys, structured logging, or dedup can read them directly without importing broker-specific constants. The fields are broker-managed: producers leave them `None`, the broker sets them on `consume()` / push delivery, and they are not serialized to the wire.
 - Startup logs `Events broker enabled (kind={local|redis}, subscriptions=N)` so it is easy to confirm wiring at a glance.
 - The wire format is CloudEvents 1.0 valid (`specversion`, `type`, `data`, `id`, `source`, `time`, plus `trace_id` and `headers` as extensions), so strict CE consumers (Argo Events, Knative Eventing, CE-aware Kafka tooling) accept it.
 

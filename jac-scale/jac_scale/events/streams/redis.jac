@@ -27,11 +27,7 @@ def _to_str(value: Any) -> str {
     return str(value);
 }
 
-# Reserved header keys used to carry delivery metadata back to ack().
-glob _logger = logging.getLogger(__name__),
-     DELIVERY_ID_HEADER = "_jac_scale_delivery_id",
-     DELIVERY_TOPIC_HEADER = "_jac_scale_delivery_topic",
-     DELIVERY_GROUP_HEADER = "_jac_scale_delivery_group";
+glob _logger = logging.getLogger(__name__);
 
 """Redis Streams implementation. subscribe() spawns a daemon thread; stop(drain=True) joins all threads."""
 obj RedisEventStream(EventStreamBroker) {
@@ -76,11 +72,7 @@ obj RedisEventStream(EventStreamBroker) {
         # Wire format follows CloudEvents 1.0: required `specversion`/`type`/`source`/`id`
         # so strict CE consumers (Argo Events, Knative, etc.) can validate. `event_type`
         # is the in-memory name because `type` is a Python builtin; on the wire it's `type`.
-        clean_headers = {
-            k: v
-            for (k, v) in event.headers.items()
-            if not k.startswith("_jac_scale_")
-        };
+        # delivery_* are broker-managed and not serialized; they're set fresh on each consume.
         return json.dumps(
             {
                 "specversion": "1.0",
@@ -90,7 +82,7 @@ obj RedisEventStream(EventStreamBroker) {
                 "source": event.source,
                 "time": event.time,
                 "trace_id": event.trace_id,
-                "headers": clean_headers
+                "headers": event.headers
             }
         );
     }
@@ -148,9 +140,9 @@ obj RedisEventStream(EventStreamBroker) {
         # redis-py returns bytes by default unless decode_responses=True
         payload = fields.get(b"payload") or fields.get("payload");
         event = self._deserialize_event(payload);
-        event.headers[DELIVERY_ID_HEADER] = _to_str(msg_id);
-        event.headers[DELIVERY_TOPIC_HEADER] = topic;
-        event.headers[DELIVERY_GROUP_HEADER] = group;
+        event.delivery_id = _to_str(msg_id);
+        event.delivery_topic = topic;
+        event.delivery_group = group;
         return event;
     }
 
@@ -225,9 +217,9 @@ obj RedisEventStream(EventStreamBroker) {
     }
 
     def ack(event: Event) -> None {
-        msg_id = event.headers.get(DELIVERY_ID_HEADER);
-        topic = event.headers.get(DELIVERY_TOPIC_HEADER);
-        group = event.headers.get(DELIVERY_GROUP_HEADER);
+        msg_id = event.delivery_id;
+        topic = event.delivery_topic;
+        group = event.delivery_group;
         if not msg_id or not topic or not group {
             return;
         }

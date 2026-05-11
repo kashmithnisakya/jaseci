@@ -11,7 +11,10 @@ obj Event {
         source: str = "jac-scale",
         time: str = datetime.now(UTC).isoformat(),
         trace_id: str | None = None,
-        headers: dict[str, str] = {};
+        headers: dict[str, str] = {},
+        delivery_id: str | None = None,
+        delivery_topic: str | None = None,
+        delivery_group: str | None = None;
 }
 
 """Retry policy applied to a subscription. After max_attempts the message goes to '<topic><dead_letter_suffix>'."""
