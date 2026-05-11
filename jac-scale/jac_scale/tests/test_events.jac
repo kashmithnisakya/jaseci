@@ -7,7 +7,6 @@ import from jac_scale.events.broker {
     EventStreamBroker,
     Event,
     RetryPolicy,
-    Subscription,
     HealthStatus
 }
 import from typing { Any, Callable }
@@ -29,9 +28,7 @@ obj _ExplodingBroker(EventStreamBroker) {
         group: str | None = None,
         retry: RetryPolicy | None = None,
         start_from: str = "latest"
-    ) -> Subscription {
-        return Subscription(topic=topic);
-    }
+    ) { }
 
     def consume(
         topic: str,
@@ -117,9 +114,7 @@ obj _CapturingBroker(EventStreamBroker) {
         group: str | None = None,
         retry: RetryPolicy | None = None,
         start_from: str = "latest"
-    ) -> Subscription {
-        return Subscription(topic=topic);
-    }
+    ) { }
 
     def consume(
         topic: str,

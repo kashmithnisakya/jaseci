@@ -7,7 +7,6 @@ import from jac_scale.events.broker {
     EventStreamBroker,
     Event,
     RetryPolicy,
-    Subscription,
     HealthStatus
 }
 import from jac_scale._optdeps.redis { Redis }
@@ -333,7 +332,7 @@ obj RedisEventStream(EventStreamBroker) {
         group: str | None = None,
         retry: RetryPolicy | None = None,
         start_from: str = "latest"
-    ) -> Subscription {
+    ) {
         grp = group or self._default_group;
         retry_policy = retry or self._default_retry;
         self._ensure_group(topic, grp, start_from);
@@ -348,8 +347,6 @@ obj RedisEventStream(EventStreamBroker) {
         );
         self._threads.append(thread);
         thread.start();
-
-        return Subscription(topic=topic, group=grp);
     }
 
     def health -> HealthStatus {

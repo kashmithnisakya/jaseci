@@ -1,4 +1,4 @@
-"""Event-streaming broker abstraction. Defines EventStreamBroker, Event, RetryPolicy, Subscription, HealthStatus; concrete impls live in events/brokers."""
+"""Event-streaming broker abstraction. Defines EventStreamBroker, Event, RetryPolicy, HealthStatus; concrete impls live in events/streams."""
 import from typing { Any, Callable }
 import from datetime { datetime, UTC }
 import uuid;
@@ -19,12 +19,6 @@ obj RetryPolicy {
     has max_attempts: int = 3,
         backoff_seconds: list[float] = [1.0, 5.0, 30.0],
         dead_letter_suffix: str = ".dlq";
-}
-
-"""Handle returned by EventStreamBroker.subscribe()."""
-obj Subscription {
-    has topic: str,
-        group: str | None = None;
 }
 
 """Result of a health probe."""
@@ -56,7 +50,7 @@ obj EventStreamBroker {
         group: str | None = None,
         retry: RetryPolicy | None = None,
         start_from: str = "latest"
-    ) -> Subscription;
+    ) -> None;
 
     """Pull up to `max_messages` events, blocking up to `timeout_seconds`. Caller MUST ack(event). See subscribe() for `start_from` semantics."""
     def consume(
