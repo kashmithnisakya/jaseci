@@ -44,7 +44,9 @@ obj JacScaleUserManager(UserManager) {
     def postinit -> None;
     # Identity-based user CRUD
     def create_user(
-        identities: list[dict[str, Any]], credential: dict[str, Any]
+        identities: list[dict[str, Any]],
+        credential: dict[str, Any],
+        profile: dict[str, Any] | None = None
     ) -> dict[str, Any];
 
     def create_internal_user(
@@ -64,6 +66,10 @@ obj JacScaleUserManager(UserManager) {
     def add_identity(user_id: str, identity: dict[str, Any]) -> bool;
     def is_identity_taken(value: str) -> bool;
     def set_identity_verified(user_id: str, value_normalized: str) -> bool;
+    def update_profile(
+        user_id: str, profile_updates: dict[str, Any]
+    ) -> dict[str, Any];
+
     def close -> None;
     # JWT methods (use user_id as claim)
     def create_jwt_token(user_id: str, include_role: bool = True) -> str;
