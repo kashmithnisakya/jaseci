@@ -17,6 +17,7 @@
 """
 
 import from jac_scale.auth_tokens { AuthTokenStore }
+import from jac_scale.utils { authenticate_or_fail }
 
 # ============================================================================
 # /user/add-identity  (requires Bearer token)
@@ -26,13 +27,11 @@ impl JacAPIServerAuth.register_add_identity_endpoint -> None {
         request: Request, body_data: AddIdentityRequest
     ) -> TransportResponse {
         authorization = request.headers.get('Authorization');
-        user_id = extract_bearer_token(authorization, self.user_manager);
-        if not user_id {
-            return TransportResponse.fail(
-                code='UNAUTHORIZED',
-                message='Invalid or expired token',
-                meta=Meta(extra={'http_status': 401})
-            );
+        (user_id, auth_err) = authenticate_or_fail(
+            authorization, self.user_manager, 'Invalid or expired token'
+        );
+        if auth_err is not None {
+            return auth_err;
         }
         identity = body_data.identity.model_dump(mode='json');
         id_type = identity.get('type', '');
@@ -94,13 +93,11 @@ impl JacAPIServerAuth.register_send_verification_endpoint -> None {
         request: Request, body_data: SendVerificationRequest
     ) -> TransportResponse {
         authorization = request.headers.get('Authorization');
-        user_id = extract_bearer_token(authorization, self.user_manager);
-        if not user_id {
-            return TransportResponse.fail(
-                code='UNAUTHORIZED',
-                message='Invalid or expired token',
-                meta=Meta(extra={'http_status': 401})
-            );
+        (user_id, auth_err) = authenticate_or_fail(
+            authorization, self.user_manager, 'Invalid or expired token'
+        );
+        if auth_err is not None {
+            return auth_err;
         }
         identity = body_data.identity.model_dump(mode='json');
         id_type = identity.get('type', '');
