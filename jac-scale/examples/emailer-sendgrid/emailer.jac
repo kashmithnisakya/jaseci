@@ -23,7 +23,7 @@ obj SendGridEmailer(Emailer) {
     # Typed as Any because Jac's checker has no stubs for the sendgrid SDK.
     has _client: Any = None;
 
-    override def postinit -> None {
+    override def postinit {
         api_key = os.environ.get("SENDGRID_API_KEY", "");
         if api_key {
             self._client = SendGridAPIClient(api_key=api_key);
