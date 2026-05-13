@@ -51,6 +51,7 @@ import from jac_scale.auth_models {
     UpdatePasswordRequest,
     AddIdentityRequest,
     VerifyIdentityRequest,
+    SendVerificationRequest,
     ForgotPasswordRequest,
     ResetPasswordRequest,
     UpdateProfileRequest,
@@ -89,6 +90,7 @@ obj JacAPIServerAuth {
     def register_update_password_endpoint -> None;
     # Identity management
     def register_add_identity_endpoint -> None;
+    def register_send_verification_endpoint -> None;
     def register_verify_identity_endpoint -> None;
     # Password reset
     def register_forgot_password_endpoint -> None;

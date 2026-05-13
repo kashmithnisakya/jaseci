@@ -810,7 +810,7 @@ The `{token}` placeholder in each template is replaced with the raw token before
 
 #### Add Identity
 
-Attach a new identity to the authenticated user. Email identities trigger a verification email and start unverified; username identities are added immediately.
+Attach a new identity to the authenticated user. **This endpoint never sends mail** -- it just adds the identity (email identities are stored as `verified=false`). To dispatch a verification email afterwards, call `/user/send-verification`.
 
 ```bash
 curl -X POST http://localhost:8000/user/add-identity \
@@ -822,19 +822,50 @@ curl -X POST http://localhost:8000/user/add-identity \
   }'
 ```
 
-Returns HTTP 202 for email identities (verification email queued):
+Returns HTTP 200:
 
 ```json
 {
   "ok": true,
-  "data": {"status": "pending_verification", "verified": false, "email_sent": true},
+  "data": {"status": "added", "verified": false},
+  "meta": {"extra": {"http_status": 200}}
+}
+```
+
+Errors: `401 UNAUTHORIZED`, `409 IDENTITY_TAKEN`, `404 NOT_FOUND`.
+
+#### Send Verification
+
+Issue a verification token for an email identity on the authenticated user and deliver it via the configured emailer. Idempotent: returns `already_verified` if the identity is already verified. Calling it again on an unverified identity revokes prior outstanding verification tokens for the user and issues a fresh one (clean retry/resend).
+
+```bash
+curl -X POST http://localhost:8000/user/send-verification \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"identity": {"type": "email", "value": "alice@example.com"}}'
+```
+
+Returns HTTP 202 (email queued):
+
+```json
+{
+  "ok": true,
+  "data": {"status": "pending_verification", "email_sent": true},
   "meta": {"extra": {"http_status": 202}}
 }
 ```
 
-Returns HTTP 200 for non-email identities (added immediately).
+Returns HTTP 200 when the identity is already verified:
 
-Errors: `401 UNAUTHORIZED`, `409 IDENTITY_TAKEN`, `503 EMAIL_DISABLED` (email type when no emailer is configured), `404 NOT_FOUND`.
+```json
+{
+  "ok": true,
+  "data": {"status": "already_verified"},
+  "meta": {"extra": {"http_status": 200}}
+}
+```
+
+Errors: `400 VALIDATION_ERROR` (non-email identity or missing value), `401 UNAUTHORIZED`, `404 NOT_FOUND` (identity is not on the current user), `503 EMAIL_DISABLED` (no emailer configured).
 
 #### Verify Identity
 
@@ -915,7 +946,8 @@ Errors: `400 INVALID_TOKEN`.
 | POST | `/user/refresh-token` | No (token in body) | Refresh an existing JWT |
 | GET | `/user/me` | Yes (Bearer) | Get the authenticated user's profile |
 | PUT | `/user/password` | Yes (Bearer) | Update password |
-| POST | `/user/add-identity` | Yes (Bearer) | Attach an email/username identity to the current user |
+| POST | `/user/add-identity` | Yes (Bearer) | Attach an email/username identity to the current user (no email sent) |
+| POST | `/user/send-verification` | Yes (Bearer) | Dispatch a verification email for an unverified email identity |
 | POST | `/user/verify-identity` | No (token in body) | Confirm an email identity via the token sent by email |
 | POST | `/user/forgot-password` | No | Start the password-reset flow (always returns 200) |
 | POST | `/user/reset-password` | No (token in body) | Consume a reset token and set a new password |

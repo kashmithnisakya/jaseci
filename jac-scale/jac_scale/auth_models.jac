@@ -127,6 +127,12 @@ class VerifyIdentityRequest(BaseModel) {
     );
 }
 
+class SendVerificationRequest(BaseModel) {
+    has identity: IdentityInput = Field(
+        ..., description='Identity (email) on the current user to send a verification mail for'
+    );
+}
+
 class ForgotPasswordRequest(BaseModel) {
     has identity: IdentityInput = Field(
         ..., description='Identity (username or email) to start password reset for'

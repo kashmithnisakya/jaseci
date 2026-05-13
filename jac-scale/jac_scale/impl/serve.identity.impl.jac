@@ -1,14 +1,19 @@
 """User identity & password-reset endpoints.
 
-- POST /user/add-identity     (auth) - attach a new identity (e.g. email) to the
-                              calling user. Email identities trigger a
-                              verification mail and start unverified.
-- POST /user/verify-identity         - consume a verification token and flip the
-                              matching identity to verified=True.
-- POST /user/forgot-password         - issue a one-time reset token to the email
-                              address tied to the identity, if any. Always
-                              returns 200 (never leaks existence).
-- POST /user/reset-password          - consume a reset token and set a new password.
+- POST /user/add-identity      (auth) - attach a new identity (e.g. email) to
+                               the calling user. No email is sent; email
+                               identities are stored as verified=False.
+- POST /user/send-verification (auth) - issue a verification token for an
+                               unverified email identity on the current user
+                               and deliver it. Idempotent: returns
+                               'already_verified' if the identity is verified.
+- POST /user/verify-identity          - consume a verification token and flip
+                               the matching identity to verified=True.
+- POST /user/forgot-password          - issue a one-time reset token to the
+                               email address tied to the identity, if any.
+                               Always returns 200 (never leaks existence).
+- POST /user/reset-password           - consume a reset token and set a new
+                               password.
 """
 
 import from jac_scale.auth_tokens { AuthTokenStore }
@@ -48,15 +53,6 @@ impl JacAPIServerAuth.register_add_identity_endpoint -> None {
                 meta=Meta(extra={'http_status': 409})
             );
         }
-        emailer = self.get_emailer();
-        # Email identities: hold off until we can deliver the verification mail.
-        if id_type == 'email' and (emailer is None or not emailer.is_ready()) {
-            return TransportResponse.fail(
-                code='EMAIL_DISABLED',
-                message='Email features are not configured on this server',
-                meta=Meta(extra={'http_status': 503})
-            );
-        }
         identity_doc = {
             'type': id_type,
             'value_raw': raw_value,
@@ -71,13 +67,95 @@ impl JacAPIServerAuth.register_add_identity_endpoint -> None {
                 meta=Meta(extra={'http_status': 404})
             );
         }
-        if id_type != 'email' {
+        return TransportResponse.success(
+            data={'status': 'added', 'verified': False},
+            meta=Meta(extra={'http_status': 200})
+        );
+    }
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.POST,
+            path='/user/add-identity',
+            callback=add_identity_handler,
+            request_model=AddIdentityRequest,
+            response_model=None,
+            tags=['User APIs'],
+            summary='Attach a new identity to the authenticated user',
+            description='Attaches an identity (e.g. email or username) to the user. Email identities are stored as unverified; use /user/send-verification to dispatch a verification mail.'
+        )
+    );
+}
+
+# ============================================================================
+# /user/send-verification  (requires Bearer token)
+# ============================================================================
+impl JacAPIServerAuth.register_send_verification_endpoint -> None {
+    async def send_verification_handler(
+        request: Request, body_data: SendVerificationRequest
+    ) -> TransportResponse {
+        authorization = request.headers.get('Authorization');
+        user_id = extract_bearer_token(authorization, self.user_manager);
+        if not user_id {
+            return TransportResponse.fail(
+                code='UNAUTHORIZED',
+                message='Invalid or expired token',
+                meta=Meta(extra={'http_status': 401})
+            );
+        }
+        identity = body_data.identity.model_dump(mode='json');
+        id_type = identity.get('type', '');
+        raw_value = identity.get('value', '');
+        normalized = (raw_value or '').lower().strip();
+        if id_type != 'email' or not normalized {
+            return TransportResponse.fail(
+                code='VALIDATION_ERROR',
+                message='An email identity value is required',
+                meta=Meta(extra={'http_status': 400})
+            );
+        }
+        user = self.user_manager.get_user(user_id);
+        if user is None {
+            return TransportResponse.fail(
+                code='NOT_FOUND',
+                message='User not found',
+                meta=Meta(extra={'http_status': 404})
+            );
+        }
+        # Find the requested identity on this user.
+        target: dict[str, Any] | None = None;
+        for ident in user.get('identities', []) {
+            if ident.get('type') != 'email' {
+                continue;
+            }
+            if (ident.get('value_normalized') or '') == normalized {
+                target = ident;
+                break;
+            }
+        }
+        if target is None {
+            return TransportResponse.fail(
+                code='NOT_FOUND',
+                message='Identity not found on this user',
+                meta=Meta(extra={'http_status': 404})
+            );
+        }
+        if target.get('verified') {
             return TransportResponse.success(
-                data={'status': 'added', 'verified': False},
+                data={'status': 'already_verified'},
                 meta=Meta(extra={'http_status': 200})
             );
         }
-        # Issue a verification token and deliver it.
+        emailer = self.get_emailer();
+        if emailer is None or not emailer.is_ready() {
+            return TransportResponse.fail(
+                code='EMAIL_DISABLED',
+                message='Email features are not configured on this server',
+                meta=Meta(extra={'http_status': 503})
+            );
+        }
+        # Revoke any outstanding verify tokens for this user before issuing a
+        # fresh one — keeps "resend" idempotent and prevents token reuse races.
+        AuthTokenStore.instance().revoke_user_tokens(user_id, 'verify');
         auth_cfg = get_scale_config().get_auth_config();
         ttl = auth_cfg.get('verify_token_ttl_seconds', 86400);
         url_template = auth_cfg.get('verify_url_template', '');
@@ -93,13 +171,15 @@ impl JacAPIServerAuth.register_add_identity_endpoint -> None {
             f"{link}\n\nThis link expires in {ttl // 60} minutes.\n\n"
             "If you did not request this, you can ignore this message."
         );
+        recipient = target.get('value_raw') or raw_value;
         sent = emailer.send_email(
-            to_addr=raw_value, subject='Verify your email address', body_text=body_text
+            to_addr=recipient,
+            subject='Verify your email address',
+            body_text=body_text
         );
         return TransportResponse.success(
             data={
                 'status': 'pending_verification',
-                'verified': False,
                 'email_sent': bool(sent)
             },
             meta=Meta(extra={'http_status': 202})
@@ -108,13 +188,13 @@ impl JacAPIServerAuth.register_add_identity_endpoint -> None {
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.POST,
-            path='/user/add-identity',
-            callback=add_identity_handler,
-            request_model=AddIdentityRequest,
+            path='/user/send-verification',
+            callback=send_verification_handler,
+            request_model=SendVerificationRequest,
             response_model=None,
             tags=['User APIs'],
-            summary='Attach a new identity to the authenticated user',
-            description='Attaches an identity (e.g. an email) to the user. Email identities are unverified until /user/verify-identity is called.'
+            summary='Send a verification email for an unverified identity',
+            description='Issues a verification token for an email identity on the authenticated user and delivers it via the configured emailer. Idempotent: returns already_verified if the identity is verified.'
         )
     );
 }

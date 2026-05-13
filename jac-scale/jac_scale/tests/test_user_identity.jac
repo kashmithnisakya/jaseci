@@ -1,6 +1,7 @@
-"""End-to-end tests for /user/add-identity, /user/verify-identity,
-/user/forgot-password, and /user/reset-password against a server running
-with a fake in-process emailer (see fixtures/identity_api/test_emailer_fake.jac).
+"""End-to-end tests for /user/add-identity, /user/send-verification,
+/user/verify-identity, /user/forgot-password, and /user/reset-password against
+a server running with a fake in-process emailer (see
+fixtures/identity_api/test_emailer_fake.jac).
 """
 
 import contextlib;
@@ -106,7 +107,7 @@ def _stop_server(proc: subprocess.Popen | None) {
 }
 
 # =============================================================================
-# Test 1: add-identity contract - auth, validation, dup detection, mail send
+# Test 1: add-identity + send-verification contract
 # =============================================================================
 test "add_identity_contract" {
     _cleanup();
@@ -148,16 +149,42 @@ test "add_identity_contract" {
         assert r.status_code == 409;
         assert r.json()["error"]["code"] == "IDENTITY_TAKEN";
 
-        # 4. Add an email → 202 pending_verification + email sent via FakeEmailer.
+        # 4. Add an email → 200 added, verified=False, NO email sent yet.
         r = requests.post(
             f"{base}/user/add-identity",
             json={"identity": {"type": "email", "value": email_addr}},
             headers={"Authorization": f"Bearer {token}"},
             timeout=5
         ).json();
+        assert _data(r)["status"] == "added";
+        assert _data(r)["verified"] == False;
+
+        # 5. send-verification for that email → 202 pending_verification + mail sent.
+        r = requests.post(
+            f"{base}/user/send-verification",
+            json={"identity": {"type": "email", "value": email_addr}},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=5
+        ).json();
         assert _data(r)["status"] == "pending_verification";
         assert _data(r)["email_sent"] == True;
-        assert _data(r)["verified"] == False;
+
+        # 6. send-verification with no auth → 401.
+        r = requests.post(
+            f"{base}/user/send-verification",
+            json={"identity": {"type": "email", "value": email_addr}},
+            timeout=5
+        );
+        assert r.status_code == 401;
+
+        # 7. send-verification for an email NOT on this user → 404.
+        r = requests.post(
+            f"{base}/user/send-verification",
+            json={"identity": {"type": "email", "value": "not-mine@example.com"}},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=5
+        );
+        assert r.status_code == 404;
     } finally {
         _stop_server(proc);
         _cleanup();
