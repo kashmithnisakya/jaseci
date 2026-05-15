@@ -2117,8 +2117,7 @@ test "startup probe gates liveness and experimental setup is resilient" {
     assert sp['httpGet']['port'] == target.k8s_config.container_port;
     assert sp['failureThreshold'] >= 60 , "startup window too small for experimental install";
     container = target._build_container_config(
-        'test-app', 'example/image:latest', probes,
-        target._build_resource_config()
+        'test-app', 'example/image:latest', probes, target._build_resource_config()
     );
     assert container['startupProbe'] == sp , "container must carry the startup probe";
 
@@ -2140,7 +2139,14 @@ test "startup probe gates liveness and experimental setup is resilient" {
         cmds = t._build_runtime_setup_command(app_config);
         assert cmds[0] == 'bash' and cmds[1] == '-c' , "runtime setup must be a bash -c script";
         steps = cmds[2].split(' && ');
-        clone = next((s for s in steps if s.startswith('git clone')), '');
+        clone = next(
+            (
+                s
+                for s in steps
+                if s.startswith('git clone')
+            ),
+            ''
+        );
         assert expected in clone , f"{repo_in} not normalized: {clone}";
         assert 'git@' not in clone and 'ssh://' not in clone , f"SSH url leaked: {clone}";
     }
