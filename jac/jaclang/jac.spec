@@ -235,7 +235,7 @@ jsx_attributes ::=
 
 jsx_children ::= jsx_child*
 
-jsx_child ::= JSX_TEXT jsx_child? | "{" expression "}" | jsx_element
+jsx_child ::= JSX_TEXT jsx_child? | JSX_COMMENT | "{" expression "}" | jsx_element
 
 element_stmt ::=
     ";"
@@ -446,7 +446,11 @@ archetype_member ::=
 
 has_stmt ::= "static"? "has" access_tag has_var ("," has_var)* ";"
 
-has_var ::= (NAME | KWESC_NAME) ":" pipe ("=" expression | ("by" "postinit")?)
+has_var ::=
+    (NAME | KWESC_NAME) ":" pipe ("=" expression | ("by" "postinit")?)
+    ("{" accessor* "}")?
+
+accessor ::= func_signature ("{" code_block_stmts "}" | ";")
 
 ability ::=
     ("@" atomic_chain)* "override"? "class"? "static"? ("async" "class"?)? access_tag
