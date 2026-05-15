@@ -128,15 +128,6 @@ obj KubernetesTarget(DeploymentTarget) {
         liveness_probe['periodSeconds'] = self.k8s_config.liveness_period;
         liveness_probe['failureThreshold'] = self.k8s_config.liveness_failure_threshold;
 
-        # Startup probe gates the liveness/readiness probes so a slow first
-        # boot does not crash-loop the pod. In experimental mode the
-        # container runs apt-get, clones the jaseci repo and pip-installs
-        # jaclang/jac-scale/jac-client from source, then performs the
-        # initial jac compile — several minutes before :8000 serves /docs.
-        # Without this probe the liveness probe (~45s grace) kills the
-        # container mid-install and it never recovers. Once the startup
-        # probe passes, the tighter liveness probe takes over for
-        # steady-state health. ~15min total first-boot grace.
         startup_probe = {
             'httpGet': {
                 'path': health_check_path,
