@@ -2201,3 +2201,55 @@ test "redis insight cache dashboard spec is correctly built" {
     assert dash['service']['spec']['ports'][0]['port'] == 5540;
     assert dash['service_account']['automountServiceAccountToken'] is False;
 }
+
+test "redis ACL is secret mounted not in configmap and creds validated" {
+    provider = DatabaseProviderFactory.create(
+        'kubernetes_redis', None, {'app_name': 'test-app'}
+    );
+    dep = provider.deploy();
+
+    conf = dep['configmap']['data']['redis.conf'];
+    assert 'aclfile /etc/redis-acl/users.acl' in conf;
+    assert 'user default on >' not in conf , "ACL (with password) inlined into ConfigMap";
+    secret_sd = dep['secret']['stringData'];
+    assert 'users.acl' in secret_sd , "ACL file must be in the Secret";
+    assert secret_sd['users.acl'].startswith('user default on >password');
+
+    # ACL is mounted from the Secret on its own path, read-only
+    pod = dep['deployment']['spec']['template']['spec'];
+    acl_vol = next(
+        (v for v in pod['volumes'] if v['name'] == 'redis-acl'), None
+    );
+    assert acl_vol is not None , "redis-acl volume missing";
+    assert acl_vol['secret']['secretName'] == dep['secret_name'];
+    assert acl_vol['secret']['items'][0]['key'] == 'users.acl';
+    assert any(
+        m['name'] == 'redis-acl'
+        and m['mountPath'] == '/etc/redis-acl'
+        and m.get('readOnly') is True
+        for m in pod['containers'][0]['volumeMounts']
+    ) , "redis-acl must be mounted read-only at /etc/redis-acl";
+
+    raised = False;
+    try {
+        provider._build_acl_file('admin', "pw\nuser eve on nopass ~* +@all");
+    } except ValueError {
+        raised = True;
+    }
+    assert raised , "newline in password must be rejected";
+    raised2 = False;
+    try {
+        provider._build_acl_file("ad min", 'password');
+    } except ValueError {
+        raised2 = True;
+    }
+    assert raised2 , "ACL-significant chars in username must be rejected";
+
+    assert provider._build_connection_string(
+        'default', 'pw', 'h'
+    ) == 'redis://default:pw@h:6379/0';
+    assert provider._build_connection_string(
+        'admin', 'pw', 'h'
+    ) == 'redis://admin:pw@h:6379/0';
+    assert secret_sd['connection-string'] == provider.get_connection_string();
+}
