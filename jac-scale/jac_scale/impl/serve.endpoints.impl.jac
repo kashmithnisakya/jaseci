@@ -462,10 +462,16 @@ impl JacAPIServerEndpoints.create_webhook_callback(
         );
 
         if 'error' in result {
+            # Webhooks are called by external services. Log the detailed
+            # error and traceback server-side, but return only a generic
+            # message so internal state is not disclosed to the caller.
+            logger.error(
+                f"Webhook walker '{walker_name}' failed: "
+                f"{result.get('error')} {result.get('traceback', '')}"
+            );
             return TransportResponse.fail(
                 code='EXECUTION_ERROR',
-                message=result.get('error', 'Walker execution failed'),
-                details=result.get('traceback') if 'traceback' in result else None,
+                message='Webhook processing failed',
                 meta=Meta(extra={'http_status': 500})
             );
         }
