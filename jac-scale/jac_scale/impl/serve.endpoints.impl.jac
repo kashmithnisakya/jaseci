@@ -381,7 +381,20 @@ impl JacAPIServerEndpoints.create_webhook_callback(
             body_data = {};
         }
 
-        walker_kwargs: dict[str, Any] = dict(body_data) if body_data else {};
+        # Only forward keys that are declared walker fields. The body comes
+        # from an external caller, so passing it through unfiltered would
+        # let it set arbitrary/internal walker attributes (mass assignment).
+        walker_fields = self.introspector.introspect_walker(
+            self.get_walkers()[walker_name]
+        )['fields'];
+        walker_kwargs: dict[str, Any] = {};
+        if isinstance(body_data, dict) {
+            for (field_name, value) in body_data.items() {
+                if field_name in walker_fields and field_name != '_jac_spawn_node' {
+                    walker_kwargs[field_name] = value;
+                }
+            }
+        }
 
         # Execute the walker
         result = await self.execution_manager.spawn_walker(
