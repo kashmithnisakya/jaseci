@@ -534,11 +534,10 @@ impl JacAPIServerEndpoints.create_webhook_parameters(
     walker_name: str
 ) -> list[APIParameter] {
     parameters: list[APIParameter] = [];
-    # Signature/timestamp are required at runtime when verify_signature is
-    # on, so reflect that in the OpenAPI spec instead of always-optional.
-    sig_required = get_scale_config().get_webhook_config().get(
-        'verify_signature', True
-    );
+    # Signature/timestamp are enforced at runtime by the callback (which
+    # returns a precise 401 and checks the API key first). They are left
+    # optional here so FastAPI does not short-circuit that ordering with a
+    # generic 422 before the callback runs.
     # API key header (required for webhooks)
     # Use underscore naming for valid Python identifiers - FastAPI auto-converts to hyphenated headers
     parameters.append(
@@ -557,7 +556,7 @@ impl JacAPIServerEndpoints.create_webhook_parameters(
         APIParameter(
             name='x_webhook_signature',
             data_type='string',
-            required=sig_required,
+            required=False,
             default=None,
             description='HMAC-SHA256 signature of "<timestamp>." + body, signed with the signing_secret (X-Webhook-Signature header)',
             type=ParameterType.HEADER
@@ -568,7 +567,7 @@ impl JacAPIServerEndpoints.create_webhook_parameters(
         APIParameter(
             name='x_webhook_timestamp',
             data_type='string',
-            required=sig_required,
+            required=False,
             default=None,
             description='Unix timestamp (seconds) of the request, bound into the signature (X-Webhook-Timestamp header)',
             type=ParameterType.HEADER
