@@ -128,8 +128,11 @@ impl ApiKeyManager.create_api_key(
     } elif default_expiry > 0 {
         expires_at = key_created_at + timedelta(days=int(default_expiry));
     }
-    # Persist key metadata. signing_secret and allowed_walkers are reserved
-    # for the signature (C1) and scoping (H3) work and are unused for now.
+    # The signing_secret is independent of the api_key and is returned only
+    # here, once. The caller shares it out of band and signs request bodies
+    # with it; it must never travel in a webhook request. allowed_walkers
+    # is reserved for the scoping (H3) work.
+    signing_secret = secrets.token_hex(32);
     key_doc = {
         '_id': api_key_id,
         'user_id': user_id,
@@ -137,7 +140,7 @@ impl ApiKeyManager.create_api_key(
         'created_at': key_created_at.isoformat(),
         'expires_at': expires_at.isoformat() if expires_at else None,
         'revoked': False,
-        'signing_secret': secrets.token_hex(32),
+        'signing_secret': signing_secret,
         'allowed_walkers': []
     };
     if self._db is not None {
@@ -151,7 +154,8 @@ impl ApiKeyManager.create_api_key(
             'api_key_id': api_key_id,
             'name': name,
             'created_at': key_created_at.isoformat(),
-            'expires_at': expires_at.isoformat() if expires_at else None
+            'expires_at': expires_at.isoformat() if expires_at else None,
+            'signing_secret': signing_secret
         },
         meta=Meta(extra={'http_status': 201})
     );
@@ -262,4 +266,27 @@ impl ApiKeyManager.is_key_active(api_key_id: str) -> bool {
         return True;
     }
     return not key_info.get('revoked', False);
+}
+
+"""Return the per-key signing secret for a valid api_key, or None.
+
+This secret is independent of the api_key itself and is never sent in a
+webhook request, so it is what request bodies are HMAC-signed with.
+"""
+impl ApiKeyManager.get_signing_secret(api_key: str) -> str | None {
+    key_info = WebhookUtils.validate_api_key(api_key);
+    if not key_info {
+        return None;
+    }
+    api_key_id = key_info.get('api_key_id', '');
+    key_doc: dict | None = None;
+    if self._db is not None {
+        key_doc = self._db.find_one(self._collection, {'_id': api_key_id});
+    } else {
+        key_doc = self._inmemory_store.get(api_key_id);
+    }
+    if not key_doc {
+        return None;
+    }
+    return key_doc.get('signing_secret');
 }

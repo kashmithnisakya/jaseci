@@ -116,4 +116,7 @@ obj ApiKeyManager {
 
     """Check if an API key ID exists and is not revoked."""
     def is_key_active(api_key_id: str) -> bool;
+
+    """Return the per-key signing secret for a valid api_key, or None."""
+    def get_signing_secret(api_key: str) -> str | None;
 }

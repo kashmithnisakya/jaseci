@@ -104,9 +104,16 @@ Webhook endpoints require API key authentication. Users must first create an API
     "api_key_id": "a1b2c3d4e5f6...",
     "name": "My Webhook Key",
     "created_at": "2024-01-15T10:30:00Z",
-    "expires_at": "2024-02-14T10:30:00Z"
+    "expires_at": "2024-02-14T10:30:00Z",
+    "signing_secret": "9f86d081884c7d659a2feaa0c55ad015..."
 }
 ```
+
+> **Important:** `signing_secret` is returned **only once**, here. Store it
+> securely and share it out of band with the calling service. It is used to
+> HMAC-sign request bodies and must **never** be sent in a webhook request.
+> It is independent of `api_key`; the API key identifies the caller, the
+> signing secret proves the request was not forged or tampered with.
 
 ### Listing API Keys
 
@@ -157,14 +164,20 @@ Webhook endpoints require two headers for authentication:
 
 ### Generating the Signature
 
-The signature is computed as: `HMAC-SHA256(request_body, api_key)`
+The signature is computed as: `HMAC-SHA256(request_body, signing_secret)`
+
+The `signing_secret` is the value returned once from `/api-key/create`. It is
+**not** the API key. The API key is sent in the request to identify the
+caller; the signing secret is held only by you and the calling service and
+never travels in the request, which is what makes the signature meaningful.
 
 #### cURL Example
 
 ```bash
 API_KEY="eyJhbGciOiJIUzI1NiIs..."
+SIGNING_SECRET="9f86d081884c7d659a2feaa0c55ad015..."
 PAYLOAD='{"payment_id":"PAY-12345","amount":99.99,"currency":"USD"}'
-SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$API_KEY" | cut -d' ' -f2)
+SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$SIGNING_SECRET" | cut -d' ' -f2)
 
 curl -X POST "http://localhost:8000/webhook/PaymentReceived" \
     -H "Content-Type: application/json" \

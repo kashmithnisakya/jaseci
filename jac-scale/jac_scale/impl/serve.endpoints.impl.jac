@@ -361,10 +361,23 @@ impl JacAPIServerEndpoints.create_webhook_callback(
                     meta=Meta(extra={'http_status': 401})
                 );
             }
+            # Sign/verify with the per-key signing secret, NOT the api_key.
+            # The api_key travels in this request, so using it as the HMAC
+            # secret would let any observer forge a valid signature. The
+            # signing secret is shared out of band and never sent here.
+            signing_secret = self.get_api_key_manager().get_signing_secret(
+                api_key
+            );
+            if not signing_secret {
+                return TransportResponse.fail(
+                    code='UNAUTHORIZED',
+                    message='Invalid webhook signature',
+                    meta=Meta(extra={'http_status': 401})
+                );
+            }
             extracted_signature = WebhookUtils.extract_signature(signature);
-            # Use the API key as the secret for HMAC verification
             if not WebhookUtils.verify_signature(
-                raw_body, extracted_signature, api_key
+                raw_body, extracted_signature, signing_secret
             ) {
                 return TransportResponse.fail(
                     code='UNAUTHORIZED',
