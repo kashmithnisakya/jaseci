@@ -494,6 +494,71 @@ def run_webhook_revoked_api_key_test(base_url: str) {
     );
 }
 
+"""A key scoped via allowed_walkers cannot call other webhook walkers."""
+def run_webhook_scoped_api_key_test(base_url: str) {
+    username = f"webhook_scoped_user_{uuid.uuid4().hex[:8]}";
+    token = _register_and_login(base_url, username, "password123");
+
+    api_key_response = requests.post(
+        f"{base_url}/api-key/create",
+        json={
+            "name": "scoped_key",
+            "expiry_days": 30,
+            "allowed_walkers": "PaymentReceived"
+        },
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=10
+    );
+    assert api_key_response.status_code == 201;
+    api_key_data = cast(
+        dict[str, Any], _extract_transport_response_data(api_key_response.json())
+    );
+    api_key = api_key_data["api_key"];
+
+    # Allowed walker works
+    payload = json.dumps(
+        {
+            "payment_id": "PAY-1",
+            "order_id": "ORD-1",
+            "amount": 1.0,
+            "currency": "USD"
+        }
+    );
+    payload_bytes = payload.encode("utf-8");
+    ts = str(int(time.time())); signature = _generate_webhook_signature(f"{ts}.".encode("utf-8") + payload_bytes, api_key_data["signing_secret"]);
+    allowed_resp = requests.post(
+        f"{base_url}/webhook/PaymentReceived",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "X-API-Key": api_key,
+            "X-Webhook-Signature": signature, "X-Webhook-Timestamp": ts
+        },
+        timeout=10
+    );
+    assert allowed_resp.status_code == 200 , (
+        f"Expected 200 for allowed walker, got {allowed_resp.status_code}: {allowed_resp.text}"
+    );
+
+    # Walker outside the allow-list is rejected with 403
+    other_payload = json.dumps({});
+    other_bytes = other_payload.encode("utf-8");
+    ts2 = str(int(time.time())); other_sig = _generate_webhook_signature(f"{ts2}.".encode("utf-8") + other_bytes, api_key_data["signing_secret"]);
+    denied_resp = requests.post(
+        f"{base_url}/webhook/MinimalWebhook",
+        data=other_payload,
+        headers={
+            "Content-Type": "application/json",
+            "X-API-Key": api_key,
+            "X-Webhook-Signature": other_sig, "X-Webhook-Timestamp": ts2
+        },
+        timeout=10
+    );
+    assert denied_resp.status_code == 403 , (
+        f"Expected 403 for walker outside scope, got {denied_resp.status_code}: {denied_resp.text}"
+    );
+}
+
 # =========================================================================
 # Test class 1: Webhook tests WITHOUT MongoDB (file-based storage)
 # Uses ScaleTestClient (in-process, no subprocess)
@@ -820,6 +885,73 @@ test "webhook without mongo - revoked api key" {
     }
 }
 
+test "webhook without mongo - scoped api key" {
+    original_mongodb_uri = os.environ.pop("MONGODB_URI", None);
+    client = make_client();
+    try {
+        _wh_user5 = f"webhook_scoped_user_{uuid.uuid4().hex[:8]}";
+        client.register_user(_wh_user5, "password123");
+        token = client.login_user(_wh_user5, "password123");
+
+        api_key_response = client.post(
+            "/api-key/create",
+            json={
+                "name": "scoped_key",
+                "expiry_days": 30,
+                "allowed_walkers": "PaymentReceived"
+            },
+            headers={"Authorization": f"Bearer {token}"}
+        );
+        assert api_key_response.status_code == 201;
+        api_key_data = extract_data(api_key_response.json());
+        api_key = api_key_data["api_key"];
+
+        payload = json.dumps(
+            {
+                "payment_id": "PAY-1",
+                "order_id": "ORD-1",
+                "amount": 1.0,
+                "currency": "USD"
+            }
+        );
+        payload_bytes = payload.encode("utf-8");
+        ts = str(int(time.time())); signature = _generate_webhook_signature(f"{ts}.".encode("utf-8") + payload_bytes, api_key_data["signing_secret"]);
+        allowed_resp = client.post(
+            "/webhook/PaymentReceived",
+            content=payload,
+            headers={
+                "Content-Type": "application/json",
+                "X-API-Key": api_key,
+                "X-Webhook-Signature": signature, "X-Webhook-Timestamp": ts
+            }
+        );
+        assert allowed_resp.status_code == 200 , (
+            f"Expected 200 for allowed walker, got {allowed_resp.status_code}: {allowed_resp.text}"
+        );
+
+        other_payload = json.dumps({});
+        other_bytes = other_payload.encode("utf-8");
+        ts2 = str(int(time.time())); other_sig = _generate_webhook_signature(f"{ts2}.".encode("utf-8") + other_bytes, api_key_data["signing_secret"]);
+        denied_resp = client.post(
+            "/webhook/MinimalWebhook",
+            content=other_payload,
+            headers={
+                "Content-Type": "application/json",
+                "X-API-Key": api_key,
+                "X-Webhook-Signature": other_sig, "X-Webhook-Timestamp": ts2
+            }
+        );
+        assert denied_resp.status_code == 403 , (
+            f"Expected 403 for walker outside scope, got {denied_resp.status_code}: {denied_resp.text}"
+        );
+    } finally {
+        client.close();
+        if original_mongodb_uri is not None {
+            os.environ["MONGODB_URI"] = original_mongodb_uri;
+        }
+    }
+}
+
 # =========================================================================
 # Test class 2: Webhook tests WITH MongoDB (via testcontainers)
 # =========================================================================
@@ -986,6 +1118,25 @@ test "webhook with mongo - revoked api key" {
     sp = _start_server(wh_fixtures_dir, wh_test_file, port, base_url);
     try {
         run_webhook_revoked_api_key_test(base_url);
+    } finally {
+        _stop_server(sp);
+        os.environ.pop("MONGODB_URI", None);
+        mongo_container.stop();
+        _cleanup_db_files(wh_fixtures_dir);
+    }
+}
+
+test "webhook with mongo - scoped api key" {
+    port = get_free_port();
+    base_url = f"http://localhost:{port}";
+    mongo_container = MongoDbContainer("mongo:latest");
+    mongo_container.start();
+    mongo_uri = mongo_container.get_connection_url();
+    os.environ["MONGODB_URI"] = mongo_uri;
+    _cleanup_db_files(wh_fixtures_dir);
+    sp = _start_server(wh_fixtures_dir, wh_test_file, port, base_url);
+    try {
+        run_webhook_scoped_api_key_test(base_url);
     } finally {
         _stop_server(sp);
         os.environ.pop("MONGODB_URI", None);

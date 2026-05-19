@@ -100,9 +100,15 @@ obj ApiKeyManager {
     """Backfill user_id/signing_secret/allowed_walkers and index user_id."""
     def _migrate_and_index -> None;
 
-    """Create a new API key for a user (keyed by stable user_id)."""
+    """Create a new API key for a user (keyed by stable user_id).
+
+    allowed_walkers scopes the key to specific webhook walkers. An empty
+    or omitted list means the key may call any webhook walker."""
     def create_api_key(
-        user_id: str, name: str, expiry_days: int | None = None
+        user_id: str,
+        name: str,
+        expiry_days: int | None = None,
+        allowed_walkers: list[str] | None = None
     ) -> TransportResponse;
 
     """List all API keys for a user."""
@@ -119,4 +125,7 @@ obj ApiKeyManager {
 
     """Return the per-key signing secret for a valid api_key, or None."""
     def get_signing_secret(api_key: str) -> str | None;
+
+    """Whether a valid api_key is permitted to call the given walker."""
+    def is_walker_allowed(api_key: str, walker_name: str) -> bool;
 }

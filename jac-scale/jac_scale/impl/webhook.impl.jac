@@ -121,7 +121,10 @@ impl ApiKeyManager._migrate_and_index -> None {
 
 """Create a new API key for a user."""
 impl ApiKeyManager.create_api_key(
-    user_id: str, name: str, expiry_days: int | None = None
+    user_id: str,
+    name: str,
+    expiry_days: int | None = None,
+    allowed_walkers: list[str] | None = None
 ) -> TransportResponse {
     # Generate unique API key ID
     api_key_id = secrets.token_hex(16);
@@ -140,7 +143,7 @@ impl ApiKeyManager.create_api_key(
     # The signing_secret is independent of the api_key and is returned only
     # here, once. The caller shares it out of band and signs request bodies
     # with it; it must never travel in a webhook request. allowed_walkers
-    # is reserved for the scoping (H3) work.
+    # scopes the key; an empty list means it may call any webhook walker.
     signing_secret = secrets.token_hex(32);
     key_doc = {
         '_id': api_key_id,
@@ -150,7 +153,7 @@ impl ApiKeyManager.create_api_key(
         'expires_at': expires_at.isoformat() if expires_at else None,
         'revoked': False,
         'signing_secret': signing_secret,
-        'allowed_walkers': []
+        'allowed_walkers': allowed_walkers if allowed_walkers else []
     };
     if self._db is not None {
         self._db.insert_one(self._collection, key_doc);
@@ -299,4 +302,31 @@ impl ApiKeyManager.get_signing_secret(api_key: str) -> str | None {
         return None;
     }
     return key_doc.get('signing_secret');
+}
+
+"""Whether a valid api_key is permitted to call the given walker.
+
+An empty (or missing) allowed_walkers list means the key is unscoped and
+may call any webhook walker. A non-empty list is an allow-list.
+"""
+impl ApiKeyManager.is_walker_allowed(api_key: str, walker_name: str) -> bool {
+    key_info = WebhookUtils.validate_api_key(api_key);
+    if not key_info {
+        return False;
+    }
+    api_key_id = key_info.get('api_key_id', '');
+    key_doc: dict | None = None;
+    if self._db is not None {
+        key_doc = self._db.find_one(self._collection, {'_id': api_key_id});
+    } else {
+        key_doc = self._inmemory_store.get(api_key_id);
+    }
+    if not key_doc {
+        return False;
+    }
+    allowed = key_doc.get('allowed_walkers') or [];
+    if not allowed {
+        return True;
+    }
+    return walker_name in allowed;
 }

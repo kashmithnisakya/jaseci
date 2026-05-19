@@ -354,6 +354,16 @@ impl JacAPIServerEndpoints.create_webhook_callback(
                 meta=Meta(extra={'http_status': 401})
             );
         }
+        # Enforce per-key walker scoping (allow-list on the key)
+        if not self.get_api_key_manager().is_walker_allowed(
+            api_key, walker_name
+        ) {
+            return TransportResponse.fail(
+                code='FORBIDDEN',
+                message='API key is not permitted to call this webhook',
+                meta=Meta(extra={'http_status': 403})
+            );
+        }
 
         # Read the raw request body once and reuse it for both signature
         # verification and field parsing.

@@ -96,9 +96,15 @@ Webhook endpoints require API key authentication. Users must first create an API
 ```json
 {
     "name": "My Webhook Key",
-    "expiry_days": 30
+    "expiry_days": 30,
+    "allowed_walkers": "PaymentReceived,RefundIssued"
 }
 ```
+
+`allowed_walkers` is an optional comma-separated allow-list of webhook
+walker names this key may call. Omit it (or leave it empty) for an
+unscoped key that may call any webhook walker. A scoped key calling a
+walker outside its list is rejected with `403 Forbidden`.
 
 **Response:**
 
