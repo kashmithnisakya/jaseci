@@ -91,11 +91,11 @@ obj ApiKeyManager {
         _collection: str = 'webhook_api_keys',
         _rate_window: dict = {};
 
-    """Run the one-time legacy migration and ensure indexes (MongoDB only)."""
+    """Ensure indexes (MongoDB only)."""
     def postinit -> None;
 
-    """Backfill user_id/signing_secret/allowed_walkers and index user_id."""
-    def _migrate_and_index -> None;
+    """Index user_id for per-user key lookups."""
+    def _ensure_indexes -> None;
 
     """Create a new API key for a user (keyed by stable user_id).
 

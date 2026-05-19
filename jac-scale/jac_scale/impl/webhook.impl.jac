@@ -93,13 +93,13 @@ impl WebhookUtils.extract_signature(header_value: str) -> str {
     return value;
 }
 
-"""Run the one-time legacy migration and ensure indexes (MongoDB only)."""
+"""Ensure indexes (MongoDB only)."""
 impl ApiKeyManager.postinit -> None {
     if self._db is not None {
         try {
-            self._migrate_and_index();
+            self._ensure_indexes();
         } except Exception as e {
-            logger.warning(f"webhook_api_keys migration/index skipped: {e}");
+            logger.warning(f"webhook_api_keys index setup skipped: {e}");
         }
     } else {
         logger.warning(
@@ -110,25 +110,10 @@ impl ApiKeyManager.postinit -> None {
     }
 }
 
-"""Backfill user_id/signing_secret/allowed_walkers and index user_id.
-
-Legacy docs stored the identity under `username` (the value was always the
-user_id, just mislabeled). Copy it to `user_id`, backfill the new fields,
-and index `user_id`. Safe to run repeatedly.
-"""
-impl ApiKeyManager._migrate_and_index -> None {
+"""Index user_id for the per-user key lookups. Safe to run repeatedly."""
+impl ApiKeyManager._ensure_indexes -> None {
     col = self._db._get_mongo_collection(self._collection);
     col.create_index('user_id');
-    for doc in col.find({'user_id': {'$exists': False}}) {
-        updates: dict[str, Any] = {'user_id': doc.get('username', '')};
-        if doc.get('signing_secret') is None {
-            updates['signing_secret'] = secrets.token_hex(32);
-        }
-        if doc.get('allowed_walkers') is None {
-            updates['allowed_walkers'] = [];
-        }
-        col.update_one({'_id': doc.get('_id')}, {'$set': updates});
-    }
 }
 
 """Create a new API key for a user."""
