@@ -17,15 +17,19 @@ impl WebhookUtils.generate_api_key -> str {
     return secrets.token_hex(32);
 }
 
-"""Create a JWT-wrapped API key token."""
+"""Create a JWT-wrapped API key token.
+
+The `sub` claim carries the stable user_id. The `type` claim is kept as
+'api_key' so this token can never be accepted as a user session token.
+"""
 impl WebhookUtils.create_api_key_token(
-    api_key_id: str, username: str, name: str, expiry_days: int | None = None
+    api_key_id: str, user_id: str, name: str, expiry_days: int | None = None
 ) -> str {
     default_expiry = WEBHOOK_API_KEY_EXPIRY_DAYS;
     payload: dict[str, Any] = {
         'type': 'api_key',
         'api_key_id': api_key_id,
-        'sub': username,
+        'sub': user_id,
         'name': name,
         'iat': datetime.now(UTC)
     };
@@ -51,7 +55,7 @@ impl WebhookUtils.validate_api_key(api_key: str) -> dict[str, str] | None {
         }
 
         return {
-            'username': payload.get('sub', ''),
+            'user_id': payload.get('sub', ''),
             'api_key_id': payload.get('api_key_id', ''),
             'name': payload.get('name', '')
         };
@@ -74,15 +78,47 @@ impl WebhookUtils.extract_signature(header_value: str) -> str {
     return header_value;
 }
 
+"""Run the one-time legacy migration and ensure indexes (MongoDB only)."""
+impl ApiKeyManager.postinit -> None {
+    if self._db is not None {
+        try {
+            self._migrate_and_index();
+        } except Exception as e {
+            logger.warning(f"webhook_api_keys migration/index skipped: {e}");
+        }
+    }
+}
+
+"""Backfill user_id/signing_secret/allowed_walkers and index user_id.
+
+Legacy docs stored the identity under `username` (the value was always the
+user_id, just mislabeled). Copy it to `user_id`, backfill the new fields,
+and index `user_id`. Safe to run repeatedly.
+"""
+impl ApiKeyManager._migrate_and_index -> None {
+    col = self._db._get_mongo_collection(self._collection);
+    col.create_index('user_id');
+    for doc in col.find({'user_id': {'$exists': False}}) {
+        updates: dict[str, Any] = {'user_id': doc.get('username', '')};
+        if doc.get('signing_secret') is None {
+            updates['signing_secret'] = secrets.token_hex(32);
+        }
+        if doc.get('allowed_walkers') is None {
+            updates['allowed_walkers'] = [];
+        }
+        col.update_one({'_id': doc.get('_id')}, {'$set': updates});
+    }
+}
+
 """Create a new API key for a user."""
 impl ApiKeyManager.create_api_key(
-    username: str, name: str, expiry_days: int | None = None
+    user_id: str, name: str, expiry_days: int | None = None
 ) -> TransportResponse {
     # Generate unique API key ID
     api_key_id = secrets.token_hex(16);
     # Create the JWT-wrapped API key
     api_key = WebhookUtils.create_api_key_token(
-        api_key_id=api_key_id, username=username, name=name, expiry_days=expiry_days
+        api_key_id=api_key_id, user_id=user_id, name=name, expiry_days=expiry_days
     );
     key_created_at: datetime = datetime.now(UTC);
     expires_at: datetime | None = None;
@@ -92,14 +128,17 @@ impl ApiKeyManager.create_api_key(
     } elif default_expiry > 0 {
         expires_at = key_created_at + timedelta(days=int(default_expiry));
     }
-    # Persist key metadata
+    # Persist key metadata. signing_secret and allowed_walkers are reserved
+    # for the signature (C1) and scoping (H3) work and are unused for now.
     key_doc = {
         '_id': api_key_id,
-        'username': username,
+        'user_id': user_id,
         'name': name,
         'created_at': key_created_at.isoformat(),
         'expires_at': expires_at.isoformat() if expires_at else None,
-        'revoked': False
+        'revoked': False,
+        'signing_secret': secrets.token_hex(32),
+        'allowed_walkers': []
     };
     if self._db is not None {
         self._db.insert_one(self._collection, key_doc);
@@ -119,11 +158,11 @@ impl ApiKeyManager.create_api_key(
 }
 
 """List all API keys for a user (metadata only, not the keys)."""
-impl ApiKeyManager.list_api_keys(username: str) -> TransportResponse {
+impl ApiKeyManager.list_api_keys(user_id: str) -> TransportResponse {
     keys: list[dict[str, Any]] = [];
     if self._db is not None {
         cursor = self._db.find(
-            self._collection, {'username': username, 'revoked': False}
+            self._collection, {'user_id': user_id, 'revoked': False}
         );
         for doc in cursor {
             keys.append(
@@ -138,7 +177,7 @@ impl ApiKeyManager.list_api_keys(username: str) -> TransportResponse {
         }
     } else {
         for doc in self._inmemory_store.values() {
-            if doc.get('username') == username and not doc.get('revoked', False) {
+            if doc.get('user_id') == user_id and not doc.get('revoked', False) {
                 keys.append(
                     {
                         'api_key_id': doc.get('_id', ''),
@@ -157,7 +196,7 @@ impl ApiKeyManager.list_api_keys(username: str) -> TransportResponse {
 }
 
 """Revoke an API key."""
-impl ApiKeyManager.revoke_api_key(username: str, api_key_id: str) -> TransportResponse {
+impl ApiKeyManager.revoke_api_key(user_id: str, api_key_id: str) -> TransportResponse {
     # Check if key exists
     key_info: dict | None = None;
     if self._db is not None {
@@ -173,7 +212,7 @@ impl ApiKeyManager.revoke_api_key(username: str, api_key_id: str) -> TransportRe
         );
     }
     # Check if key belongs to user
-    if key_info.get('username') != username {
+    if key_info.get('user_id') != user_id {
         return TransportResponse.fail(
             code='FORBIDDEN',
             message='Cannot revoke API key owned by another user',
@@ -194,7 +233,7 @@ impl ApiKeyManager.revoke_api_key(username: str, api_key_id: str) -> TransportRe
     );
 }
 
-"""Validate an API key and return the associated username."""
+"""Validate an API key and return the associated user_id."""
 impl ApiKeyManager.validate_api_key(api_key: str) -> str | None {
     # Decode the JWT to get key info
     key_info = WebhookUtils.validate_api_key(api_key);
@@ -206,7 +245,7 @@ impl ApiKeyManager.validate_api_key(api_key: str) -> str | None {
     if not self.is_key_active(api_key_id) {
         return None;
     }
-    return key_info.get('username');
+    return key_info.get('user_id');
 }
 
 """Check if an API key ID exists and is not revoked."""

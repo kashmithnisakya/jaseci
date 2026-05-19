@@ -5,11 +5,13 @@ This module provides webhook-related functionality including:
 - HMAC-SHA256 signature verification for webhook security
 - Webhook configuration and utilities
 
-API keys are generated per-user and can be used to authenticate webhook calls.
+API keys are generated per-user (keyed by the stable user_id, never the
+mutable/optional username) and can be used to authenticate webhook calls.
 The API key is wrapped in a JWT for secure storage and validation.
 """
 import hmac;
 import hashlib;
+import logging;
 import secrets;
 import jwt;
 import from datetime { UTC, datetime, timedelta }
@@ -21,7 +23,8 @@ import from jac_scale.db { Db, get_mongo_client }
 import from jac_scale.factories.database_factory { DatabaseType }
 
 # Load webhook configuration
-glob _webhook_config = get_scale_config().get_webhook_config(),
+glob logger = logging.getLogger(__name__),
+     _webhook_config = get_scale_config().get_webhook_config(),
      WEBHOOK_API_KEY_EXPIRY_DAYS = _webhook_config['api_key_expiry_days'],
      _jwt_config = get_scale_config().get_jwt_config(),
      JWT_SECRET = _jwt_config['secret'],
@@ -59,12 +62,15 @@ obj WebhookUtils {
 
     """Create a JWT-wrapped API key token.
 
-    The API key is embedded in a JWT for secure validation and expiry management."""
+    The API key is embedded in a JWT for secure validation and expiry management.
+    The subject (`sub`) claim holds the stable user_id."""
     static def create_api_key_token(
-        api_key_id: str, username: str, name: str, expiry_days: int | None = None
+        api_key_id: str, user_id: str, name: str, expiry_days: int | None = None
     ) -> str;
 
-    """Validate an API key token and extract user information."""
+    """Validate an API key token and extract user information.
+
+    Returns a dict with `user_id`, `api_key_id` and `name`, or None."""
     static def validate_api_key(api_key: str) -> dict[str, str] | None;
 
     """Extract signature from request header value."""
@@ -88,18 +94,24 @@ obj ApiKeyManager {
         _inmemory_store: dict = {},
         _collection: str = 'webhook_api_keys';
 
-    """Create a new API key for a user."""
+    """Run the one-time legacy migration and ensure indexes (MongoDB only)."""
+    def postinit -> None;
+
+    """Backfill user_id/signing_secret/allowed_walkers and index user_id."""
+    def _migrate_and_index -> None;
+
+    """Create a new API key for a user (keyed by stable user_id)."""
     def create_api_key(
-        username: str, name: str, expiry_days: int | None = None
+        user_id: str, name: str, expiry_days: int | None = None
     ) -> TransportResponse;
 
     """List all API keys for a user."""
-    def list_api_keys(username: str) -> TransportResponse;
+    def list_api_keys(user_id: str) -> TransportResponse;
 
     """Revoke an API key."""
-    def revoke_api_key(username: str, api_key_id: str) -> TransportResponse;
+    def revoke_api_key(user_id: str, api_key_id: str) -> TransportResponse;
 
-    """Validate an API key and return the associated username."""
+    """Validate an API key and return the associated user_id."""
     def validate_api_key(api_key: str) -> str | None;
 
     """Check if an API key ID exists and is not revoked."""

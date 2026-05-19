@@ -329,9 +329,17 @@ impl JacAPIServerEndpoints.create_webhook_callback(
             );
         }
 
-        # Validate API key and get username
-        username = self.get_api_key_manager().validate_api_key(api_key);
-        if not username {
+        # Validate API key and get the owning user_id
+        user_id = self.get_api_key_manager().validate_api_key(api_key);
+        if not user_id {
+            return TransportResponse.fail(
+                code='UNAUTHORIZED',
+                message='Invalid or expired API key',
+                meta=Meta(extra={'http_status': 401})
+            );
+        }
+        # Reject keys whose owning user no longer exists (no ghost users)
+        if not self.user_manager.user_exists(user_id) {
             return TransportResponse.fail(
                 code='UNAUTHORIZED',
                 message='Invalid or expired API key',
@@ -374,7 +382,7 @@ impl JacAPIServerEndpoints.create_webhook_callback(
 
         # Execute the walker
         result = await self.execution_manager.spawn_walker(
-            self.get_walkers()[walker_name], walker_kwargs, username
+            self.get_walkers()[walker_name], walker_kwargs, user_id
         );
 
         if 'error' in result {

@@ -425,7 +425,7 @@ impl JacAPIServerAuth.create_api_key(
         return error;
     }
     return self.get_api_key_manager().create_api_key(
-        username=user_id, name=name, expiry_days=expiry_days
+        user_id=user_id, name=name, expiry_days=expiry_days
     );
 }
 
