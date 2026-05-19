@@ -347,6 +347,10 @@ impl JacAPIServerEndpoints.create_webhook_callback(
             );
         }
 
+        # Read the raw request body once and reuse it for both signature
+        # verification and field parsing.
+        raw_body = await request.body();
+
         # Verify HMAC-SHA256 signature if enabled
         if verify_signature {
             signature = request.headers.get(signature_header);
@@ -357,11 +361,11 @@ impl JacAPIServerEndpoints.create_webhook_callback(
                     meta=Meta(extra={'http_status': 401})
                 );
             }
-            # Get raw body for signature verification
-            body = await request.body();
             extracted_signature = WebhookUtils.extract_signature(signature);
             # Use the API key as the secret for HMAC verification
-            if not WebhookUtils.verify_signature(body, extracted_signature, api_key) {
+            if not WebhookUtils.verify_signature(
+                raw_body, extracted_signature, api_key
+            ) {
                 return TransportResponse.fail(
                     code='UNAUTHORIZED',
                     message='Invalid webhook signature',
@@ -372,8 +376,7 @@ impl JacAPIServerEndpoints.create_webhook_callback(
 
         # Parse body for walker fields
         try {
-            body_bytes = await request.body();
-            body_data = json.loads(body_bytes) if body_bytes else {};
+            body_data = json.loads(raw_body) if raw_body else {};
         } except Exception {
             body_data = {};
         }
