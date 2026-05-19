@@ -66,16 +66,19 @@ impl WebhookUtils.validate_api_key(api_key: str) -> dict[str, str] | None {
     }
 }
 
-"""Extract signature from request header value."""
+"""Extract the hex signature from a request header value.
+
+Accepts a bare hex digest or a single "sha256=<hex>" prefixed form
+(case-insensitive prefix). Only the known prefix is stripped, so a hex
+digest (which never contains '=') is returned unchanged rather than
+being truncated at an arbitrary '='.
+"""
 impl WebhookUtils.extract_signature(header_value: str) -> str {
-    # Handle prefixed signatures like "sha256=abc123..."
-    if '=' in header_value {
-        parts = header_value.split('=', 1);
-        if len(parts) == 2 {
-            return parts[1];
-        }
+    value = header_value.strip();
+    if value.lower().startswith('sha256=') {
+        return value[7:];
     }
-    return header_value;
+    return value;
 }
 
 """Run the one-time legacy migration and ensure indexes (MongoDB only)."""
