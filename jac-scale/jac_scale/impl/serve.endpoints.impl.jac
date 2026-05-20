@@ -337,9 +337,6 @@ impl JacAPIServerEndpoints.create_webhook_callback(
             );
         }
 
-        # Resolve the key once (one JWT decode + one store read). The doc
-        # carries user_id, signing_secret and allowed_walkers, so the
-        # checks below read from it instead of re-resolving the api_key.
         key_doc = self.get_api_key_manager().resolve_key(api_key);
         user_id = key_doc.get('user_id') if key_doc else None;
         # Invalid/inactive key, or its owning user no longer exists.
@@ -432,10 +429,6 @@ impl JacAPIServerEndpoints.create_webhook_callback(
                     meta=Meta(extra={'http_status': 401})
                 );
             }
-            # Sign/verify with the per-key signing secret, NOT the api_key.
-            # The api_key travels in this request, so using it as the HMAC
-            # secret would let any observer forge a valid signature. The
-            # signing secret is shared out of band and never sent here.
             signing_secret = key_doc.get('signing_secret');
             if not signing_secret {
                 return TransportResponse.fail(
@@ -466,9 +459,6 @@ impl JacAPIServerEndpoints.create_webhook_callback(
             body_data = {};
         }
 
-        # Only forward keys that are declared walker fields. The body comes
-        # from an external caller, so passing it through unfiltered would
-        # let it set arbitrary/internal walker attributes (mass assignment).
         walker_fields = self.introspector.introspect_walker(
             self.get_walkers()[walker_name]
         )['fields'];
@@ -506,9 +496,6 @@ impl JacAPIServerEndpoints.create_webhook_callback(
         );
     }
     async def callback(request: Request, **kwargs: JsonValue) -> TransportResponse {
-        # Audit chokepoint: every webhook outcome (accept or reject) is
-        # logged once with the walker, client IP and result code so abuse
-        # and probing are visible.
         client_ip = request.client.host if request?.client else '-';
         resp = await _process(request, **kwargs);
         status = resp.meta.extra.get('http_status') if resp?.meta else None;
@@ -532,12 +519,6 @@ impl JacAPIServerEndpoints.create_webhook_parameters(
     walker_name: str
 ) -> list[APIParameter] {
     parameters: list[APIParameter] = [];
-    # Signature/timestamp are enforced at runtime by the callback (which
-    # returns a precise 401 and checks the API key first). They are left
-    # optional here so FastAPI does not short-circuit that ordering with a
-    # generic 422 before the callback runs.
-    # API key header (required for webhooks)
-    # Use underscore naming for valid Python identifiers - FastAPI auto-converts to hyphenated headers
     parameters.append(
         APIParameter(
             name='x_api_key',

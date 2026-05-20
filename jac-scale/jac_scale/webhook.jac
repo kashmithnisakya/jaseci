@@ -5,8 +5,7 @@ This module provides webhook-related functionality including:
 - HMAC-SHA256 signature verification for webhook security
 - Webhook configuration and utilities
 
-API keys are generated per-user (keyed by the stable user_id, never the
-mutable/optional username) and can be used to authenticate webhook calls.
+API keys are generated per-user and can be used to authenticate webhook calls.
 The API key is wrapped in a JWT for secure storage and validation.
 """
 import hmac;
@@ -21,8 +20,6 @@ import from jac_scale.config_loader { get_scale_config }
 import from jac_scale.db { Db, get_mongo_client }
 import from jac_scale.factories.database_factory { DatabaseType }
 
-# JWT and webhook settings are read at call time (see webhook.impl.jac)
-# so secret/expiry rotation does not require a process restart.
 glob logger = logging.getLogger(__name__);
 
 """Pydantic model for API key creation request."""
@@ -57,15 +54,12 @@ obj WebhookUtils {
 
     """Create a JWT-wrapped API key token.
 
-    The API key is embedded in a JWT for secure validation and expiry management.
-    The subject (`sub`) claim holds the stable user_id."""
+    The API key is embedded in a JWT for secure validation and expiry management."""
     static def create_api_key_token(
         api_key_id: str, user_id: str, name: str, expiry_days: int | None = None
     ) -> str;
 
-    """Validate an API key token and extract user information.
-
-    Returns a dict with `user_id`, `api_key_id` and `name`, or None."""
+    """Validate an API key token and extract user information."""
     static def validate_api_key(api_key: str) -> dict[str, str] | None;
 
     """Extract signature from request header value."""
@@ -96,10 +90,7 @@ obj ApiKeyManager {
     """Index user_id for per-user key lookups."""
     def _ensure_indexes -> None;
 
-    """Create a new API key for a user (keyed by stable user_id).
-
-    allowed_walkers scopes the key to specific webhook walkers. An empty
-    or omitted list means the key may call any webhook walker."""
+    """Create a new API key for a user."""
     def create_api_key(
         user_id: str,
         name: str,
@@ -116,17 +107,6 @@ obj ApiKeyManager {
     """Look up a stored key document by id (MongoDB or in-memory)."""
     def _get_key_doc(api_key_id: str) -> dict | None;
 
-    """Resolve a valid, active api_key to its stored document.
-
-    Decodes the JWT, loads the record, and fails closed if the record is
-    missing or revoked. The returned doc carries user_id, signing_secret
-    and allowed_walkers, so a caller resolves the key once and reads
-    everything it needs from the result."""
     def resolve_key(api_key: str) -> dict | None;
-
-    """Per-key fixed-window rate check. True if the call is allowed.
-
-    Best-effort and per-process (not cluster-wide). A non-positive limit
-    disables the check."""
     def check_rate_limit(api_key_id: str, limit_per_minute: int) -> bool;
 }

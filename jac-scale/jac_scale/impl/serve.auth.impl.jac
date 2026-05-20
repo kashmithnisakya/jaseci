@@ -521,9 +521,6 @@ impl JacAPIServerAuth.register_api_key_endpoints -> None {
                     default='',
                     description='Comma-separated webhook walker names this key may call. Empty/omitted for an unscoped key (any walker).',
                     type=ParameterType.BODY
-                    # Concrete default (not None): the body-model builder
-                    # makes None-default fields required (Field() with no
-                    # default). Empty string -> unscoped key.
                 )
             ],
             response_model=None,

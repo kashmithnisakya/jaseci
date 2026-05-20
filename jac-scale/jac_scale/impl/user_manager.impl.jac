@@ -200,8 +200,6 @@ to confirm user existence on every request is unnecessary and costly.
 impl JacScaleUserManager.validate_jwt_token(token: str) -> str | None {
     try {
         decoded = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM]);
-        # Webhook API-key tokens share the JWT secret/algorithm. Reject them
-        # here so an api_key can never be used as a user session token.
         if decoded.get('type') == 'api_key' {
             return None;
         }

@@ -17,11 +17,8 @@ impl WebhookUtils.generate_api_key -> str {
     return secrets.token_hex(32);
 }
 
-"""Create a JWT-wrapped API key token.
 
-The `sub` claim carries the stable user_id. The `type` claim is kept as
-'api_key' so this token can never be accepted as a user session token.
-"""
+
 impl WebhookUtils.create_api_key_token(
     api_key_id: str, user_id: str, name: str, expiry_days: int | None = None
 ) -> str {
@@ -74,13 +71,7 @@ impl WebhookUtils.validate_api_key(api_key: str) -> dict[str, str] | None {
     }
 }
 
-"""Extract the hex signature from a request header value.
-
-Accepts a bare hex digest or a single "sha256=<hex>" prefixed form
-(case-insensitive prefix). Only the known prefix is stripped, so a hex
-digest (which never contains '=') is returned unchanged rather than
-being truncated at an arbitrary '='.
-"""
+"""Extract the hex signature from a request header value."""
 impl WebhookUtils.extract_signature(header_value: str) -> str {
     value = header_value.strip();
     if value.lower().startswith('sha256=') {
@@ -135,10 +126,6 @@ impl ApiKeyManager.create_api_key(
     } elif default_expiry > 0 {
         expires_at = key_created_at + timedelta(days=int(default_expiry));
     }
-    # The signing_secret is independent of the api_key and is returned only
-    # here, once. The caller shares it out of band and signs request bodies
-    # with it; it must never travel in a webhook request. allowed_walkers
-    # scopes the key; an empty list means it may call any webhook walker.
     signing_secret = secrets.token_hex(32);
     key_doc = {
         '_id': api_key_id,
@@ -252,11 +239,7 @@ impl ApiKeyManager._get_key_doc(api_key_id: str) -> dict | None {
     return self._inmemory_store.get(api_key_id);
 }
 
-"""Resolve a valid, active api_key to its stored document.
-
-Fails closed: a key with no stored record (signed but unknown id, or a
-record lost to a store reset) or a revoked key is not honored.
-"""
+"""Resolve a valid, active api_key to its stored document."""
 impl ApiKeyManager.resolve_key(api_key: str) -> dict | None {
     key_info = WebhookUtils.validate_api_key(api_key);
     if not key_info {
@@ -269,12 +252,7 @@ impl ApiKeyManager.resolve_key(api_key: str) -> dict | None {
     return key_doc;
 }
 
-"""Per-key fixed-window rate check. True if the call is allowed.
-
-Best-effort and per-process: in a multi-pod deployment each pod tracks
-its own window, so this is a coarse safety valve, not a global quota. A
-non-positive limit disables the check.
-"""
+"""Per-key fixed-window rate check. True if the call is allowed."""
 impl ApiKeyManager.check_rate_limit(api_key_id: str, limit_per_minute: int) -> bool {
     if limit_per_minute <= 0 {
         return True;
