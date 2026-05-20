@@ -26,6 +26,20 @@ impl AuthTokenStore.postinit -> None {
             self._db = None;
         }
     }
+    if self._db is None {
+        # The in-memory store is per-process. Under multiple Uvicorn workers,
+        # tokens issued by one worker are invisible to the others, so the
+        # verification and password-reset flows fail intermittently with
+        # INVALID_TOKEN. Configure [plugins.scale.database] mongodb_uri to
+        # share state across workers.
+        logger.warning(
+            "AuthTokenStore is using in-memory storage because no "
+            "MongoDB URI is configured. This will cause intermittent "
+            "INVALID_TOKEN failures under multiple workers because tokens "
+            "issued by one worker are not visible to the others. Set "
+            "[plugins.scale.database] mongodb_uri in jac.toml to fix."
+        );
+    }
 }
 
 impl AuthTokenStore.instance -> AuthTokenStore {
