@@ -12,7 +12,23 @@ impl __jacJsx(tag: any, props: dict = {}, children: any = []) -> JsxElement {
     }
     reactChildren = [];
     for child in childrenArray {
-        if child != None {
+        if child == None {
+            continue;
+        }
+        # `unsafe_html(...)` sentinel: wrap in a <span dangerouslySetInnerHTML>
+        # so the raw markup renders inline with surrounding siblings. Property
+        # access on primitives (string / number / boolean) returns `undefined`
+        # in JS, so the check naturally rejects non-marker children -- no
+        # `typeof` / `__isObject` guard needed. `child == None` was already
+        # filtered above, so this access is safe.
+        if child.__jacUnsafeHtml != undefined {
+            reactChildren.append(
+                React.createElement(
+                    "span",
+                    {"dangerouslySetInnerHTML": {"__html": child.__jacUnsafeHtml}}
+                )
+            );
+        } else {
             reactChildren.append(child);
         }
     }
