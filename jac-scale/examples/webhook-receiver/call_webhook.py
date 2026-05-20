@@ -34,7 +34,7 @@ def main() -> None:
         }
     ).encode("utf-8")
     ts = str(int(time.time()))
-    signed = f"{ts}.".encode("utf-8") + body
+    signed = f"{ts}.".encode() + body
     sig = hmac.new(signing_secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()
 
     resp = requests.post(
