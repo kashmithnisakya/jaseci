@@ -58,34 +58,53 @@ def _import_dotted(path: str) -> type {
     return cls;
 }
 
+"""Instantiate an Emailer subclass, logging and returning None on failure."""
+def _instantiate(
+    cls: type, provider: str, config: dict[str, Any], from_address: str, enabled: bool
+) -> Emailer | None {
+    try {
+        return cls(config=config, from_address=from_address, enabled=enabled);
+    } except Exception as e {
+        logger.error(
+            "Failed to instantiate emailer provider '%s' (%s): %s. "
+            "Email features disabled.",
+            provider,
+            cls.__name__,
+            e
+        );
+        return None;
+    }
+}
+
 """Build an Emailer instance from a config dict.
 
 The config dict is the full [plugins.scale.emailer] section. Returns None
-when no provider is configured (caller should treat this as 'email features
-disabled').
+when no provider is configured or when the provider fails to load /
+instantiate (caller should treat this as 'email features disabled').
 """
 def create(config: dict[str, Any]) -> Emailer | None {
     global _registry;
     provider = (config.get('provider') or '').strip();
     if not provider {
         logger.info(
-            "No emailer provider configured — email features disabled. "
+            "No emailer provider configured - email features disabled. "
             "Set [plugins.scale.emailer] provider = 'smtp' (or a custom "
             "'module.path:ClassName') in jac.toml to enable."
         );
         return None;
     }
-    from_address = config.get('from_address', '');
+    from_address = str(config.get('from_address', '') or '');
     enabled = bool(config.get('enabled', True));
     if provider == 'smtp' {
         # Deferred import keeps email/mime deps out of the import graph when
         # the user doesn't configure SMTP.
         import from jac_scale.emailers { SMTPEmailer }
-        return SMTPEmailer(config=config, from_address=from_address, enabled=enabled);
+        return _instantiate(SMTPEmailer, provider, config, from_address, enabled);
     }
     if provider in _registry {
-        cls = _registry[provider];
-        return cls(config=config, from_address=from_address, enabled=enabled);
+        return _instantiate(
+            _registry[provider], provider, config, from_address, enabled
+        );
     }
     # Dynamic dotted import.
     try {
@@ -98,5 +117,5 @@ def create(config: dict[str, Any]) -> Emailer | None {
         );
         return None;
     }
-    return cls(config=config, from_address=from_address, enabled=enabled);
+    return _instantiate(cls, provider, config, from_address, enabled);
 }
