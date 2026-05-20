@@ -206,6 +206,9 @@ via a single-use reset token. Replaces the existing password credential or
 creates one if none exists.
 """
 impl IdentityStorage.reset_password(user_id: str, new_password: str) -> dict[str, str] {
+    if not self.user_exists_by_id(user_id) {
+        return {'error': 'User not found'};
+    }
     credentials = self._get_credentials(user_id);
     new_hash = IdentityStorage.hash_password(new_password);
     password_set = False;

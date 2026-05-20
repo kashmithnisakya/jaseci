@@ -405,7 +405,16 @@ impl JacAPIServerAuth.register_reset_password_endpoint -> None {
                 meta=Meta(extra={'http_status': 400})
             );
         }
-        self.user_manager.reset_password_by_user_id(user_id, body_data.new_password);
+        result = self.user_manager.reset_password_by_user_id(
+            user_id, body_data.new_password
+        );
+        if result.get('error') {
+            return TransportResponse.fail(
+                code='NOT_FOUND',
+                message=result.get('error', 'User not found'),
+                meta=Meta(extra={'http_status': 404})
+            );
+        }
         # Drop any other outstanding reset tokens for this user.
         AuthTokenStore.instance().revoke_user_tokens(user_id, 'reset');
         return TransportResponse.success(
