@@ -12,7 +12,11 @@ import time;
 import unittest.mock;
 import requests;
 import from pathlib { Path }
-import from jac_scale.scheduler.scheduler { JacScaleScheduler, MemoryJobStore, TriggerSpec }
+import from jac_scale.scheduler.scheduler {
+    JacScaleScheduler,
+    MemoryJobStore,
+    TriggerSpec
+}
 import from jac_scale._optdeps.pymongo { PyMongoError }
 
 glob FIXTURES_DIR: Path = Path(__file__).parent / "fixtures";
@@ -581,15 +585,8 @@ def _make_sched(user_exists_map: dict[str, bool] | None = None) -> JacScaleSched
 }
 
 # -- Cron validation -----------------------------------------------------------
-
 test "TriggerSpec.validate rejects malformed cron expressions" {
-    bad_crons = [
-        '99 99 99 99 99',
-        'not a cron',
-        '* * *',
-        '60 * * * *',
-        '* 24 * * *'
-    ];
+    bad_crons = ['99 99 99 99 99', 'not a cron', '* * *', '60 * * * *', '* 24 * * *'];
     for bad in bad_crons {
         raised = False;
         try {
@@ -615,7 +612,6 @@ test "TriggerSpec.validate accepts well-formed cron expressions" {
 }
 
 # -- 503 storage failure path --------------------------------------------------
-
 test "scheduler list_jobs propagates PyMongoError so endpoint can 503-map" {
     sched = _make_sched();
     sched._store = unittest.mock.MagicMock();
@@ -650,7 +646,6 @@ test "scheduler get_job propagates PyMongoError" {
 }
 
 # -- _user_is_live cache expiry ------------------------------------------------
-
 test "user_is_live caches positive answer for ttl seconds" {
     # First call hits user_manager.user_exists; subsequent calls within TTL
     # are served from cache. After TTL expiry, user_manager is hit again.
@@ -662,7 +657,6 @@ test "user_is_live caches positive answer for ttl seconds" {
         mock_time.return_value = base_t;
         assert sched._user_is_live('alice');
         assert sched._server.user_manager.user_exists.call_count == 1;
-
         # t=10 → within TTL, cache hit, user_manager not called again.
         mock_time.return_value = base_t + 10.0;
         assert sched._user_is_live('alice');
@@ -670,12 +664,10 @@ test "user_is_live caches positive answer for ttl seconds" {
             f"Expected cache hit within TTL, but user_exists was called "
             f"{sched._server.user_manager.user_exists.call_count} times"
         );
-
         # t=29.9 → still within TTL.
         mock_time.return_value = base_t + 29.9;
         assert sched._user_is_live('alice');
         assert sched._server.user_manager.user_exists.call_count == 1;
-
         # t=31 → past TTL, cache miss, user_manager called again.
         mock_time.return_value = base_t + 31.0;
         assert sched._user_is_live('alice');
@@ -736,7 +728,6 @@ test "user_is_live evicts positive cache when user later disappears" {
 }
 
 # -- Orphan transition (register_dynamic_tasks_from_db) ------------------------
-
 test "register_dynamic_tasks_from_db marks jobs orphaned when creator gone" {
     sched = _make_sched(user_exists_map={'alice': True, 'ghost': False});
     alive_job = {
@@ -766,7 +757,7 @@ test "register_dynamic_tasks_from_db marks jobs orphaned when creator gone" {
 
     def _capture_schedule(
         job_id: str, name: str, spec: any, user_id: str, is_walker: bool = True
-    ) -> None {
+    ) {
         scheduled_ids.append(job_id);
     }
 
@@ -814,7 +805,7 @@ test "register_dynamic_tasks_from_db restores system-owned jobs without user_exi
 
     def _capture(
         job_id: str, name: str, spec: any, user_id: str, is_walker: bool = True
-    ) -> None {
+    ) {
         scheduled_ids.append(job_id);
     }
 
@@ -832,7 +823,6 @@ test "register_dynamic_tasks_from_db restores system-owned jobs without user_exi
 }
 
 # -- Admin override path -------------------------------------------------------
-
 test "update_job with acting_as=None updates jobs created by any user (admin path)" {
     sched = _make_sched();
 
@@ -853,9 +843,7 @@ test "update_job with acting_as=None updates jobs created by any user (admin pat
     with unittest.mock.patch.object(
         sched, '_schedule_apscheduler_job'
     ) as patched_schedule {
-        result = sched.update_job(
-            job_id='job-x', spec=new_spec, acting_as='bob'
-        );
+        result = sched.update_job(job_id='job-x', spec=new_spec, acting_as='bob');
         assert result is None , (
             "Non-owner (acting_as='bob') must return None when Alice owns the job"
         );
@@ -868,9 +856,7 @@ test "update_job with acting_as=None updates jobs created by any user (admin pat
     with unittest.mock.patch.object(
         sched, '_schedule_apscheduler_job'
     ) as patched_schedule {
-        result = sched.update_job(
-            job_id='job-x', spec=new_spec, acting_as=None
-        );
+        result = sched.update_job(job_id='job-x', spec=new_spec, acting_as=None);
         assert result is not None , (
             "Admin override (acting_as=None) must succeed regardless of created_by"
         );
@@ -882,9 +868,7 @@ test "update_job with acting_as=None updates jobs created by any user (admin pat
 
     # Owner path (acting_as='alice') → also updates.
     with unittest.mock.patch.object(sched, '_schedule_apscheduler_job') {
-        result = sched.update_job(
-            job_id='job-x', spec=new_spec, acting_as='alice'
-        );
+        result = sched.update_job(job_id='job-x', spec=new_spec, acting_as='alice');
         assert result is not None , "Owner must be able to update her own job";
     }
 }
