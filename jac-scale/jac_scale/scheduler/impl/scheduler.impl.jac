@@ -714,7 +714,7 @@ impl JacScaleScheduler._execute_task(
 
         async def _run {
             import from jac_scale.context { JScaleExecutionContext }
-            import from jaclang { JacRuntimeInterface as Jac }
+            import from jaclang { JacRuntime as Jac }
             # Each scheduled job runs in its own isolated root context so
             # concurrent jobs cannot share L1 state or interfere with
             # in-flight HTTP requests that may be using the global context.
