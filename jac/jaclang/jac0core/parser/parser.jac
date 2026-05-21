@@ -30,6 +30,10 @@ import from jaclang.jac0core.diagnostics {
     E0021,
     E0022,
     E0023,
+    E0025,
+    E0026,
+    E0027,
+    E0028,
     E0030,
     E0031,
     E0032,
@@ -46,7 +50,8 @@ import from jaclang.jac0core.diagnostics {
     E0050,
     E0051,
     W0060,
-    W0061
+    W0061,
+    W0063
 }
 import from jaclang.jac0core.unitree { Name, String, Int, Float, Bool, Null }
 import from jaclang.jac0core.unitree {
@@ -97,6 +102,7 @@ import from jaclang.jac0core.unitree {
     TryStmt,
     Except,
     FinallyStmt,
+    AwaitingClause,
     WithStmt,
     ExprAsItem
 }
@@ -122,7 +128,8 @@ import from jaclang.jac0core.unitree {
     UnaryExpr,
     CompareExpr,
     BoolExpr,
-    IfElseExpr
+    IfElseExpr,
+    CfgExpr
 }
 import from jaclang.jac0core.unitree {
     AtomTrailer,
@@ -147,8 +154,13 @@ import from jaclang.jac0core.unitree {
     GenCompr,
     InnerCompr
 }
-import from jaclang.jac0core.unitree { FString, FormattedValue, MultiString, LambdaExpr }
-import from jaclang.jac0core.unitree { AwaitExpr, ConcurrentExpr }
+import from jaclang.jac0core.unitree {
+    FString,
+    FormattedValue,
+    MultiString,
+    LambdaExpr
+}
+import from jaclang.jac0core.unitree { AwaitExpr, CastExpr, ConcurrentExpr }
 import from jaclang.jac0core.unitree { EdgeOpRef, FilterCompr, AssignCompr }
 import from jaclang.jac0core.unitree { ConnectOp, DisconnectOp }
 import from jaclang.jac0core.unitree {
@@ -171,7 +183,7 @@ import from jaclang.jac0core.unitree {
     JsxSpreadAttribute,
     JsxNormalAttribute
 }
-import from jaclang.jac0core.unitree { JsxText, JsxExpression }
+import from jaclang.jac0core.unitree { JsxText, JsxExpression, JsxSlot, JsxComment }
 
 import from jaclang.jac0core.constant {
     Tokens as Tok,
@@ -272,6 +284,7 @@ glob TOKEN_KIND_TO_TOK: dict[TokenKind, str] = {
          TokenKind.KW_DISENGAGE: Tok.KW_DISENGAGE.value,
          TokenKind.KW_HERE: Tok.KW_HERE.value,
          TokenKind.KW_VISITOR: Tok.KW_VISITOR.value,
+         TokenKind.KW_ROOT: Tok.KW_ROOT.value,
          TokenKind.KW_ASYNC: Tok.KW_ASYNC.value,
          TokenKind.KW_AWAIT: Tok.KW_AWAIT.value,
          TokenKind.KW_FLOW: Tok.KW_FLOW.value,
@@ -394,7 +407,8 @@ obj Parser {
         file_path: str = "<input>",
         source_code: str = "",
         source: Source | None = None,
-        prog: object | None = None;
+        prog: object | None = None,
+        _view_body_depth: int = 0;  # > 0 while parsing inside a JSX `{...}` slot body
 
     def current -> Token;
     def peek(offset: int = 1) -> Token;
@@ -420,8 +434,14 @@ obj Parser {
     def error(message: str);
     def error_at(message: str, loc: SourceLoc);
     def warn_at(message: str, loc: SourceLoc);
-    def emit_diag(diag: DiagnosticInfo, loc: SourceLoc | None = None, **kwargs: object);
-    def emit_warn(diag: DiagnosticInfo, loc: SourceLoc | None = None, **kwargs: object);
+    def emit_diag(
+        diag: DiagnosticInfo, loc: SourceLoc | None = None, **kwargs: object
+    );
+
+    def emit_warn(
+        diag: DiagnosticInfo, loc: SourceLoc | None = None, **kwargs: object
+    );
+
     def make_uni_token(tok: Token) -> UniToken;
     def make_name(tok: Token, is_enum_stmt: bool = False) -> Name;
     def make_special_name(tok: Token) -> Name;
@@ -439,10 +459,15 @@ obj Parser {
     def synchronize;
     def parse -> Module;
     def parse_module -> Module;
-    def parse_expression -> Expr;
+    def parse_expression(allow_cast: bool = True) -> Expr;
+    def _check_js_arrow_fault -> bool;
+    def _recover_js_arrow_fault(left: Expr) -> Expr;
+    def _recover_missing_connect_rhs -> bool;
+    def _recover_misplaced_disconnect -> None;
     def parse_concurrent_expr -> Expr;
     def parse_walrus_assign -> Expr;
     def parse_by_expr -> Expr;
+    def parse_cast -> Expr;
     def parse_pipe -> Expr;
     def parse_pipe_back -> Expr;
     def parse_bitwise_or -> Expr;
@@ -468,7 +493,7 @@ obj Parser {
     def parse_await_expr -> Expr;
     def parse_pipe_call -> Expr;
     def parse_atomic_chain -> Expr;
-    def _make_attr_from_keyword(name_tok: Any);
+    def _make_attr_from_keyword(name_tok: any);
     def parse_index_slice -> IndexSlice;
     def parse_call_args(kid: list) -> list;
     def parse_call_arg -> Expr | KWPair;
@@ -499,6 +524,8 @@ obj Parser {
     def parse_lambda_param -> ParamVar;
     # JSX parsing
     def parse_jsx_element -> Expr;
+    def _parse_jsx_dynamic_tag(open_kid: list) -> Expr;
+    def _consume_jsx_dynamic_close(close_kid: list);
     def parse_jsx_opening_element -> tuple;
     def parse_jsx_attributes -> list;
     def parse_jsx_children -> list;
@@ -559,9 +586,11 @@ obj Parser {
     def _error_unexpected_member;
     def parse_has_stmt -> ArchHas;
     def parse_has_var -> HasVar;
+    def parse_accessor -> Ability;
+    def _consume_accessor_kind -> tuple[(str, Token)];
     def parse_ability -> Ability;
     def _parse_post_async_modifiers(
-        is_override: bool, override_tok: Any, is_static: bool, static_tok: Any
+        is_override: bool, override_tok: any, is_static: bool, static_tok: any
     ) -> tuple;
 
     def parse_func_signature -> FuncSignature;

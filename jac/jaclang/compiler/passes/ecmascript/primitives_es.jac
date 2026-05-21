@@ -1449,4 +1449,16 @@ class ESBuiltinEmitter(BuiltinEmitter[(str, ESEmitCtx)]) {
     def emit_bytearray(
         self: ESBuiltinEmitter, ctx: ESEmitCtx, args: list[str]
     ) -> (str | None);
+
+    def emit_jid(
+        self: ESBuiltinEmitter, ctx: ESEmitCtx, args: list[str]
+    ) -> (str | None);
+
+    def emit_new(
+        self: ESBuiltinEmitter, ctx: ESEmitCtx, args: list[str]
+    ) -> (str | None);
+
+    def emit_unsafe_html(
+        self: ESBuiltinEmitter, ctx: ESEmitCtx, args: list[str]
+    ) -> (str | None);
 }

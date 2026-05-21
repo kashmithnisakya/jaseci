@@ -76,6 +76,7 @@ obj UnparsePass(UniPass) {
     def exit_visit_stmt(nd: uni.VisitStmt) -> None;
     def exit_disengage_stmt(nd: uni.DisengageStmt) -> None;
     def exit_await_expr(nd: uni.AwaitExpr) -> None;
+    def exit_cast_expr(nd: uni.CastExpr) -> None;
     def exit_global_stmt(nd: uni.GlobalStmt) -> None;
     def exit_non_local_stmt(nd: uni.NonLocalStmt) -> None;
     # Assignments
@@ -84,6 +85,7 @@ obj UnparsePass(UniPass) {
     def exit_concurrent_expr(nd: uni.ConcurrentExpr) -> None;
     def exit_binary_expr(nd: uni.BinaryExpr) -> None;
     def exit_compare_expr(nd: uni.CompareExpr) -> None;
+    def exit_cfg_expr(nd: uni.CfgExpr) -> None;
     def exit_bool_expr(nd: uni.BoolExpr) -> None;
     def exit_lambda_expr(nd: uni.LambdaExpr) -> None;
     def exit_unary_expr(nd: uni.UnaryExpr) -> None;
@@ -120,6 +122,8 @@ obj UnparsePass(UniPass) {
     def exit_jsx_normal_attribute(nd: uni.JsxNormalAttribute) -> None;
     def exit_jsx_text(nd: uni.JsxText) -> None;
     def exit_jsx_expression(nd: uni.JsxExpression) -> None;
+    def exit_jsx_slot(nd: uni.JsxSlot) -> None;
+    def exit_jsx_comment(nd: uni.JsxComment) -> None;
     # Match / Switch
     def exit_match_stmt(nd: uni.MatchStmt) -> None;
     def exit_match_case(nd: uni.MatchCase) -> None;

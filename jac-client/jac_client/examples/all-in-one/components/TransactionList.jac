@@ -4,24 +4,18 @@ cl import from .TransactionItem { TransactionItem }
 
 cl {
     # Props: transactions list and delete handler
-    def:pub TransactionList(transactions: list, onDelete: Any) -> JsxElement {
+    def:pub TransactionList(transactions: list, onDelete: any) -> JsxElement {
         if len(transactions) == 0 {
             return
                 <div className="empty-state">
-                    <p>
-                        No transactions yet.
-                    </p>
-                    <p>
-                        Add your first income or expense above!
-                    </p>
+                    <p>No transactions yet.</p>
+                    <p>Add your first income or expense above!</p>
                 </div>;
         }
 
         return
             <div className="transaction-list">
-                <h3 className="list-title">
-                    Transactions ({len(transactions)})
-                </h3>
+                <h3 className="list-title">Transactions ({len(transactions)})</h3>
                 {[
                     <TransactionItem
                         key={tx["id"]}

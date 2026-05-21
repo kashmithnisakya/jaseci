@@ -10,7 +10,7 @@ the ESTree specification by:
    - Control flow statements (if/else, loops, try/catch)
    - Data structures (arrays, objects)
    - Special Jac features (walkers, abilities, archetypes) converted to JS classes
-   - Data spatial operations converted to appropriate JS patterns
+   - Object spatial operations converted to appropriate JS patterns
 
 3. Managing imports and module dependencies
 4. Preserving source location information
@@ -34,7 +34,15 @@ import from jaclang.jac0core.modresolver {
     convert_to_js_import_path,
     resolve_relative_path
 }
-import from jaclang.jac0core.diagnostics { E5010, E5011, E5012, W5013, W5014 }
+import from jaclang.jac0core.diagnostics {
+    E5010,
+    E5011,
+    E5012,
+    W5013,
+    W5014,
+    W5015,
+    E5080
+}
 
 glob _T = TypeVar('_T', bound=es.Node),
      ES_LOGICAL_OPS: dict[(Tok, str)] = {Tok.KW_AND: '&&', Tok.KW_OR: '||'},
@@ -63,6 +71,8 @@ glob _T = TypeVar('_T', bound=es.Node),
          Tok.GT: '>',
          Tok.LTE: '<=',
          Tok.GTE: '>=',
+         Tok.KW_IS: '===',
+         Tok.KW_ISN: '!==',
          Tok.KW_IN: 'in',
          Tok.KW_NIN: 'in'
      },
@@ -122,6 +132,11 @@ glob _T = TypeVar('_T', bound=es.Node),
          Tok.BW_AND_EQ: "emit_op_iand",
          Tok.BW_XOR_EQ: "emit_op_ixor"
      },
+     # Python-only method names that have no JS equivalent. When the static
+     # type of the receiver cannot be proven (issue #5508 / #5453), the
+     # codegen routes these calls through `_jac.poly.<method>(target, ...)`,
+     # which dispatches to the native JS operation at runtime.
+     POLYMORPHIC_METHODS: set[str] = {"lower","upper","strip","lstrip","rstrip","append","extend","pop"},
      LiteralValue = str | bool | int | float | None;
 
 """Track declarations within a lexical scope."""
@@ -137,8 +152,7 @@ obj AssignmentTargetInfo {
         left: (es.Pattern | es.Expression),
         reference: (es.Expression | None),
         decl_name: (str | None),
-        pattern_names: list[tuple[(str, uni.Name)]],
-        is_first: bool;
+        pattern_names: list[tuple[(str, uni.Name)]];
 }
 
 """Describes the walker-side of a spawn expression."""
@@ -160,6 +174,12 @@ obj SpawnCallParts {
         target: SpawnTargetInfo;
 }
 
+"""Resolved function-call argument slot."""
+obj CallArgSlot {
+    has name: (str | None),
+        value: (es.Expression | es.SpreadElement | None);
+}
+
 """Jac to ECMAScript AST transpilation pass."""
 obj EsastGenPass(BaseAstGenPass[es.Statement]) {
     def before_pass -> None;
@@ -168,6 +188,7 @@ obj EsastGenPass(BaseAstGenPass[es.Statement]) {
     def sync_loc(es_node: _T, jac_node: (uni.UniNode | None) = None) -> _T;
     def _push_scope(nd: uni.UniScopeNode) -> None;
     def _pop_scope(nd: uni.UniScopeNode) -> None;
+    def _alt_branch_scope_to_finalize(nd: uni.UniNode) -> (uni.UniScopeNode | None);
     def _current_scope -> (ScopeInfo | None);
     def _is_declared_in_any_scope(name: str) -> bool;
     def _register_declaration(name: str) -> None;
@@ -224,6 +245,7 @@ obj EsastGenPass(BaseAstGenPass[es.Statement]) {
     def exit_sub_tag(nd: uni.SubTag[uni.T]) -> None;
     def exit_import(nd: uni.Import) -> None;
     def _generate_sv_import_stubs(nd: uni.Import) -> None;
+    def _emit_boundary_type_stubs(nd: uni.Module) -> list;
     def exit_type_alias(nd: uni.TypeAlias) -> None;
     def exit_type_param(nd: uni.TypeParam) -> None;
     def exit_archetype(nd: uni.Archetype) -> None;
@@ -245,6 +267,8 @@ obj EsastGenPass(BaseAstGenPass[es.Statement]) {
     def exit_jsx_normal_attribute(nd: uni.JsxNormalAttribute) -> None;
     def exit_jsx_text(nd: uni.JsxText) -> None;
     def exit_jsx_expression(nd: uni.JsxExpression) -> None;
+    def exit_jsx_slot(nd: uni.JsxSlot) -> None;
+    def exit_jsx_comment(nd: uni.JsxComment) -> None;
     def exit_if_stmt(nd: uni.IfStmt) -> None;
     def exit_else_if(nd: uni.ElseIf) -> None;
     def exit_else_stmt(nd: uni.ElseStmt) -> None;
@@ -262,6 +286,7 @@ obj EsastGenPass(BaseAstGenPass[es.Statement]) {
     def exit_switch_stmt(nd: uni.SwitchStmt) -> None;
     def exit_switch_case(nd: uni.SwitchCase) -> None;
     def _ensure_emitters -> None;
+    def _resolve_primitive_type_name(_obj_type: object) -> str;
     def _try_primitive_op(
         expr_node: uni.UniNode,
         emit_method: str,
@@ -271,6 +296,7 @@ obj EsastGenPass(BaseAstGenPass[es.Statement]) {
     ) -> (es.Expression | None);
 
     def exit_binary_expr(nd: uni.BinaryExpr) -> None;
+    def exit_cfg_expr(nd: uni.CfgExpr) -> None;
     def exit_bool_expr(nd: uni.BoolExpr) -> None;
     def exit_compare_expr(nd: uni.CompareExpr) -> None;
     def exit_unary_expr(nd: uni.UnaryExpr) -> None;
@@ -279,8 +305,67 @@ obj EsastGenPass(BaseAstGenPass[es.Statement]) {
     ) -> tuple[(es.Pattern | es.Expression), (es.Expression | None), (str | None)];
 
     def _collect_pattern_names(target: uni.UniNode) -> list[tuple[(str, uni.Name)]];
-    def _is_name_first_definition(name_node: uni.Name) -> bool;
     def exit_assignment(nd: uni.Assignment) -> None;
+    def _resolve_source_module(nd: uni.Import) -> (uni.Module | None);
+    def _ability_from_symbol(sym: (uni.Symbol | None)) -> (uni.Ability | None);
+    def _resolve_sv_import_ability(name: str) -> (uni.Ability | None);
+    def _resolve_call_ability(nd: uni.FuncCall) -> (uni.Ability | None);
+    def _param_names_from_ability(ability_node: uni.Ability) -> list[str];
+    def _param_type_map_from_ability(ability_node: uni.Ability) -> dict[(str, str)];
+    def _wrap_to_wire_if_boundary(
+        expr: es.Expression,
+        type_name: str,
+        boundary_types: dict[(str, Any)],
+        jac_node: uni.UniNode
+    ) -> es.Expression;
+
+    def _extract_return_type(
+        ability_node: uni.Ability, func_name: str, manifest: any
+    ) -> str;
+
+    def _wrap_return_with_boundary(
+        call_expr: es.Expression,
+        ret_type: str,
+        boundary_types: dict[(str, Any)],
+        jac_node: uni.UniNode,
+        pre_awaited: bool
+    ) -> es.Expression;
+
+    def _resolve_call_arg_slots(
+        nd: uni.FuncCall,
+        args: list[(es.Expression | es.SpreadElement)],
+        props: list[(es.Property | es.SpreadElement)],
+        param_names: list[str],
+        func_name: str,
+        spread_read_source: (es.Expression | None)
+    ) -> list[CallArgSlot];
+
+    def _call_args_from_slots(
+        slots: list[CallArgSlot]
+    ) -> (list[(es.Expression | es.SpreadElement)] | None);
+
+    def _kwargs_spread_arg(
+        props: list[(es.Property | es.SpreadElement)], nd: uni.FuncCall
+    ) -> (es.Expression | None);
+
+    def _kwargs_spread_needs_temp(
+        props: list[(es.Property | es.SpreadElement)]
+    ) -> bool;
+
+    def _make_kwargs_spread_context(
+        props: list[(es.Property | es.SpreadElement)], nd: uni.FuncCall
+    ) -> tuple[((es.Expression | None), (es.Expression | None))];
+
+    def _wrap_with_kwargs_temp(
+        expr: es.Expression, spread_arg: es.Expression, nd: uni.FuncCall
+    ) -> es.Expression;
+
+    def _try_lower_server_rpc_call(
+        nd: uni.FuncCall,
+        args: list[(es.Expression | es.SpreadElement)],
+        props: list[(es.Property | es.SpreadElement)]
+    ) -> (es.Expression | None);
+
     def exit_func_call(nd: uni.FuncCall) -> None;
     def exit_index_slice(nd: uni.IndexSlice) -> None;
     def exit_special_var_ref(nd: uni.SpecialVarRef) -> None;
@@ -312,6 +397,7 @@ obj EsastGenPass(BaseAstGenPass[es.Statement]) {
     def exit_f_string(nd: uni.FString) -> None;
     def exit_if_else_expr(nd: uni.IfElseExpr) -> None;
     def exit_await_expr(nd: uni.AwaitExpr) -> None;
+    def exit_cast_expr(nd: uni.CastExpr) -> None;
     def exit_null(nd: uni.Null) -> None;
     def exit_name(nd: uni.Name) -> None;
     def exit_global_vars(nd: uni.GlobalVars) -> None;

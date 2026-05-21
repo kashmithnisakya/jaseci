@@ -2,6 +2,7 @@
 
 Registers:
 - `--shadcn` flag on `jac add` and `jac remove`
+- `jac-shadcn` project template via `register_project_template` hook
 """
 
 import from jaclang.cli.command { Arg, HookContext }
@@ -10,6 +11,9 @@ import from jaclang.jac0core.runtime { hookimpl }
 class JacShadcnPlugin {
     @hookimpl
     static def create_cmd -> None;
+
+    @hookimpl
+    static def register_project_template -> dict[str, any] | None;
 }
 
 """Pre-hook handler for `jac add --shadcn`."""

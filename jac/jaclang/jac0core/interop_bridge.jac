@@ -6,13 +6,7 @@ for native/Python interop.
 import ctypes;
 import logging;
 import from collections.abc { Callable }
-import from typing { TYPE_CHECKING }
-
-with entry {
-    if TYPE_CHECKING {
-        import from jaclang.jac0core.codeinfo { InteropManifest }
-    }
-}
+import type from jaclang.jac0core.codeinfo { InteropManifest }
 
 glob logger = logging.getLogger(__name__),
      JAC_TO_CTYPES: dict[(str, type)] = {
@@ -44,7 +38,7 @@ def register_py_callbacks(
     manifest: InteropManifest,
     py_func_table: dict[(str, Callable[(..., object)])],
     callbacks_list: list
-) -> None {
+) {
     import llvmlite.binding as llvm;
     for binding in manifest.native_imports {
         ret_ct = JAC_TO_CTYPES.get(binding.ret_type, ctypes.c_int64);

@@ -8,7 +8,7 @@ cl {
 
         navigate = useNavigate();
 
-        async def handleLogin(e: Any) -> None {
+        async def handleLogin(e: any) -> None {
             e.preventDefault();
             error = "";
             if not username or not password {
@@ -23,11 +23,11 @@ cl {
             }
         }
 
-        def handleUsernameChange(e: Any) -> None {
+        def handleUsernameChange(e: any) {
             username = e.target.value;
         }
 
-        def handlePasswordChange(e: Any) -> None {
+        def handlePasswordChange(e: any) {
             password = e.target.value;
         }
 
@@ -117,9 +117,7 @@ cl {
                     >
                         Need an account?
                         {" "}
-                        <Link to="/signup">
-                            Sign up
-                        </Link>
+                        <Link to="/signup">Sign up</Link>
                     </p>
                 </div>
             </div>;

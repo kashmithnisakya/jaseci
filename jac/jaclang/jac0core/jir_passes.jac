@@ -10,7 +10,6 @@ kid/parent, scope chains, symbol tables, and CFG edges.
 import struct;
 import sys;
 import zlib;
-import from typing { Any, TYPE_CHECKING }
 
 import from jaclang.jac0core.jir_registry {
     FieldKind,
@@ -19,20 +18,15 @@ import from jaclang.jac0core.jir_registry {
     NodeSpec,
     get_class_mapping
 }
-
-with entry {
-    if TYPE_CHECKING {
-        import from jaclang.jac0core.unitree {
-            Module,
-            UniNode,
-            UniScopeNode,
-            UniCFGNode,
-            NameAtom,
-            Symbol,
-            Source,
-            Token
-        }
-    }
+import type from jaclang.jac0core.unitree {
+    Module,
+    UniNode,
+    UniScopeNode,
+    UniCFGNode,
+    NameAtom,
+    Symbol,
+    Source,
+    Token
 }
 
 # --- Constants ---
@@ -42,7 +36,7 @@ glob SENTINEL_NONE: int = 0xFFFFFE,
 
 # --- LEB128 varint (module-private, inlined for performance) ---
 """Encode an unsigned integer as LEB128 varint, appending to buf."""
-def _write_varint(buf: bytearray, value: int) -> None {
+def _write_varint(buf: bytearray, value: int) {
     while value >= 0x80 {
         buf.append((value & 0x7F) | 0x80);
         value >>= 7;
@@ -72,7 +66,7 @@ obj _StringPool {
     has _strings: list[str] by postinit,
         _index: dict[str, int] by postinit;
 
-    def postinit -> None {
+    def postinit {
         self._strings = [];
         self._index = {};
     }
@@ -137,7 +131,7 @@ obj JirWriter {
         _overload_entries: list[tuple[int, str, list[int]]] by postinit,
         _inherited_scope_entries: list[tuple[int, int, bool, list[str]]] by postinit;
 
-    def postinit -> None {
+    def postinit {
         self._pool = _StringPool();
         self._node_ids = {};
         self._nodes = [];
@@ -183,7 +177,7 @@ obj JirReader {
         interop_section: (bytes | None) = None,
         type_tags_section: (bytes | None) = None;
 
-    def postinit -> None {
+    def postinit {
         self._nodes = [];
     }
 

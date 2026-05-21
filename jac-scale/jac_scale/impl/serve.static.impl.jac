@@ -2,7 +2,6 @@
 import mimetypes;
 import from collections.abc { Callable }
 import from pathlib { Path }
-import from typing { Any }
 import from fastapi.responses { HTMLResponse, JSONResponse, Response }
 import from jac_scale.jserver.jserver {
     APIParameter,
@@ -23,7 +22,9 @@ impl JacAPIServerStatic.serve_static_file(file_path: str) -> Response {
         # Find project root (where jac.toml is) instead of using base_path_dir
         # base_path_dir might be src/ when serving src/app.jac, but we need project root
         import from jaclang.project.config { find_project_root }
-        base_path_dir = Path(Jac.base_path_dir) if Jac.base_path_dir else Path.cwd();
+        base_path_dir = Path(bp_dir)
+            if (bp_dir := Jac.get_context().base_path_dir or Jac.get_base_path_dir())
+            else Path.cwd();
         project_root_result = find_project_root(base_path_dir);
         if project_root_result {
             (base_path, _) = project_root_result;
@@ -149,9 +150,7 @@ impl JacAPIServerStatic.serve_client_js_callback -> Callable[..., Response] {
                 media_type='application/javascript'
             );
         } except RuntimeError as exc {
-            return Response(
-                content=str(exc), status_code=503, media_type='text/plain'
-            );
+            return Response(content=str(exc), status_code=503, media_type='text/plain');
         }
     }
     return callback;
@@ -264,7 +263,9 @@ impl JacAPIServerStatic.serve_root_asset(file_path: str) -> Response {
     if (not file_ext or (file_ext not in allowed_extensions)) {
         # SPA catch-all: serve base_route_app for extensionless paths
         base_route_app = config.serve.base_route_app if config else "";
-        if (not file_ext and base_route_app and not file_path.startswith(api_prefixes)) {
+        if (
+            not file_ext and base_route_app and not file_path.startswith(api_prefixes)
+        ) {
             try {
                 render_payload = self.introspector.render_page(
                     base_route_app, {}, Con.GUEST.value
@@ -286,7 +287,9 @@ impl JacAPIServerStatic.serve_root_asset(file_path: str) -> Response {
     # Find project root (where jac.toml is) instead of using base_path_dir
     # base_path_dir might be src/ when serving src/app.jac, but we need project root
     import from jaclang.project.config { find_project_root }
-    base_path_dir = Path(Jac.base_path_dir) if Jac.base_path_dir else Path.cwd();
+    base_path_dir = Path(bp_dir)
+        if (bp_dir := Jac.get_context().base_path_dir or Jac.get_base_path_dir())
+        else Path.cwd();
     project_root_result = find_project_root(base_path_dir);
     if project_root_result {
         (base_path, _) = project_root_result;
@@ -451,7 +454,10 @@ impl JacAPIServerStatic.graph_data(Authorization: (str | None) = None) -> JSONRe
             }
         }
         for (_, source_node, target_node, edge_arch) in connections {
-            edge_data: dict = {'from': str(id(source_node)), 'to': str(id(target_node))};
+            edge_data: dict = {
+                'from': str(id(source_node)),
+                'to': str(id(target_node))
+            };
             if (repr(edge_arch) != 'GenericEdge()') {
                 edge_data['label'] = repr(edge_arch);
             }

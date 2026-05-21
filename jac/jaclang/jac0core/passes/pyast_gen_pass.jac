@@ -9,7 +9,7 @@ equivalents:
    - Control flow statements (if/else, loops, try/except)
    - Data structures (lists, dictionaries, sets)
    - Special Jac features (walkers, abilities, archetypes)
-   - Data spatial operations (node/edge connections)
+   - Object spatial operations (node/edge connections)
 
 3. Managing imports and dependencies between modules
 4. Preserving source location information for error reporting
@@ -28,6 +28,7 @@ import jaclang.jac0core.unitree as uni;
 import from jaclang.jac0core.constant { CodeContext, EdgeDir }
 import from jaclang.jac0core.constant { Constants as Con }
 import from jaclang.jac0core.constant { Tokens as Tok }
+import from jaclang.jac0core.codeinfo { BoundaryTypeInfo, InteropBinding }
 import from jaclang.jac0core.passes.ast_gen { BaseAstGenPass }
 import from jaclang.jac0core.passes.ast_gen.jsx_processor { PyJsxProcessor }
 import from jaclang.jac0core.diagnostics {
@@ -38,8 +39,7 @@ import from jaclang.jac0core.diagnostics {
     E5005,
     E5006,
     E5007,
-    E5008,
-    W0062
+    E5008
 }
 
 glob T = TypeVar('T', bound=ast3.AST),
@@ -99,6 +99,7 @@ obj PyastGenPass(BaseAstGenPass[ast3.AST]) {
         already_added: list[str] = [],
         jaclib_imports: set[str] by postinit,
         builtin_imports: set[str] by postinit,
+        typing_imports: set[str] by postinit,
         _temp_name_counter: int = 0,
         _hoisted_funcs: list[ast3.FunctionDef | ast3.AsyncFunctionDef] = [],
         child_passes: list[PyastGenPass] by postinit,
@@ -107,11 +108,21 @@ obj PyastGenPass(BaseAstGenPass[ast3.AST]) {
 
     with entry {
         _builtin_names: ClassVar[(set[str] | None)] = None;
+        _ambient_typing_names: ClassVar[(set[str] | None)] = None;
     }
 
     """Get the set of builtin names, cached after first successful access."""
     @classmethod
-    def _get_builtin_names(cls: Any) -> set[str];
+    def _get_builtin_names(cls: any) -> set[str];
+
+    """Get the curated ambient typing names. Single source of truth is
+    `compiler/type_system/typing_ambient.pyi` — the same file TypeEvaluator
+    uses to drive its merge into `builtins_module`. Parsing the stub's
+    __all__ here lets codegen auto-emit `from typing import <names>` when
+    a reference appears, keeping `typing.get_type_hints` / pydantic /
+    FastAPI annotation introspection working at runtime."""
+    @classmethod
+    def _get_ambient_typing_names(cls: any) -> set[str];
 
     def postinit -> None;
     """Enter node."""
@@ -131,6 +142,46 @@ ctypes.
         """
     def _gen_native_interop_stubs(nd: uni.NativeBlock) -> None;
 
+    """Generate Python HTTP client stubs for sv-to-sv microservice imports.
+
+        For each function imported via an sv import from another server module,
+        generates a Python function that routes the call over HTTP via
+        jaclang.runtimelib.sv_client. For each typed object imported, generates
+        a lightweight stub class with from_wire / to_wire reconstruction.
+        Returns True if the import was handled (caller should not emit a normal
+        Python import), False otherwise.
+        """
+    def _generate_sv_to_sv_stubs(nd: uni.Import) -> bool;
+
+    """Build a Python source string for an sv-to-sv function stub."""
+    def _gen_py_sv_func_stub(
+        local_name: str,
+        func_name: str,
+        module_name: str,
+        binding: InteropBinding,
+        boundary_types: dict[str, BoundaryTypeInfo]
+    ) -> str;
+
+    """Build a Python source string for an sv-to-sv walker stub.
+
+    A walker stub is a class whose constructor performs a remote spawn:
+    instantiating `Greet(name="x")` on the consumer issues a POST to
+    `/walker/Greet` on the provider, deserialises the response, and
+    returns an instance with `has` fields and a `reports` attribute
+    populated. The consumer-side class shape mirrors the provider's
+    walker so type identity and boundary-typed fields survive the trip.
+    """
+    def _gen_py_sv_walker_stub(
+        local_name: str,
+        walker_name: str,
+        module_name: str,
+        binding: InteropBinding,
+        boundary_types: dict[str, BoundaryTypeInfo]
+    ) -> str;
+
+    """Build a Python source string for a boundary type stub class."""
+    def _gen_py_boundary_stub_class(class_name: str, info: BoundaryTypeInfo) -> str;
+
     """Return the object from jaclib as ast node based on the import config."""
     def jaclib_obj(obj_name: str) -> ast3.Name;
 
@@ -142,6 +193,10 @@ needs_enum)
         """
     def builtin_name(name: str) -> ast3.Name;
 
+    """True if `target` is (or transitively wraps) an edge-ref trailer whose
+    codegen produces a `Jac.refs(...)` call we can fuse a `slc=` kwarg into."""
+    def _is_edge_ref_target(target: uni.UniNode) -> bool;
+
     """Append an import statement to the preamble once."""
     def _add_preamble_once(key: str, nd: ast3.AST) -> None;
 
@@ -150,6 +205,9 @@ needs_enum)
 
     """Ensure Enum utilities are imported only once."""
     def needs_enum -> None;
+
+    """Ensure a specific enum kind (IntEnum, StrEnum, ...) is imported once."""
+    def needs_enum_kind(kind: str) -> None;
 
     """Ensure concurrent Future is imported only once."""
     def needs_future -> None;
@@ -225,16 +283,14 @@ variables
         attribute_list: list[str], sync_node_list: Sequence[uni.UniNode]
     ) -> ast3.AST;
 
-    """Check if a name usage is in a type annotation context."""
-    def _is_type_annotation_use(nd: uni.UniNode) -> bool;
+    """Resolve Self to the appropriate Python construct based on context."""
+    def _resolve_self_type(nd: uni.Name) -> (ast3.expr | None);
 
-    """Check if an import has a # jac:runtime annotation."""
-    def _has_runtime_annotation(nd: uni.Module, imp: uni.Import) -> bool;
+    """Check if a node is in a type annotation context."""
+    def _is_in_type_annotation(nd: uni.UniNode) -> bool;
 
-    """Classify import items and separate type-only imports for TYPE_CHECKING."""
-    def _process_type_only_imports(
-        nd: uni.Module, merged_body: list
-    ) -> tuple[(list, list[ast3.AST])];
+    """Check if a node is or is a descendant of another node."""
+    def _is_descendant_of(nd: uni.UniNode, ancestor: uni.UniNode) -> bool;
 
     def exit_sub_tag(nd: uni.SubTag[uni.T]) -> None;
     def exit_module(nd: uni.Module) -> None;
@@ -263,10 +319,10 @@ variables
     def enter_enum(nd: uni.Enum) -> None;
     def exit_enum(nd: uni.Enum) -> None;
     def enter_ability(nd: uni.Ability) -> None;
-    """Reusable method to codegen call_llm(model, caller, args)."""
+    """Reusable method to codegen call_llm / acall_llm; returns Await when is_async."""
     def _invoke_llm_call(
-        model: ast3.expr, caller: ast3.expr, args: ast3.Dict
-    ) -> ast3.Call;
+        model: ast3.expr, caller: ast3.expr, args: ast3.Dict, is_async: bool = False
+    ) -> ast3.expr;
 
     """Generate the by LLM body."""
     def gen_llm_body(nd: uni.Ability) -> list[ast3.stmt];
@@ -309,12 +365,14 @@ variables
     def exit_visit_stmt(nd: uni.VisitStmt) -> None;
     def exit_disengage_stmt(nd: uni.DisengageStmt) -> None;
     def exit_await_expr(nd: uni.AwaitExpr) -> None;
+    def exit_cast_expr(nd: uni.CastExpr) -> None;
     def exit_global_stmt(nd: uni.GlobalStmt) -> None;
     def exit_non_local_stmt(nd: uni.NonLocalStmt) -> None;
     def exit_assignment(nd: uni.Assignment) -> None;
     def exit_binary_expr(nd: uni.BinaryExpr) -> None;
     def translate_jac_bin_op(nd: uni.BinaryExpr) -> list[ast3.AST];
     def exit_compare_expr(nd: uni.CompareExpr) -> None;
+    def exit_cfg_expr(nd: uni.CfgExpr) -> None;
     def exit_bool_expr(nd: uni.BoolExpr) -> None;
     def exit_lambda_expr(nd: uni.LambdaExpr) -> None;
     def _remove_lambda_param_annotations(signature: uni.FuncSignature) -> None;
@@ -394,6 +452,12 @@ variables
 
     """Generate Python AST for JSX expression children."""
     def exit_jsx_expression(nd: uni.JsxExpression) -> None;
+
+    """Generate Python AST for JSX statement-form slots."""
+    def exit_jsx_slot(nd: uni.JsxSlot) -> None;
+
+    """Generate Python AST for JSX block comments (no-op)."""
+    def exit_jsx_comment(nd: uni.JsxComment) -> None;
 
     def exit_semi(nd: uni.Semi) -> None;
     def exit_comment_token(nd: uni.CommentToken) -> None;

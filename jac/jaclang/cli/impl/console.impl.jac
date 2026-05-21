@@ -6,7 +6,6 @@ or modified - only internal CLI chrome (prefixes, symbols) gets styled.
 import os;
 import sys;
 import from contextlib { contextmanager }
-import from typing { Any }
 
 # ===============================================================================
 # ANSI Color Codes - Raw and Simple
@@ -70,19 +69,56 @@ impl JacConsole._should_use_color -> bool {
 }
 
 """Print to stdout. User data passes through unchanged - no processing."""
-impl JacConsole.print(*args: Any, **kwargs: Any) -> None {
+impl JacConsole.print(*args: any, **kwargs: any) -> None {
     # Filter out Rich-specific kwargs for compatibility
     kwargs.pop('markup', None);
     kwargs.pop('highlight', None);
     kwargs.pop('style', None);
-    # Plain print - user data is never modified
-    print(*args, **kwargs);
+    # Handle Windows console encoding - replace unencodable chars
+    if sys.platform == 'win32' and not os.environ.get('WT_SESSION') {
+        # Windows cmd/PowerShell can't handle many Unicode chars
+        encoding: str = str(sys.stdout?.encoding or 'cp1252');
+        processed_args: list = [];
+        for arg in args {
+            if isinstance(arg, str) {
+                try {
+                    # Test if string can be encoded with current console encoding
+                    arg.encode(encoding);
+                    processed_args.append(arg);
+                } except UnicodeEncodeError {
+                    # Replace unencodable chars with ?
+                    processed_args.append(
+                        arg.encode(encoding, errors='replace').decode(encoding)
+                    );
+                }
+            } else {
+                processed_args.append(arg);
+            }
+        }
+        try {
+            print(*processed_args, **kwargs);
+        } except (BrokenPipeError, OSError) {
+            return;  # Silently ignore if pipe is broken
+        }
+    } else {
+        # Plain print - user data is never modified
+        try {
+            print(*args, **kwargs);
+        } except (BrokenPipeError, OSError) {
+            return;  # Silently ignore if pipe is broken
+        }
+    }
     # Flush for piped/subprocess output
-    sys.stdout.flush();
+    output_file = kwargs.get('file', sys.stdout);
+    try {
+        output_file.flush();
+    } except (BrokenPipeError, OSError) {
+        ;  # Ignore broken pipe errors (e.g., stdout closed in sidecar mode)
+    }
 }
 
 """Context manager for status during long operations."""
-impl JacConsole.status(*args: Any, **kwargs: Any) -> object {
+impl JacConsole.status(*args: any, **kwargs: any) -> object {
     if args {
         msg = args[0] if isinstance(args[0], str) else str(args[0]);
         if self.use_color {
@@ -176,7 +212,11 @@ impl JacConsole.print_header(title: str, version: str | None = None) -> None {
 }
 
 """Print a list of labeled URLs."""
-impl JacConsole.print_urls(urls: Any, symbol: str = '➜') -> None {
+impl JacConsole.print_urls(urls: any, symbol: str = '') -> None {
+    # Use Unicode arrow if emoji supported, otherwise ASCII
+    if not symbol {
+        symbol = '>' if not self.use_emoji else '➜';
+    }
     items = urls.items() if isinstance(urls, dict) else urls;
     for (label, url) in items {
         padded_label = f"{label}:".ljust(10);
@@ -209,8 +249,12 @@ impl JacConsole.print_next_steps(steps: list[str], title: str = 'Next Steps') ->
 
 """Print a list of items with colored symbols."""
 impl JacConsole.print_list(
-    items: list[str], style: str = 'success', symbol: str = '✔'
+    items: list[str], style: str = 'success', symbol: str = ''
 ) -> None {
+    # Use Unicode checkmark if emoji supported, otherwise ASCII
+    if not symbol {
+        symbol = '*' if not self.use_emoji else '✔';
+    }
     color_map = {'success': GREEN, 'warning': YELLOW, 'error': RED, 'info': CYAN};
     color = color_map.get(style, GREEN);
     for item in items {

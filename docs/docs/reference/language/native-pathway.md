@@ -6,7 +6,7 @@
 
 - [Overview](#overview) - What native compilation is and when to use it
 - [Quick Reference](#quick-reference) - At-a-glance summary of capabilities
-- [Native Blocks in Jac Applications](#native-blocks-in-jac-applications) - Mixing `na {}` into Python-backed Jac code
+- [Native Sections in Jac Applications](#native-sections-in-jac-applications) - Mixing `to na:` sections into Python-backed Jac code
 - [Python-Native Interop](#python-native-interop) - How the two codespaces communicate
 - [Standalone Native Binaries](#standalone-native-binaries) - Compiling `.na.jac` files to executables
 - [Type System](#type-system) - Native type mappings and fixed-width types
@@ -24,7 +24,7 @@
 
 Jac's native codespace compiles code to **machine-code via LLVM** -- the same Jac syntax, but running as native instructions instead of on the Python runtime. You can use it in two ways:
 
-1. **Inline `na {}` blocks** -- drop native-compiled functions into any Jac application alongside Python-backed code. The compiler generates the interop layer automatically.
+1. **Inline native sections** -- drop native-compiled functions into any Jac application alongside Python-backed code using a `to na:` section header (or `na` statement prefix). The compiler generates the interop layer automatically.
 2. **Standalone `.na.jac` files** -- compile an entire program to a self-contained binary with `jac nacompile`. No Python runtime, no external compiler, no external linker -- the entire toolchain from source to executable runs within Jac itself.
 
 Native compilation is ideal for:
@@ -39,7 +39,7 @@ Native compilation is ideal for:
 
 | Aspect | Details |
 |--------|---------|
-| **Inline block** | `na { }` in any `.jac` file |
+| **Inline section** | `to na:` section header (or `na` prefix) in any `.jac` file |
 | **Dedicated file** | `.na.jac` extension |
 | **Entry point** | `with entry { }` (standalone binaries only) |
 | **CLI command** | `jac nacompile <file> [-o output]` |
@@ -52,9 +52,15 @@ Native compilation is ideal for:
 
 ---
 
-## Native Blocks in Jac Applications
+## Native Sections in Jac Applications
 
-The most common way to use native compilation is by embedding `na {}` blocks inside a regular `.jac` file. Functions inside a `na {}` block compile to native machine code while the rest of the file runs on Python as usual.
+The most common way to use native compilation is to tag elements of a regular `.jac` file for the native codespace. Functions in a native section compile to native machine code while the rest of the file runs on Python as usual.
+
+There are three ways to select the native codespace inside a file:
+
+- **`na { ... }` braced block** (recommended) -- every element inside the braces compiles native; the braces bracket exactly the tagged region. Also works inside inner scopes.
+- **`to na:` section header** -- every following module-level element compiles native until the next `to X:` header or end of file. Convenient for a module that is mostly native.
+- **`na` single-statement prefix** -- tags one declaration.
 
 ```jac
 # app.jac
@@ -65,21 +71,23 @@ def process_data(items: list[dict]) -> list[dict] {
     return [item for item in items if item["active"]];
 }
 
-na {
-    # Native codespace -- compiles to machine code
-    def compute_checksum(data: list[int]) -> int {
-        has result: int = 0;
-        for val in data {
-            result = (result * 31 + val) % 1000000007;
-        }
-        return result;
-    }
+to na:
 
-    def fibonacci(n: int) -> int {
-        if n <= 1 { return n; }
-        return fibonacci(n - 1) + fibonacci(n - 2);
+# Native codespace -- compiles to machine code
+def compute_checksum(data: list[int]) -> int {
+    has result: int = 0;
+    for val in data {
+        result = (result * 31 + val) % 1000000007;
     }
+    return result;
 }
+
+def fibonacci(n: int) -> int {
+    if n <= 1 { return n; }
+    return fibonacci(n - 1) + fibonacci(n - 2);
+}
+
+to sv:
 
 with entry {
     # Call both Python and native functions seamlessly
@@ -90,7 +98,7 @@ with entry {
 
 The compiler handles everything: native functions are JIT-compiled and callable from the Python side without any manual bridging. You write one file, and each codespace compiles to its own backend.
 
-### When to Use `na {}` Blocks
+### When to Use Native Sections
 
 - **Tight loops** over numeric data where Python overhead matters
 - **Recursive algorithms** (e.g., tree traversal, dynamic programming)
@@ -99,13 +107,13 @@ The compiler handles everything: native functions are JIT-compiled and callable 
 
 ### Context Isolation
 
-Native functions inside `na {}` are excluded from Python codegen, and Python functions are excluded from native IR. Each codespace only sees its own definitions at compile time. Cross-codespace calls go through the interop bridge.
+Native-tagged functions are excluded from Python codegen, and Python functions are excluded from native IR. Each codespace only sees its own definitions at compile time. Cross-codespace calls go through the interop bridge.
 
 ---
 
 ## Python-Native Interop
 
-When a `.jac` file contains both Python and `na {}` code, the compiler generates interop stubs automatically:
+When a `.jac` file contains both Python and native-tagged code, the compiler generates interop stubs automatically:
 
 ```jac
 # interop_example.jac
@@ -115,13 +123,15 @@ def py_double(x: int) -> int {
     return x * 2;
 }
 
-na {
-    # Native function that calls the Python function
-    def native_add_one_to_doubled(x: int) -> int {
-        has doubled: int = py_double(x);
-        return doubled + 1;
-    }
+to na:
+
+# Native function that calls the Python function
+def native_add_one_to_doubled(x: int) -> int {
+    has doubled: int = py_double(x);
+    return doubled + 1;
 }
+
+to sv:
 
 with entry {
     print(native_add_one_to_doubled(5));  # prints 11
@@ -283,6 +293,7 @@ Collections are represented as LLVM struct types:
 | Sets | `s: set[int] = {1, 2, 3};` |
 | Tuples | `t: tuple[int, str] = (1, "a");` |
 | Enums | `enum Color { RED=0, BLUE=1 }` |
+| Typed-base enums | `enum HttpStatus: int { OK=200, NOT_FOUND=404 }` (members are real `int`) |
 | Objects | `obj Point { has x: int; }` |
 
 ### Control Flow
@@ -494,15 +505,17 @@ The same mechanism works with any C-compatible shared library. For example, usin
 <!-- jac-skip -->
 ```jac
 import from "libraylib.so" {
-    def InitWindow(width: i32, height: i32, title: i8*) -> c_void;
+    def InitWindow(width: i32, height: i32, title: str) -> c_void;
     def WindowShouldClose() -> i32;
     def BeginDrawing() -> c_void;
     def EndDrawing() -> c_void;
     def CloseWindow() -> c_void;
     def ClearBackground(color: i32) -> c_void;
-    def DrawText(text: i8*, x: i32, y: i32, fontSize: i32, color: i32) -> c_void;
+    def DrawText(text: str, x: i32, y: i32, fontSize: i32, color: i32) -> c_void;
 }
 ```
+
+C-string parameters use `str` in the declaration; the compiler lowers `str` to the `i8*` ABI shape shown in the [primitive-type table](#primitive-type-mappings) above. The `i8*` form is an internal LLVM type and is not part of Jac's surface syntax.
 
 Any library that exposes a C ABI can be called this way -- just point to the shared library path and declare the function signatures.
 
@@ -576,7 +589,7 @@ The following Jac features are **not yet available** in the native codespace:
 | PyPI imports | No Python ecosystem in native binaries |
 
 !!! tip
-    If you need a feature from the list above, keep that code in the Python codespace and use `na {}` blocks only for the performance-critical parts. The compiler handles the interop automatically.
+    If you need a feature from the list above, keep that code in the Python codespace and use `to na:` sections only for the performance-critical parts. The compiler handles the interop automatically.
 
 ---
 
@@ -693,22 +706,24 @@ HELLO, WORLD!
 # mixed.jac
 
 # Python side -- full ecosystem access
-import:py from json { dumps }
+import from json { dumps }
 
 def serialize(data: dict) -> str {
     return dumps(data);
 }
 
-na {
-    # Native side -- compiled to machine code
-    def sum_squares(n: int) -> int {
-        has total: int = 0;
-        for i in range(n) {
-            total += i * i;
-        }
-        return total;
+to na:
+
+# Native side -- compiled to machine code
+def sum_squares(n: int) -> int {
+    has total: int = 0;
+    for i in range(n) {
+        total += i * i;
     }
+    return total;
 }
+
+to sv:
 
 with entry {
     result = sum_squares(1000);

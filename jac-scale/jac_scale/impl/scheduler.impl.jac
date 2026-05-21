@@ -16,12 +16,12 @@ impl JacScaleScheduler.instance -> JacScaleScheduler {
 }
 
 """Set up the scheduler with a system token and optional server reference."""
-impl JacScaleScheduler.setup(system_token: str, server: Any | None = None) -> None {
+impl JacScaleScheduler.setup(system_token: str, server: any | None = None) -> None {
     self._system_token = system_token;
     self._server = server;
 
     # Register the dynamic handler via the public API in jaclang's scheduler.
-    def _dynamic_handler(task: Any) -> None {
+    def _dynamic_handler(task: any) {
         self._execute_task(task.name, self._system_username, task.is_walker);
     }
     Scheduler.instance().dynamic_handler = _dynamic_handler;
@@ -41,12 +41,20 @@ impl JacScaleScheduler.setup(system_token: str, server: Any | None = None) -> No
     }
     # APScheduler uses in-memory job store — MongoDB persistence is handled manually
     # via _persist_job / _load_jobs_from_db, avoiding serialisation issues with closures.
-    executors = {'default': ThreadPoolExecutor(10)};
-    job_defaults = {'coalesce': False, 'max_instances': 1};
-    self._apscheduler = BackgroundScheduler(
-        executors=executors, job_defaults=job_defaults
-    );
-    logger.debug("APScheduler initialized with in-memory job store");
+    if HAS_APSCHEDULER {
+        executors = {'default': ThreadPoolExecutor(10)};
+        job_defaults = {'coalesce': False, 'max_instances': 1};
+        self._apscheduler = BackgroundScheduler(
+            executors=executors, job_defaults=job_defaults
+        );
+        logger.debug("APScheduler initialized with in-memory job store");
+    } else {
+        self._apscheduler = None;
+        logger.info(
+            "APScheduler not installed — dynamic scheduling disabled. "
+            "Install with: pip install jac-scale[scheduler]"
+        );
+    }
 }
 
 """Start the APScheduler background scheduler."""
@@ -75,13 +83,13 @@ impl JacScaleScheduler.stop -> None {
 
 """Register static tasks (STATIC trigger) with the base jaclang Scheduler."""
 impl JacScaleScheduler.register_static_tasks(
-    walkers: dict, functions: dict, server: Any
+    walkers: dict, functions: dict, server: any
 ) -> None {
     self._server = server;
     base_scheduler = Scheduler.instance();
 
-    def _make_target(_name: str, _is_walker: bool) -> Any {
-        def target -> None {
+    def _make_target(_name: str, _is_walker: bool) -> any {
+        def target {
             self._execute_task(_name, self._system_username, _is_walker);
         }
         return target;
@@ -166,7 +174,7 @@ impl JacScaleScheduler.create_job(
 ) -> dict {
     if self._apscheduler is None {
         raise RuntimeError(
-            "APScheduler is not available. Install apscheduler>=3.0.0,<4.0.0."
+            "APScheduler is not available. Install with: pip install jac-scale[scheduler]"
         );
     }
 
@@ -303,11 +311,13 @@ impl JacScaleScheduler.delete_job(job_id: str) -> bool {
     return result;
 }
 
-"""Execute a scheduled walker or function in the context of the given user."""
+"""Execute a scheduled walker or function in an isolated execution context."""
 impl JacScaleScheduler._execute_task(
     name: str, username: str, is_walker: bool
 ) -> None {
     import asyncio;
+    import from jaclang { JacRuntimeInterface as Jac }
+    import from jaclang.jac0core.runtime { JacRuntime }
     label = 'walker' if is_walker else 'function';
     try {
         if self._server is None {
@@ -327,20 +337,36 @@ impl JacScaleScheduler._execute_task(
         target = registry[name];
         logger.debug(f"Executing scheduled {label} '{name}' as '{username}'");
 
-        async def _run -> None {
-            if is_walker {
-                result = await self._server.execution_manager.spawn_walker(
-                    target, {}, username
-                );
-            } else {
-                result = await self._server.execution_manager.execute_function(
-                    target, {}, username
-                );
-            }
-            if isinstance(result, dict) and 'error' in result {
-                logger.error(
-                    f"Scheduled {label} '{name}' error: {result.get('error')}"
-                );
+        async def _run {
+            import from jac_scale.context { JScaleExecutionContext }
+            import from jaclang { JacRuntimeInterface as Jac }
+            # Each scheduled job runs in its own isolated root context so
+            # concurrent jobs cannot share L1 state or interfere with
+            # in-flight HTTP requests that may be using the global context.
+            ctx = JScaleExecutionContext();
+            ctx_token = Jac.push_request_context(ctx);
+            try {
+                if is_walker {
+                    result = await self._server.execution_manager.spawn_walker(
+                        target, {}, username
+                    );
+                } else {
+                    result = await self._server.execution_manager.execute_function(
+                        target, {}, username
+                    );
+                }
+                if isinstance(result, dict) and 'error' in result {
+                    logger.error(
+                        f"Scheduled {label} '{name}' error: {result.get('error')}"
+                    );
+                }
+            } finally {
+                Jac.reset_request_context(ctx_token);
+                try {
+                    ctx.mem.close();
+                } except Exception as ce {
+                    logger.warning(f"Scheduled job context close failed: {ce}");
+                }
             }
         }
 
@@ -374,7 +400,7 @@ impl JacScaleScheduler._schedule_apscheduler_job(
         raise RuntimeError("APScheduler is not initialized");
     }
 
-    def job_func -> None {
+    def job_func {
         self._execute_task(name, username, is_walker);
     }
 

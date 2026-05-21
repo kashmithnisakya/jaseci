@@ -6,7 +6,6 @@ import os;
 import sys;
 import types;
 import from threading { Event }
-import from typing { Any }
 import jaclang.jac0core.unitree as uni;
 import from jaclang.jac0core.jir {
     SEC_BYTECODE,
@@ -68,6 +67,7 @@ def get_ir_gen_sched -> list[type[Transform[uni.Module, uni.Module]]] {
     }
     _ir_sched_loading = True;
     try {
+        import from jaclang.compiler.passes.main.view_lower_pass { ViewLowerPass }
         import from jaclang.compiler.passes.main.cfg_build_pass { CFGBuildPass }
         import from jaclang.compiler.passes.main.mtir_gen_pass { MTIRGenPass }
         import from jaclang.compiler.passes.main.sem_def_match_pass { SemDefMatchPass }
@@ -77,7 +77,10 @@ def get_ir_gen_sched -> list[type[Transform[uni.Module, uni.Module]]] {
         # Pre-compile shared analysis modules so codegen passes can import them
         import jaclang.compiler.symbol_utils;
         import jaclang.compiler.passes.main.layout_pass;
+        # ViewLowerPass runs first: it desugars `view` declarators into plain
+        # `def:pub -> JsxElement` abilities before any other pass sees them.
         return [
+            ViewLowerPass,
             ASTValidationPass,
             SymTabBuildPass,
             DeclImplMatchPass,
@@ -124,11 +127,13 @@ def get_type_check_sched -> list[type[Transform[uni.Module, uni.Module]]] {
         import from jaclang.compiler.passes.main.unitree_enrich_pass {
             UniTreeEnrichPass
         }
+        import from jaclang.compiler.passes.tool.jac_auto_lint_pass { JacLintCheckPass }
         return [
             TypeCheckPass,
             StaticAnalysisPass,
             PortabilityCheckPass,
-            UniTreeEnrichPass
+            UniTreeEnrichPass,
+            JacLintCheckPass
         ];
     } except ImportError {
         return [];
@@ -150,7 +155,9 @@ def get_py_code_gen -> list[type[Transform[uni.Module, uni.Module]]] {
     _codegen_sched_loading = True;
     try {
         import from jaclang.compiler.passes.ecmascript { EsastGenPass }
-        import from jaclang.compiler.passes.main.pyjac_ast_link_pass { PyJacAstLinkPass }
+        import from jaclang.compiler.passes.main.pyjac_ast_link_pass {
+            PyJacAstLinkPass
+        }
         passes: list[type[Transform[uni.Module, uni.Module]]] = [
             InteropAnalysisPass,
             EsastGenPass
@@ -238,14 +245,6 @@ obj _SetupProgress {
 
 glob setup_progress = _SetupProgress();
 
-"""Recalculate parent pointers after mutating node children."""
-def _recalculate_parents(nd: uni.UniNode) -> None {
-    for child in nd.kid {
-        child.parent = nd;
-        _recalculate_parents(child);
-    }
-}
-
 """Coerce a module to a specific code context by unfolding its target block type.
 
 Unfolds elements from `unfold_type` blocks, keeps `skip_types` blocks as-is,
@@ -257,7 +256,7 @@ def _coerce_module(
     skip_types: tuple,
     context: CodeContext,
     skip_token: (Tok | None) = None
-) -> None {
+) {
     elements: list[uni.ElementStmt] = [];
     for stmt in module.body {
         if isinstance(stmt, unfold_type) {
@@ -296,11 +295,10 @@ def _coerce_module(
     }
     new_kid.extend(module.body);
     module.set_kids(nodes=new_kid or [uni.EmptyToken()]);
-    _recalculate_parents(module);
 }
 
 """Coerce a .cl.jac module to client context."""
-def _coerce_client_module(module: uni.Module) -> None {
+def _coerce_client_module(module: uni.Module) {
     _coerce_module(
         module,
         unfold_type=uni.ClientBlock,
@@ -311,7 +309,7 @@ def _coerce_client_module(module: uni.Module) -> None {
 }
 
 """Coerce a .sv.jac module to server context."""
-def _coerce_server_module(module: uni.Module) -> None {
+def _coerce_server_module(module: uni.Module) {
     _coerce_module(
         module,
         unfold_type=uni.ServerBlock,
@@ -321,7 +319,7 @@ def _coerce_server_module(module: uni.Module) -> None {
 }
 
 """Coerce a .na.jac module to native context."""
-def _coerce_native_module(module: uni.Module) -> None {
+def _coerce_native_module(module: uni.Module) {
     _coerce_module(
         module,
         unfold_type=uni.NativeBlock,
@@ -346,7 +344,7 @@ obj JacCompiler {
     def internal_program -> JacProgram;
 
     @classmethod
-    def _get_jaclang_root(cls: Any) -> str;
+    def _get_jaclang_root(cls: any) -> str;
 
     def _resolve_program(file_path: str, target_program: JacProgram) -> JacProgram;
     def get_native_interop_setup(
@@ -365,14 +363,14 @@ obj JacCompiler {
         full_target: str,
         target_program: JacProgram,
         cached_ir: str,
-        cached_interop: (dict | None)
+        cached_interop: (dict[str, any] | None)
     ) -> None;
 
     def _load_native_from_bitcode(
         full_target: str,
         target_program: JacProgram,
         section_data: bytes,
-        cached_interop: (dict | None)
+        cached_interop: (dict[str, any] | None)
     ) -> None;
 
     def _restore_sections(
@@ -392,7 +390,7 @@ obj JacCompiler {
         file_path: str,
         target_program: JacProgram,
         use_str: (str | None) = None,
-        options: (CompileOptions | None) = None
+        options: CompileOptions = CompileOptions()
     ) -> uni.Module;
 
     def build(

@@ -5,7 +5,6 @@ SSO configuration, and graph visualization.
 """
 import from collections.abc { Callable }
 import from pathlib { Path }
-import from typing { Any }
 import from fastapi { Request }
 import from fastapi.responses { HTMLResponse, JSONResponse, Response, FileResponse }
 import from jaclang.runtimelib.transport { TransportResponse }
@@ -63,7 +62,10 @@ obj JacAPIServerAdmin {
     ) -> TransportResponse;
 
     # SSO management
-    def admin_list_sso_providers(Authorization: str | None = None) -> TransportResponse;
+    def admin_list_sso_providers(
+        Authorization: str | None = None
+    ) -> TransportResponse;
+
     def admin_get_user_sso_accounts(
         username: str, Authorization: str | None = None
     ) -> TransportResponse;

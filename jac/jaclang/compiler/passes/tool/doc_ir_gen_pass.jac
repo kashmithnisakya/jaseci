@@ -61,6 +61,9 @@ obj DocIRGenPass(UniPass) {
 
     def is_within(kid_node: uni.UniNode, block: Sequence[uni.UniNode]) -> bool;
     def trim_trailing_line(parts: list[doc.DocType]) -> None;
+    """Emit 'to cl:/sv:/na:' section-header form for an implicit context block."""
+    def emit_section_header_block(nd: uni.UniNode) -> None;
+
     def remove_all_spaces(doc_node: doc.DocType) -> doc.DocType;
     def exit_module(nd: uni.Module) -> None;
     def exit_import(nd: uni.Import) -> None;
@@ -101,6 +104,7 @@ obj DocIRGenPass(UniPass) {
     def exit_inner_compr(nd: uni.InnerCompr) -> None;
     def exit_f_string(nd: uni.FString) -> None;
     def exit_formatted_value(nd: uni.FormattedValue) -> None;
+    def exit_cfg_expr(nd: uni.CfgExpr) -> None;
     def exit_if_else_expr(nd: uni.IfElseExpr) -> None;
     def exit_bool_expr(nd: uni.BoolExpr) -> None;
     def exit_unary_expr(nd: uni.UnaryExpr) -> None;
@@ -114,6 +118,7 @@ obj DocIRGenPass(UniPass) {
     def exit_dict_compr(nd: uni.DictCompr) -> None;
     def exit_k_w_pair(nd: uni.KWPair) -> None;
     def exit_await_expr(nd: uni.AwaitExpr) -> None;
+    def exit_cast_expr(nd: uni.CastExpr) -> None;
     def exit_yield_expr(nd: uni.YieldExpr) -> None;
     def exit_ctrl_stmt(nd: uni.CtrlStmt) -> None;
     def exit_delete_stmt(nd: uni.DeleteStmt) -> None;
@@ -175,4 +180,6 @@ obj DocIRGenPass(UniPass) {
     def exit_jsx_normal_attribute(nd: uni.JsxNormalAttribute) -> None;
     def exit_jsx_text(nd: uni.JsxText) -> None;
     def exit_jsx_expression(nd: uni.JsxExpression) -> None;
+    def exit_jsx_slot(nd: uni.JsxSlot) -> None;
+    def exit_jsx_comment(nd: uni.JsxComment) -> None;
 }

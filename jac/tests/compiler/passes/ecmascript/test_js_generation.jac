@@ -5,6 +5,7 @@ Migrated from test_js_generation.py to native Jac test format.
 
 import os;
 import subprocess;
+import sys;
 import tempfile;
 import from pathlib { Path }
 import jaclang;
@@ -43,10 +44,18 @@ def compile_fixture_to_js(fixture_name: str, fixture_dir: str = "") -> str {
         return _js_compile_cache[cache_key];
     }
     prog = JacProgram();
-    ir = prog.compile(file_path=fixture_path, no_cgen=True);
+    ir = prog.compile(file_path=fixture_path, no_cgen=True, type_check=True);
 
-    assert not prog.errors_had , (
-        f"Compilation errors in {fixture_name}: {[str(e) for e in prog.errors_had]}"
+    # Filter out type-checker diagnostics (non-fatal warnings about
+    # Unknown types in client code).  Only fail on parse/compile errors.
+    import from jaclang.compiler.passes.main.type_checker_pass { TypeCheckPass }
+    _fatal = [
+        e
+        for e in prog.errors_had
+        if e.from_pass is not TypeCheckPass
+    ];
+    assert not _fatal , (
+        f"Compilation errors in {fixture_name}: {[str(e) for e in _fatal]}"
     );
 
     es_pass = EsastGenPass(ir_in=ir, prog=prog);
@@ -61,8 +70,25 @@ def compile_fixture_to_js(fixture_name: str, fixture_dir: str = "") -> str {
     return result;
 }
 
+"""Compile a fixture through the normal production codegen path."""
+def compile_fixture_to_js_production(fixture_name: str, fixture_dir: str = "") -> str {
+    fixture_path = fixture_name;
+    if not Path(fixture_path).exists() and fixture_dir {
+        fixture_path = os.path.join(fixture_dir, fixture_name);
+    }
+    prog = JacProgram();
+    ir = prog.compile(file_path=fixture_path);
+    assert not prog.errors_had , (
+        f"Compilation errors in {fixture_name}: {[str(e) for e in prog.errors_had]}"
+    );
+    assert ir.gen.js and ir.gen.js.strip() , (
+        f"Production JS codegen produced no output for {fixture_name}"
+    );
+    return ir.gen.js;
+}
+
 """Ensure generated JavaScript has balanced delimiters."""
-def assert_balanced_syntax(js_code: str, fixture_name: str) -> None {
+def assert_balanced_syntax(js_code: str, fixture_name: str) {
     pairs = [("{", "}"), ("(", ")"), ("[", "]")];
     for (open_char, close_char) in pairs {
         assert js_code.count(open_char) == js_code.count(close_char) , (
@@ -77,8 +103,14 @@ Uses regex word-boundary matching so that Jac keywords appearing as
 JS variable names (e.g. ``let has = false;`` inside the _jac runtime)
 do not trigger false positives.
 """
-def assert_no_jac_keywords(js_code: str, fixture_name: str) -> None {
+def assert_no_jac_keywords(js_code: str, fixture_name: str) {
     import re;
+
+    # Strip string literals so English words inside error messages
+    # and other quoted text don't trigger false positives.
+    code_without_strings = re.sub(r'"(?:[^"\\]|\\.)*"', '""', js_code);
+    code_without_strings = re.sub(r"'(?:[^'\\]|\\.)*'", "''", code_without_strings);
+    code_without_strings = re.sub(r"`(?:[^`\\]|\\.)*`", "``", code_without_strings);
 
     # Each entry: (keyword, pattern that matches Jac *statement* usage)
     # e.g. ``has varname`` at the start of a statement, not ``let has = ...``
@@ -97,7 +129,7 @@ def assert_no_jac_keywords(js_code: str, fixture_name: str) -> None {
     ];
 
     for (kw_name, pattern) in jac_keywords {
-        assert not re.search(pattern, js_code) , (
+        assert not re.search(pattern, code_without_strings) , (
             f"Jac keyword '{kw_name}' leaked into JavaScript for {fixture_name}"
         );
     }
@@ -249,7 +281,7 @@ test "cli js command outputs js" {
     env["PYTHONPATH"] = f"{project_root}:{existing}" if existing else project_root;
 
     result = subprocess.run(
-        ["python3", "-m", "jaclang.cli.cli", "js", fixture_file_path],
+        [sys.executable, "-m", "jaclang.cli.cli", "js", fixture_file_path],
         capture_output=True,
         text=True,
         env=env,
@@ -269,7 +301,7 @@ test "cl only js command outputs js" {
     env["PYTHONPATH"] = f"{project_root}:{existing}" if existing else project_root;
 
     result = subprocess.run(
-        ["python3", "-m", "jaclang.cli.cli", "js", fixture_file_path, ],
+        [sys.executable, "-m", "jaclang.cli.cli", "js", fixture_file_path, ],
         capture_output=True,
         text=True,
         env=env,
@@ -279,7 +311,7 @@ test "cl only js command outputs js" {
         f"CLI failed to compile cl only file: {result.stderr}"
     );
     assert len(result.stdout) > 0;
-    assert "function greet(name) {" in result.stdout;
+    assert 'function greet(name = "World") {' in result.stdout;
 }
 
 test "empty file generates minimal js" {
@@ -652,7 +684,12 @@ test "separated files" {
 
     # Check the spawned walker function is present
     assert "let response = await __jacSpawn(" in js_code;
-    assert "__jacSpawn(\"create_todo\", \"\", {\"text\": input.strip()});" in js_code;
+    # `input` is destructured from useState (external React typings) so its
+    # static type is unknown — `.strip()` routes through the polymorphic
+    # runtime helper instead of leaking the Python method name.
+    assert (
+        "__jacSpawn(\"create_todo\", \"\", {\"text\": _jac.poly.strip(input)});" in js_code
+    );
 }
 
 test "separated defpub generates rpc stubs" {
@@ -687,6 +724,175 @@ test "separated defpub generates rpc stubs" {
     }
 
     assert_balanced_syntax(js_code, fixture);
+}
+
+test "sv import kwargs preserve names in jac call function" {
+    # Regression for issue #5852.  Calling an sv-imported def:pub function
+    # with kwargs syntax (e.g. ``greet(name=x)``) must compile to the same
+    # ``__jacCallFunction("greet", {"name": x})`` shape that the positional
+    # form produces.  Previously the kwargs were silently dropped, emitting
+    # ``__jacCallFunction("greet", {})`` and causing a server 422.
+    fixture = "sv_import_kwargs_client.cl.jac";
+    js_code = compile_fixture_to_js(fixture, FIXTURES);
+
+    # Pure-kwargs single arg: ``greet(name=input_text)``
+    assert '__jacCallFunction("greet", {"name": input_text})' in js_code , (
+        "Single-kwarg call must propagate the name into the args object;\n" + "got:\n" + js_code
+    );
+
+    # Pure-kwargs out-of-order: ``add_pair(b=2, a=1)`` — both keys must be
+    # present in the args object regardless of source order.
+    assert (
+        '__jacCallFunction("add_pair", {"b": 2, "a": 1})' in js_code
+        or '__jacCallFunction("add_pair", {"a": 1, "b": 2})' in js_code
+    ) , (
+        "Kwargs-only call must include all kwarg keys in the args object;\n" + "got:\n" + js_code
+    );
+
+    # Mixed positional + kwarg: ``add_pair(1, b=2)`` — first param mapped
+    # by position to its server-side name, second carried by kwarg key.
+    assert '__jacCallFunction("add_pair", {"a": 1, "b": 2})' in js_code , (
+        "Mixed positional/kwarg call must merge both into the args object;\n" + "got:\n" + js_code
+    );
+
+    # ``**dict`` spread against a known signature can lower to declared
+    # parameter-key reads, avoiding the old single-object positional shape.
+    assert '__jacCallFunction("add_pair", {"a": kw["a"], "b": kw["b"]})' in js_code , (
+        "**dict spread against known signature must compile to keyed parameter reads;\n" + "got:\n" + js_code
+    );
+
+    # Sanity: the obvious bug-shape — empty args object — must not appear
+    # for any of these named calls.
+    assert '__jacCallFunction("greet", {})' not in js_code , (
+        "Bug regression: kwargs were dropped, emitting empty args object."
+    );
+    assert '__jacCallFunction("add_pair", {})' not in js_code , (
+        "Bug regression: kwargs were dropped, emitting empty args object."
+    );
+
+    assert_balanced_syntax(js_code, fixture);
+}
+
+test "sv import kwargs preserve names in production jac2js path" {
+    fixture = "sv_import_kwargs_client.cl.jac";
+    js_code = compile_fixture_to_js_production(fixture, FIXTURES);
+
+    assert '__jacCallFunction("greet", {"name": input_text})' in js_code , (
+        "Production jac2js path must lower sv-import kwargs directly into the RPC args object;\n" + "got:\n" + js_code
+    );
+    assert "await greet({name: input_text})" not in js_code , (
+        "Production jac2js path must not pass kwargs object into the generated RPC wrapper;\n" + "got:\n" + js_code
+    );
+    assert '__jacCallFunction("greet", {})' not in js_code , (
+        "Production jac2js path must not emit an empty RPC args object for kwargs calls."
+    );
+}
+
+test "sv import wrapper covers posonly and kwonly params" {
+    # Regression for the latent stub-generation bug: ``_generate_sv_import_stubs``
+    # used to walk only ``sig.params`` (regular non-posonly non-kwonly), so
+    # posonly/kwonly params silently disappeared from the generated wrapper —
+    # both from its JS function signature and from the ``__jacCallFunction``
+    # args object.  After unifying on ``_param_names_from_ability``, all three
+    # buckets are walked and the wrapper's shape matches the source ability.
+    fixture = "sv_import_posonly_kwonly_client.cl.jac";
+    js_code = compile_fixture_to_js_production(fixture, FIXTURES);
+    compact_js = js_code.replace("\n", "").replace(" ", "");
+
+    # Wrapper signature must list params in declared order — filter (posonly),
+    # query (regular), scope (kwonly).
+    assert "asyncfunctionquery(filter,query,scope)" in compact_js , (
+        "sv-import wrapper must include posonly + kwonly params in its JS " + "signature, not silently drop them;\ngot:\n" + js_code
+    );
+    # All three params must appear in the RPC args object the wrapper posts.
+    assert (
+        '__jacCallFunction("query",{"filter":filter,"query":query,"scope":scope})' in compact_js
+    ) , (
+        "sv-import wrapper must forward posonly + kwonly params in the RPC " + "args object;\ngot:\n" + js_code
+    );
+    # Pre-fix bug shape: a one-arg wrapper that posts only the regular param.
+    assert "asyncfunctionquery(query)" not in compact_js , (
+        "Wrapper must not regress to walking only sig.params (which would drop " + "posonly + kwonly);\ngot:\n" + js_code
+    );
+}
+
+test "plain client kwargs lower to ordered js arguments" {
+    fixture = "plain_kwargs_client.cl.jac";
+    js_code = compile_fixture_to_js_production(fixture, FIXTURES);
+    compact_js = js_code.replace("\n", "").replace(" ", "");
+
+    assert "setTotal(add(5, 10));" in js_code , (
+        "Known Jac function kwargs must lower to ordered JS positional args;\n" + "got:\n" + js_code
+    );
+    assert "setMixed(add(1, 2));" in js_code , (
+        "Mixed positional/kwarg call must preserve positional args and order kwargs by signature;\n" + "got:\n" + js_code
+    );
+    assert "function add_defaults(a = 1, b = 2)" in js_code , (
+        "Jac default parameter values must be preserved in emitted JS function signatures;\n" + "got:\n" + js_code
+    );
+    assert "setDefaulted(add_defaults(undefined, 99));" in js_code , (
+        "Skipping an earlier defaulted param must emit an undefined placeholder, not collapse positions;\n" + "got:\n" + js_code
+    );
+    assert 'setSpread_total(add(kw["a"], kw["b"]));' in js_code , (
+        "Known **kwargs calls must lower to declared-parameter property reads;\n" + "got:\n" + js_code
+    );
+    assert compact_js.count(")(get_kw()))") == 1 , (
+        "Complex **kwargs source must be evaluated exactly once;\n" + "got:\n" + js_code
+    );
+    assert (
+        'setSpread_call_total((__jac_kwargs=>add3(__jac_kwargs["a"],__jac_kwargs["b"],__jac_kwargs["c"]))(get_kw()));' in compact_js
+    ) , (
+        "Known **function_call() spread must lower through a single-evaluation temp IIFE;\n" + "got:\n" + js_code
+    );
+    assert (
+        'setSpread_merge_total((__jac_kwargs=>add3(__jac_kwargs["a"],__jac_kwargs["b"],__jac_kwargs["c"]))({...kw1,...kw2}));' in compact_js
+    ) , (
+        "Multiple **kwargs spreads must merge earlier and later sources before keyed reads;\n" + "got:\n" + js_code
+    );
+    assert (
+        'setSpread_override_total((__jac_kwargs=>add3(__jac_kwargs["a"],99,__jac_kwargs["c"]))({...kw1,...kw2}));' in compact_js
+    ) , (
+        "Explicit kwargs must override **spread values while preserving other merged keys;\n" + "got:\n" + js_code
+    );
+    assert "setMethod_total(counter.bump(5, 3));" in js_code , (
+        "Known method kwargs must lower to ordered JS positional args;\n" + "got:\n" + js_code
+    );
+    assert "add({b: 10, a: 5})" not in js_code , (
+        "Plain kwargs must not be passed as one positional object argument;\n" + "got:\n" + js_code
+    );
+    assert "add_defaults(99)" not in js_code , (
+        "Defaulted kwargs must not collapse missing earlier params;\n" + "got:\n" + js_code
+    );
+    assert "counter.bump({amount: 5, mul: 3})" not in js_code , (
+        "Method kwargs must not be passed as one positional object argument;\n" + "got:\n" + js_code
+    );
+}
+
+test "sv import duplicate kwarg is a compile error" {
+    # Calling ``greet(input_text, name=other)`` gives the ``name`` parameter
+    # twice — once positionally and once by keyword.  This mirrors Python's
+    # ``TypeError: got multiple values for argument 'name'`` and must be
+    # reported as a compile-time error so the build fails fast rather than
+    # silently emitting a JS object with a duplicated key.
+    import from jaclang.jac0core.program { JacProgram }
+    import from jaclang.compiler.passes.ecmascript { EsastGenPass }
+
+    fixture = os.path.join(FIXTURES, "sv_import_kwargs_dup.cl.jac");
+    prog = JacProgram();
+    ir = prog.compile(file_path=fixture, no_cgen=True, type_check=True);
+    EsastGenPass(ir_in=ir, prog=prog);
+
+    dup_errs = [
+        e
+        for e in prog.errors_had
+        if "given both positionally and by keyword" in str(e)
+    ];
+    assert len(dup_errs) == 1 , (
+        "Expected exactly one E5080 collision diagnostic, got " + str(
+            [str(e) for e in prog.errors_had]
+        )
+    );
+    assert "name" in str(dup_errs[0]) and "greet" in str(dup_errs[0]);
 }
 
 test "cl.jac with impl.jac does not duplicate __jacCallFunction import" {
@@ -741,13 +947,36 @@ test "jsx text with quotes does not produce double-double quotes" {
     import re;
     unescaped_double_quotes = re.findall(r'(?<!\\)""', js_code);
     assert len(unescaped_double_quotes) == 0 , (
-        f"Unescaped double-double quotes found in generated JS — "
+        "Unescaped double-double quotes found in generated JS — "
         f"quote characters in JSX text are being double-wrapped:\n{js_code}"
     );
 
     # The text content should appear in the output with escaped quotes.
     assert "Try: show all to reset" in js_code , (
         "JSX text content with quotes should appear in output"
+    );
+    assert_balanced_syntax(js_code, fixture);
+}
+
+test "any typed callee emits plain call not new expression" {
+    # BUG: `Any` is internally represented as a `ClassType` with the
+    # `Instance` flag, so the ES codegen previously emitted
+    # `new handler(payload)` for any callee whose type was a ClassType,
+    # including variables typed as `Any`. This broke async callbacks
+    # passed between components, since `new` makes JavaScript try to
+    # construct an object rather than invoke the function.
+    fixture = "any_callee_not_new.jac";
+    js_code = compile_fixture_to_js(fixture, FIXTURES);
+
+    # Plain invocation must be emitted, not `new ...()`.
+    assert "await handler(payload)" in js_code , (
+        f"Expected plain `await handler(payload)` call, got:\n{js_code}"
+    );
+    assert "await new handler" not in js_code , (
+        f"`Any`-typed async callee must not be emitted as `new`:\n{js_code}"
+    );
+    assert "new handler(" not in js_code , (
+        f"`Any`-typed sync callee must not be emitted as `new`:\n{js_code}"
     );
     assert_balanced_syntax(js_code, fixture);
 }
@@ -839,9 +1068,84 @@ test "compr list multiple filters" {
 test "compr list method call" {
     js_code = compile_fixture_to_js("comprehensions.cl.jac", FIXTURES);
 
-    # list_compr_method: [x.strip() for x in items] → items.map(x => x.strip())
-    assert ".strip()" in js_code , (
-        "Method call in comprehension output should be preserved"
+    # list_compr_method: [x.strip() for x in items] → items.map(x => _jac.poly.strip(x))
+    # `items` is typed as bare `list` (no element type), so x is Unknown.
+    # Pre-#5508 the codegen leaked the Python `.strip()` verbatim into JS,
+    # which crashes at runtime. The polymorphic runtime helper dispatches
+    # to `String.prototype.trim` for actual strings.
+    assert "_jac.poly.strip(x)" in js_code , (
+        "Untyped element method calls in comprehensions should route "
+        "through _jac.poly.* runtime helpers"
+    );
+}
+
+test "str methods on local vars and chained calls" {
+    js_code = compile_fixture_to_js("str_method_chaining.cl.jac", FIXTURES);
+    assert "temp.toLowerCase()" in js_code , "str.lower() on local var should map to .toLowerCase()";
+    assert "text.trim().toLowerCase()" in js_code , "chained str.strip().lower() should map to .trim().toLowerCase()";
+    assert "text.toUpperCase().trim()" in js_code , "chained str.upper().strip() should map to .toUpperCase().trim()";
+    assert "text.trim().toUpperCase()" in js_code , "chained str.strip().upper() should map to .trim().toUpperCase()";
+    assert "text.toUpperCase().trim().toLowerCase()" in js_code , "triple-chained str.upper().strip().lower() should map to .toUpperCase().trim().toLowerCase()";
+}
+
+test "issue 5508 case1 in operator on str method call" {
+    # Regression for jaseci-labs/jaseci#5508 case 1.
+    # `"a" in name.lower()` was emitting a raw JS `in` operator on a string
+    # because operator-side dispatch (_try_primitive_op) did not walk the MRO
+    # to recognize the LiteralString return type as `str`. The receiver of
+    # `.lower()` got translated to `.toLowerCase()`, but the `in` operator
+    # itself was left untranslated, crashing at runtime in the browser.
+    js_code = compile_fixture_to_js("issue_5508_str_method_dispatch.cl.jac", FIXTURES);
+    assert "name.toLowerCase().includes(\"a\")" in js_code , (
+        "`x in str_method()` should lower to .includes() on the method result"
+    );
+    assert "(\"a\" in name.toLowerCase())" not in js_code , (
+        "raw JS `in` operator on a string would crash at runtime"
+    );
+}
+
+test "issue 5508 case2 str methods on untyped receivers" {
+    # Regression for jaseci-labs/jaseci#5508 case 2 (also covers #5453).
+    # When the static type of the receiver is not provably `str` (props of
+    # type `dict`, results of `or` widening, comprehension over untyped
+    # list, etc.) the codegen used to emit Python method names verbatim
+    # (`.upper`, `.strip`, `.lower`) which crash at runtime in JS. Fall
+    # back to runtime-polymorphic helpers (`_jac.poly.*`) instead.
+    js_code = compile_fixture_to_js("issue_5508_str_method_dispatch.cl.jac", FIXTURES);
+    # Pluck out the user-compiled function bodies (skip the injected
+    # _jac runtime, which legitimately contains `s.upper()` etc. as the
+    # user-class fallback inside its polyfills).
+    user_chunks = [];
+    for fn_name in ["case2_props_upper", "case2_props_strip", "case2_props_lower"] {
+        idx = js_code.find("function " + fn_name);
+        assert idx >= 0 , (f"missing compiled function {fn_name}");
+        user_chunks.append(js_code[idx:idx + 400]);
+    }
+    user_code = "\n".join(user_chunks);
+    # Untyped string methods must NOT survive verbatim into the user code.
+    assert ".upper()" not in user_code , (
+        "Python `.upper()` should not appear verbatim in compiled user JS"
+    );
+    assert ".strip()" not in user_code , (
+        "Python `.strip()` should not appear verbatim in compiled user JS"
+    );
+    assert ".lower()" not in user_code , (
+        "Python `.lower()` (without a static str type) should not appear "
+        "verbatim in compiled user JS"
+    );
+    # Should route through the polymorphic runtime helpers.
+    assert "_jac.poly.upper(" in user_code , (
+        "Untyped .upper() should route through _jac.poly.upper()"
+    );
+    assert "_jac.poly.strip(" in user_code , (
+        "Untyped .strip() should route through _jac.poly.strip()"
+    );
+    assert "_jac.poly.lower(" in user_code , (
+        "Untyped .lower() should route through _jac.poly.lower()"
+    );
+    # The _jac runtime must be injected when poly helpers are used.
+    assert "const _jac = {" in js_code , (
+        "_jac runtime must be injected when _jac.poly.* helpers are emitted"
     );
 }
 
@@ -859,7 +1163,9 @@ test "compr set basic" {
     js_code = compile_fixture_to_js("comprehensions.cl.jac", FIXTURES);
 
     # set_compr_basic: {x * 2 for x in items} → new Set(items.map(x => (x * 2)))
-    assert "new Set(" in js_code , ("Set comprehension should wrap result in new Set()");
+    assert "new Set(" in js_code , (
+        "Set comprehension should wrap result in new Set()"
+    );
     assert "new Set(items.map(" in js_code , (
         "Set comprehension should be new Set(items.map(...))"
     );
@@ -961,6 +1267,88 @@ test "compr no jac keywords" {
     assert_no_jac_keywords(js_code, "comprehensions.cl.jac");
 }
 
+test "await expression parenthesized as member expression object" {
+    # BUG: When AwaitExpression is the object of a MemberExpression,
+    # the unparser generates `await foo().prop` which JS parses as
+    # `await (foo().prop)` instead of the intended `(await foo()).prop`.
+    # This manifests at runtime when typed list returns use:
+    #   await __jacCallFunction("get_items",{}).map(x => T.__from_wire(x))
+    # which calls .map() on the Promise, not the resolved array.
+    import from jaclang.compiler.passes.ecmascript.estree {
+        AwaitExpression,
+        CallExpression,
+        MemberExpression,
+        Identifier,
+        ArrowFunctionExpression,
+        Program,
+        ExpressionStatement
+    }
+
+    # Build: (await fetchData()).map(x => x)
+    await_call = AwaitExpression(
+        argument=CallExpression(callee=Identifier(name="fetchData"), arguments=[])
+    );
+    map_call = CallExpression(
+        callee=MemberExpression(
+            object=await_call, property=Identifier(name="map"), computed=False
+        ),
+        arguments=[
+            ArrowFunctionExpression(
+                params=[Identifier(name="x")],
+                body=Identifier(name="x"),
+                expression=True,
+                async_=False
+            )
+        ]
+    );
+    prog = Program(body=[ExpressionStatement(expression=map_call)]);
+    js_code = es_to_js(prog);
+
+    # The await MUST be parenthesized when used as a member expression object
+    assert "(await fetchData())" in js_code , (
+        f"AwaitExpression as MemberExpression object must be parenthesized. Got: {js_code}"
+    );
+    assert "(await fetchData()).map(" in js_code , (
+        f"Expected (await fetchData()).map(...), got: {js_code}"
+    );
+    # Must NOT have unparenthesized form
+    assert "await fetchData().map(" not in js_code , (
+        f"BUG: await not parenthesized before .map(). Got: {js_code}"
+    );
+}
+
+test "list concat in impl file uses array spread not string plus" {
+    # BUG: In .impl.jac files, `items = items + [item]` compiles to
+    # JS string concatenation `M + [J]` instead of array spread `[...M, J]`
+    # or `[...M, ...J]`.
+    fixture = "list_concat_impl.cl.jac";
+    js_code = compile_fixture_to_js(fixture, FIXTURES);
+
+    # The JS output must NOT contain raw `+` between array expressions
+    # (which would be string concatenation in JS).
+    # Look for the pattern: variable + [expression] which is the bug
+    lines = js_code.split('\n');
+    has_raw_plus_array = False;
+    for line in lines {
+        stripped = line.strip();
+        # Detect pattern: something + [something] that isn't in a string
+        if '+ [' in stripped and 'items' in stripped.lower() {
+            has_raw_plus_array = True;
+        }
+    }
+
+    # Should use spread syntax [...items, item] or .concat()
+    has_spread = "[..." in js_code;
+    has_concat = ".concat(" in js_code;
+    has_push = ".push(" in js_code;
+
+    assert (has_spread or has_concat or has_push) or not has_raw_plus_array , (
+        "List concatenation in impl file must use array spread/concat, " + "not JS `+` operator (which produces string concatenation)"
+    );
+
+    assert_balanced_syntax(js_code, fixture);
+}
+
 test "private identifier generates hash prefix" {
     import from jaclang.compiler.passes.ecmascript.estree {
         PrivateIdentifier,
@@ -982,4 +1370,315 @@ test "private identifier generates hash prefix" {
         f"PrivateIdentifier should emit '#secret', got: {js_code}"
     );
     assert "class Foo" in js_code;
+}
+
+test "jsx preserves single-space whitespace between adjacent expression children" {
+    # BUG: The parser dropped any whitespace-only JSX_TEXT token, including
+    # an intentional single space between two `{expr}` children on the same
+    # line.  As a result `<div>{count} {("task" ...)} remaining</div>`
+    # emitted children `[count, (cond), " remaining"]` instead of
+    # `[count, " ", (cond), " remaining"]`, so the rendered DOM showed
+    # "3tasks remaining" instead of "3 tasks remaining" (and "1.5lb"
+    # instead of "1.5 lb" in the shopping-list code from the AI day
+    # planner tutorial).
+    #
+    # Whitespace that crosses a newline (indent between `}` and the next
+    # `{` on a new line) is structural and must still be dropped, matching
+    # Babel's JSX text normalization.
+    fixture = "jsx_adjacent_expressions_spaces.cl.jac";
+    js_code = compile_fixture_to_js(fixture, FIXTURES);
+
+    # First span: same-line `{count} {("task" if ... else "tasks")} remaining`.
+    # Children must include a literal " " separator between count and the
+    # conditional, AND between the conditional and "remaining".
+    assert (
+        "[count, \" \", ((count === 1) ? \"task\" : \"tasks\"), \" remaining\"]" in js_code
+    ) , (
+        "Same-line `{a} {b}` must emit a `\" \"` child between adjacent "
+        f"expressions, got:\n{js_code}"
+    );
+
+    # Second span: `{amount} {unit}` — two adjacent expressions only.
+    assert "[amount, \" \", unit]" in js_code , (
+        "Same-line adjacent `{amount} {unit}` must emit a `\" \"` "
+        f"separator child, got:\n{js_code}"
+    );
+
+    # Third span: newline-separated `{count}\n{unit}` — structural
+    # whitespace MUST be dropped, no `" "` child.
+    assert "__jacJsx(\"p\", {}, [count, unit])" in js_code , (
+        "Newline-separated `{a}\\n{b}` must NOT emit a whitespace child "
+        f"(structural whitespace is dropped per Babel rules), got:\n{js_code}"
+    );
+
+    assert_balanced_syntax(js_code, fixture);
+}
+
+test "is and is not emit identity comparison operators" {
+    # BUG: ES_COMPARISON_OPS had no entries for Tok.KW_IS / Tok.KW_ISN, so
+    # both `is` and `is not` fell through to the `===` default. `is None`
+    # was accidentally correct; `is not None` silently inverted to `===`,
+    # causing branches like `if x is not None { ... }` to run only when x
+    # *was* None.
+    jac_code = "\"\"\"Test is/is not codegen.\"\"\"\n\ncl def check(x: int | None) -> int {\n    if x is None {\n        return 1;\n    }\n    if x is not None {\n        return 2;\n    }\n    return 3;\n}\n";
+
+    temp_path = write_temp_jac(jac_code);
+    try {
+        js_code = compile_fixture_to_js(temp_path);
+        assert "x === null" in js_code , (
+            f"`is None` must emit `=== null`, got:\n{js_code}"
+        );
+        assert "x !== null" in js_code , (
+            f"`is not None` must emit `!== null`, got:\n{js_code}"
+        );
+        assert_balanced_syntax(js_code, temp_path);
+    } finally {
+        os.unlink(temp_path);
+    }
+}
+
+test "fstring format spec invokes runtime format helper" {
+    # BUG: exit_formatted_value ignored nd.format_spec, so format mini-language
+    # specs like `:.2f` were dropped — `f"{x:.2f}"` rendered "8" instead of
+    # "8.00". The fix routes formatted values with a spec through the
+    # _jac.builtin.format runtime helper, which honors precision, width,
+    # alignment, and type specifiers.
+    jac_code = "\"\"\"Test f-string format spec.\"\"\"\n\ncl def fmt_price(x: float) -> str {\n    return f\"${x:.2f}\";\n}\n\ncl def fmt_plain(x: float) -> str {\n    return f\"${x}\";\n}\n";
+
+    temp_path = write_temp_jac(jac_code);
+    try {
+        js_code = compile_fixture_to_js(temp_path);
+        assert "_jac.builtin.format(x, \".2f\")" in js_code , (
+            "`f\"{x:.2f}\"` must compile to a runtime format() call, "
+            f"got:\n{js_code}"
+        );
+        # Bare `f"{x}"` (no spec) must still emit a plain template
+        # interpolation — the runtime call is reserved for spec'd values.
+        assert "${x}" in js_code , (
+            f"Bare `f\"{{x}}\"` should still use plain `${{x}}`, got:\n{js_code}"
+        );
+        assert_balanced_syntax(js_code, temp_path);
+    } finally {
+        os.unlink(temp_path);
+    }
+}
+
+test "issue 5930 sibling if else branches each get block scoped let" {
+    # BUG: when the same local name is declared (e.g. `x: int = 1;`) in both
+    # an if-branch and its sibling else-branch, codegen emitted `let x = ...`
+    # only in the first branch and a bare `x = ...` in the second. Under
+    # strict mode (every ES module) the else-branch threw
+    # `ReferenceError: x is not defined`.
+    #
+    # Root cause: `_is_name_first_definition` is symbol-table based and treats
+    # the else-branch occurrence as a non-first definition, so the existing
+    # `is_first AND not _is_declared_in_any_scope` predicate downgraded the
+    # emit to bare assignment even though the if-branch's block scope had
+    # already been popped. The fix drops the `is_first` half of the guard;
+    # block-scope membership is the authoritative signal for whether a JS
+    # `let` is still in flight.
+    jac_code = "\"\"\"Test #5930 sibling block let.\"\"\"\n\ncl def test(mode: bool) -> int {\n    if mode {\n        x: int = 1;\n        x = 2;\n    } else {\n        x: int = 3;\n        x = 4;\n    }\n    return 0;\n}\n";
+
+    temp_path = write_temp_jac(jac_code);
+    try {
+        js_code = compile_fixture_to_js(temp_path);
+
+        # Both branches must introduce x with `let` — the else-branch is the
+        # one that regressed prior to the fix.
+        assert "let x = 1" in js_code , (
+            f"if-branch must declare `let x = 1`, got:\n{js_code}"
+        );
+        assert "let x = 3" in js_code , (
+            f"else-branch must declare `let x = 3` (#5930), got:\n{js_code}"
+        );
+
+        # And follow-up reassignments inside each branch must NOT redeclare.
+        # We assert the absence of `let x = 2` / `let x = 4` to lock that in.
+        assert "let x = 2" not in js_code , (
+            "in-branch reassignment must stay a bare assignment, " f"got:\n{js_code}"
+        );
+        assert "let x = 4" not in js_code , (
+            "in-branch reassignment must stay a bare assignment, " f"got:\n{js_code}"
+        );
+
+        # And the emitted JS must actually execute in strict mode without
+        # tripping the ReferenceError from the original bug report. We pipe
+        # the bundle through node with `"use strict";` prepended and call
+        # both branches.
+        wrapper = (
+            '"use strict";\n' + js_code + "\nif (typeof test !== 'function')" + " { throw new Error('test() not exported'); }" + "\nif (test(true) !== 0 || test(false) !== 0)" + " { throw new Error('branches must return 0'); }" + "\nconsole.log('ok');\n"
+        );
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", wrapper],
+            capture_output=True,
+            text=True,
+            timeout=30
+        );
+        assert result.returncode == 0 , (
+            "strict-mode node run failed (#5930 regression):\n"
+            f"stdout={result.stdout!r}\nstderr={result.stderr!r}\n"
+            f"js:\n{js_code}"
+        );
+        assert "ok" in result.stdout , (
+            "node run did not reach the success print:\n"
+            f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
+        );
+
+        assert_balanced_syntax(js_code, temp_path);
+    } finally {
+        os.unlink(temp_path);
+    }
+}
+
+test "sibling block scopes — elif chain each branch gets its own let" {
+    # Generalizes #5930: every alternate-branch (elif as well as else) must
+    # re-declare a same-named local with `let`, since each is an independent
+    # JS lexical block.
+    jac_code = "\"\"\"Test elif chain sibling-block lets.\"\"\"\n\ncl def test_elif(mode: int) -> int {\n    if mode == 1 {\n        x: int = 1;\n        x = 2;\n    } elif mode == 2 {\n        x: int = 3;\n        x = 4;\n    } elif mode == 3 {\n        x: int = 5;\n        x = 6;\n    } else {\n        x: int = 7;\n        x = 8;\n    }\n    return 0;\n}\n";
+
+    temp_path = write_temp_jac(jac_code);
+    try {
+        js_code = compile_fixture_to_js(temp_path);
+        for _expected_init in ["let x = 1", "let x = 3", "let x = 5", "let x = 7"] {
+            assert _expected_init in js_code , (
+                f"elif chain must declare `{_expected_init}` in its own "
+                f"branch, got:\n{js_code}"
+            );
+        }
+        # Run under strict mode through node to catch any
+        # ReferenceError-shaped regression.
+        wrapper = (
+            '"use strict";\n' + js_code + "\nif (test_elif(1) !== 0 || test_elif(2) !== 0" + " || test_elif(3) !== 0 || test_elif(99) !== 0)" + " { throw new Error('branches must return 0'); }" + "\nconsole.log('ok');\n"
+        );
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", wrapper],
+            capture_output=True,
+            text=True,
+            timeout=30
+        );
+        assert result.returncode == 0 , (
+            "strict-mode elif chain run failed:\n"
+            f"stderr={result.stderr!r}\njs:\n{js_code}"
+        );
+        assert "ok" in result.stdout;
+        assert_balanced_syntax(js_code, temp_path);
+    } finally {
+        os.unlink(temp_path);
+    }
+}
+
+test "walrus in if-condition still hoists its let despite alt-branch scope finalization" {
+    # Regression guard for the alt-branch scope-finalization change made
+    # alongside #5930. The compound statement's ScopeInfo collects walrus
+    # / hoisted declarations during condition processing and is consumed
+    # by `_prepend_hoisted(IfStmt, ...)` inside `exit_if_stmt`. Because
+    # the if-body's scope is *finalized* (popped from the stack) when
+    # entering the else-branch, `_pop_scope` must only pop the stack and
+    # leave the `scope_map[IfStmt]` entry alone — otherwise the hoisted
+    # `let n;` is lost and the resulting JS leaves `n` undeclared, which
+    # is its own strict-mode ReferenceError.
+    #
+    # Note: the *location* of the hoist (currently inside the if-body)
+    # has a pre-existing accuracy issue separate from this PR — `n`
+    # should be visible after the if per Python semantics. This test
+    # locks in the current behavior so a future correctness fix is a
+    # deliberate change, not an accidental regression.
+    jac_code = "\"\"\"Test walrus hoist preservation across alt-branch finalization.\"\"\"\n\ncl def check(seed: int) -> int {\n    if (n := seed) > 5 {\n        x: int = 1;\n    } else {\n        x: int = 2;\n    }\n    return 0;\n}\n";
+
+    temp_path = write_temp_jac(jac_code);
+    try {
+        js_code = compile_fixture_to_js(temp_path);
+        # The hoisted `let n;` must survive. Without the split between
+        # stack-pop and map-pop in `_pop_scope`, this declaration was
+        # silently dropped when the if had an else branch.
+        assert "let n" in js_code , (
+            "walrus name `n` from the if-condition must still be hoisted "
+            "as a `let` declaration when an else branch is present, "
+            f"got:\n{js_code}"
+        );
+        # And both branches must still get their per-branch `let x`
+        # (the #5930 sibling-block fix continues to apply).
+        assert "let x = 1" in js_code;
+        assert "let x = 2" in js_code;
+        assert_balanced_syntax(js_code, temp_path);
+    } finally {
+        os.unlink(temp_path);
+    }
+}
+
+test "sibling block scopes — try except finally each get their own let" {
+    # Same structural bug as #5930 in a different compound statement: the
+    # try-body's UniScopeNode covers its body, and the except / finally
+    # blocks are AST children of the TryStmt — so the try-body's `let x`
+    # would leak into except / finally and downgrade them to bare
+    # assignment. Generalized sibling-block fix.
+    jac_code = "\"\"\"Test try/except/finally sibling-block lets.\"\"\"\n\ncl def test_try(mode: bool) -> int {\n    try {\n        x: int = 1;\n        x = 2;\n        if mode {\n            raise Exception(\"force-except\");\n        }\n    } except Exception {\n        x: int = 3;\n        x = 4;\n    } finally {\n        x: int = 5;\n        x = 6;\n    }\n    return 0;\n}\n";
+
+    temp_path = write_temp_jac(jac_code);
+    try {
+        js_code = compile_fixture_to_js(temp_path);
+        for _expected_init in ["let x = 1", "let x = 3", "let x = 5"] {
+            assert _expected_init in js_code , (
+                f"try/except/finally must declare `{_expected_init}` in its "
+                f"own block, got:\n{js_code}"
+            );
+        }
+        # Run under strict mode through node to confirm no
+        # `ReferenceError: x is not defined` in the except or finally branch.
+        wrapper = (
+            '"use strict";\n' + js_code + "\nif (test_try(false) !== 0)" + " { throw new Error('no-throw path must return 0'); }" + "\nif (test_try(true) !== 0)" + " { throw new Error('throw path must return 0'); }" + "\nconsole.log('ok');\n"
+        );
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", wrapper],
+            capture_output=True,
+            text=True,
+            timeout=30
+        );
+        assert result.returncode == 0 , (
+            "strict-mode try/except/finally run failed:\n"
+            f"stderr={result.stderr!r}\njs:\n{js_code}"
+        );
+        assert "ok" in result.stdout;
+        assert_balanced_syntax(js_code, temp_path);
+    } finally {
+        os.unlink(temp_path);
+    }
+}
+
+
+test "in/not in on unknown-typed containers matches Python semantics" {
+    import json;
+    # `opaque()` returns `any`, so the backend cannot statically prove the
+    # container types. Membership must still behave like Python: substring
+    # search for strings, element search for lists, key search for dicts.
+    js_code = compile_fixture_to_js("dynamic_membership.jac", FIXTURES);
+    wrapper = js_code + "\nconsole.log(JSON.stringify(membership()));\n";
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", wrapper],
+        capture_output=True,
+        text=True,
+        timeout=30
+    );
+    assert result.returncode == 0 , (
+        "dynamic `in` membership crashed in Node "
+        "(raw JS `in` rejects string/array operands):\n"
+        f"stderr={result.stderr!r}\njs:\n{js_code}"
+    );
+    got: dict[str, bool] = json.loads(result.stdout.strip());
+    expected = {
+        "str_hit": True,
+        "str_miss": False,
+        "str_not_in_hit": True,
+        "list_hit": True,
+        "list_miss": False,
+        "list_index_trap": False,
+        "dict_hit": True,
+        "dict_miss": False
+    };
+    for (key, want) in expected.items() {
+        assert key in got , f"missing key '{key}' in result {got}";
+        assert got[key] == want , (
+            f"membership '{key}': got {got[key]!r}, expected {want!r}"
+        );
+    }
 }

@@ -1,19 +1,23 @@
 """Integration tests for memory hierarchy with testcontainers and jac start."""
 
+import atexit;
 import contextlib;
-import gc;
+import concurrent.futures;
 import os;
 import socket;
 import subprocess;
 import sys;
 import time;
 import from pathlib { Path }
-import from typing { Any, cast }
+import from typing { cast }
 import redis;
 import requests;
 import from pymongo { MongoClient }
 import from testcontainers.mongodb { MongoDbContainer }
 import from testcontainers.redis { RedisContainer }
+import from jac_scale.context { JScaleExecutionContext }
+import from jac_scale.memory_hierarchy { _process_cache, MongoBackend }
+import from jac_scale.db { close_all_db_connections }
 
 def get_free_port -> int {
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s {
@@ -23,15 +27,68 @@ def get_free_port -> int {
 }
 
 glob FIXTURES_DIR = Path(__file__).parent / "fixtures",
-     JAC_FILE = FIXTURES_DIR / "todo_app.jac";
+     JAC_FILE = FIXTURES_DIR / "todo_app.jac",
+     _shared: dict = {};
+
+"""Lazily start a shared MongoDB container; return (MongoClient, uri)."""
+def _get_mongo -> tuple {
+    if "mongo_client" not in _shared {
+        c = MongoDbContainer("mongo:latest");
+        c.start();
+        uri = c.get_connection_url();
+        _shared["mongo_container"] = c;
+        _shared["mongo_uri"] = uri;
+        _shared["mongo_client"] = MongoClient(uri);
+        atexit.register(c.stop);
+    }
+    return (_shared["mongo_client"], _shared["mongo_uri"]);
+}
+
+"""Lazily start a shared Redis container; return (redis.Redis, url)."""
+def _get_redis -> tuple {
+    if "redis_client" not in _shared {
+        c = RedisContainer("redis:latest", port=6379);
+        c.start();
+        host = c.get_container_host_ip();
+        exposed_port = c.get_exposed_port(6379);
+        url = f"redis://{host}:{exposed_port}/0";
+        _shared["redis_container"] = c;
+        _shared["redis_url"] = url;
+        _shared["redis_client"] = redis.Redis(
+            host=host, port=int(exposed_port), decode_responses=False
+        );
+        atexit.register(c.stop);
+    }
+    return (_shared["redis_client"], _shared["redis_url"]);
+}
+
+"""Drop all non-system databases (resets jac_db between tests)."""
+def _reset_mongo -> None {
+    if "mongo_client" not in _shared {
+        return;
+    }
+    system_dbs = {"admin","config","local"};
+    for db_name in _shared["mongo_client"].list_database_names() {
+        if db_name not in system_dbs {
+            _shared["mongo_client"].drop_database(db_name);
+        }
+    }
+}
+
+"""Flush all Redis keys (resets state between tests)."""
+def _reset_redis {
+    if "redis_client" in _shared {
+        _shared["redis_client"].flushall();
+    }
+}
 
 """Extract data from TransportResponse envelope format."""
 def extract_transport_response_data(
-    json_response: dict[str, Any] | list[Any]
-) -> dict[str, Any] | list[Any] {
+    json_response: dict[str, any] | list[any]
+) -> dict[str, any] | list[any] {
     if isinstance(json_response, list) {
         if len(json_response) == 2 {
-            body: dict[str, Any] = json_response[1];
+            body: dict[str, any] = json_response[1];
             json_response = body;
         }
     }
@@ -45,7 +102,7 @@ def extract_transport_response_data(
             return json_response["data"];
         } elif not json_response.get("ok") and json_response.get("error") {
             error_info = json_response["error"];
-            result: dict[str, Any] = {
+            result: dict[str, any] = {
                 "error": error_info.get("message", "Unknown error")
             };
             if "code" in error_info {
@@ -63,23 +120,39 @@ def extract_transport_response_data(
 def register_user(base_url: str, username: str, password: str = "password123") -> str {
     res = requests.post(
         f"{base_url}/user/register",
-        json={"username": username, "password": password},
+        json={
+            "identities": [{"type": "username", "value": username}],
+            "credential": {"type": "password", "password": password}
+        },
         timeout=2
     );
     assert res.status_code == 201 , f"Registration failed: {res.status_code} - {res.text}";
-    data = cast(dict[str, Any], extract_transport_response_data(res.json()));
-    return data["token"];
+    login_res = requests.post(
+        f"{base_url}/user/login",
+        json={
+            "identity": {"type": "username", "value": username},
+            "credential": {"type": "password", "password": password}
+        },
+        timeout=2
+    );
+    assert login_res.status_code == 200 , f"Login failed: {login_res.status_code} - {login_res.text}";
+    login_data = cast(
+        dict[str, any], extract_transport_response_data(login_res.json())
+    );
+    return login_data["token"];
 }
 
-def post_request(base_url: str, path: str, payload: dict, token: str) -> dict[str, Any] {
+def post_request(
+    base_url: str, path: str, payload: dict, token: str
+) -> dict[str, any] {
     res = requests.post(
         f"{base_url}{path}",
         json=payload,
         headers={"Authorization": f"Bearer {token}"},
         timeout=2
     );
-    assert res.status_code == 200;
-    return cast(dict[str, Any], extract_transport_response_data(res.json()));
+    assert res.status_code == 200 , f"POST {path} failed: {res.status_code} - {res.text}";
+    return cast(dict[str, any], extract_transport_response_data(res.json()));
 }
 
 """Start jac server and wait for it to become ready."""
@@ -101,8 +174,8 @@ def start_server(fixtures_dir: Path, jac_file: Path, port: int) -> subprocess.Po
     base_url = f"http://localhost:{port}";
     for _ in range(30) {
         try {
-            r = requests.get(f"{base_url}/docs", timeout=1);
-            if r.status_code in (200, 404) {
+            r = requests.get(f"{base_url}/healthz", timeout=1);
+            if r.status_code == 200 {
                 return server;
             }
         } except Exception {
@@ -128,29 +201,14 @@ test "read and write" {
         shutil.rmtree(data_dir);
     }
 
-    # Start Redis container
-    redis_container = RedisContainer("redis:latest", port=6379);
-    redis_container.start();
-
-    redis_host = redis_container.get_container_host_ip();
-    redis_port = redis_container.get_exposed_port(6379);
-    redis_url = f"redis://{redis_host}:{redis_port}/0";
-
-    redis_client = redis.Redis(
-        host=redis_host, port=int(redis_port), decode_responses=False
-    );
-    assert redis_client.dbsize() == 0;
-
-    # Start Mongo container
-    mongo_container = MongoDbContainer("mongo:latest");
-    mongo_container.start();
-
-    mongo_uri = mongo_container.get_connection_url();
-    mongo_client = MongoClient(mongo_uri);
-
+    _reset_mongo();
+    _reset_redis();
+    (mongo_client, mongo_uri) = _get_mongo();
+    (redis_client, redis_url) = _get_redis();
     os.environ["MONGODB_URI"] = mongo_uri;
     os.environ["REDIS_URL"] = redis_url;
 
+    assert redis_client.dbsize() == 0;
     assert "jac_db" not in mongo_client.list_database_names();
 
     port = get_free_port();
@@ -203,7 +261,6 @@ test "read and write" {
             "Redis should have 9 entries (super root, guest user, admin, __system__, user, 2 task nodes, 2 edges)"
         );
     } finally {
-        # Teardown
         if server {
             server.terminate();
             with contextlib.suppress(Exception) {
@@ -211,21 +268,7 @@ test "read and write" {
             }
         }
 
-        system_dbs = {"admin","config","local"};
-        for db_name in mongo_client.list_database_names() {
-            if db_name not in system_dbs {
-                mongo_client.drop_database(db_name);
-            }
-        }
-
-        mongo_container.stop();
-        redis_container.stop();
-
-        time.sleep(0.5);
-        gc.collect();
-
         # Clean up data files
-        data_dir = FIXTURES_DIR / ".jac" / "data";
         if data_dir.exists() {
             import shutil;
             shutil.rmtree(data_dir);
@@ -245,11 +288,12 @@ test "data persists after server restart for mongo db" {
         shutil.rmtree(data_dir);
     }
 
-    # Start MongoDB container
-    mongo_container = MongoDbContainer("mongo:latest");
-    mongo_container.start();
-    mongo_uri = mongo_container.get_connection_url();
+    _reset_mongo();
+    (_, mongo_uri) = _get_mongo();
     os.environ["MONGODB_URI"] = mongo_uri;
+    if "REDIS_URL" in os.environ {
+        del os.environ["REDIS_URL"];
+    }
 
     port = get_free_port();
     base_url = f"http://localhost:{port}";
@@ -267,7 +311,7 @@ test "data persists after server restart for mongo db" {
         # Verify task exists before restart
         res = requests.post(f"{base_url}/walker/GetAllTasks", json={}, timeout=5);
         response_data = cast(
-            dict[str, Any], extract_transport_response_data(res.json())
+            dict[str, any], extract_transport_response_data(res.json())
         );
         tasks_before = response_data["reports"][0];
         assert len(tasks_before) == 1 , "Should have 1 task before restart";
@@ -286,7 +330,7 @@ test "data persists after server restart for mongo db" {
         # Verify task persists after restart
         res = requests.post(f"{base_url}/walker/GetAllTasks", json={}, timeout=2);
         response_data = cast(
-            dict[str, Any], extract_transport_response_data(res.json())
+            dict[str, any], extract_transport_response_data(res.json())
         );
         tasks_after = response_data["reports"][0];
         assert len(tasks_after) == 1 , "Task should persist after restart";
@@ -303,10 +347,6 @@ test "data persists after server restart for mongo db" {
                 server.wait(timeout=2);
             }
         }
-        mongo_container.stop();
-        time.sleep(0.5);
-        gc.collect();
-
         if data_dir.exists() {
             import shutil;
             shutil.rmtree(data_dir);
@@ -326,19 +366,11 @@ test "no unnecessary saves on read-only operations" {
         shutil.rmtree(data_dir);
     }
 
-    # Start MongoDB container
-    mongo_container = MongoDbContainer("mongo:latest");
-    mongo_container.start();
-    mongo_uri = mongo_container.get_connection_url();
+    _reset_mongo();
+    _reset_redis();
+    (mongo_client, mongo_uri) = _get_mongo();
+    (_, redis_url) = _get_redis();
     os.environ["MONGODB_URI"] = mongo_uri;
-    mongo_client = MongoClient(mongo_uri);
-
-    # Start Redis container
-    redis_container = RedisContainer("redis:latest", port=6379);
-    redis_container.start();
-    redis_host = redis_container.get_container_host_ip();
-    redis_port = redis_container.get_exposed_port(6379);
-    redis_url = f"redis://{redis_host}:{redis_port}/0";
     os.environ["REDIS_URL"] = redis_url;
 
     port = get_free_port();
@@ -431,18 +463,6 @@ test "no unnecessary saves on read-only operations" {
             }
         }
 
-        system_dbs = {"admin","config","local"};
-        for db_name in mongo_client.list_database_names() {
-            if db_name not in system_dbs {
-                mongo_client.drop_database(db_name);
-            }
-        }
-
-        mongo_container.stop();
-        redis_container.stop();
-        time.sleep(0.5);
-        gc.collect();
-
         if data_dir.exists() {
             import shutil;
             shutil.rmtree(data_dir);
@@ -487,7 +507,7 @@ test "data persists after server restart for sqlite" {
         # Verify task exists before restart
         res = requests.post(f"{base_url}/walker/GetAllTasks", json={}, timeout=5);
         response_data = cast(
-            dict[str, Any], extract_transport_response_data(res.json())
+            dict[str, any], extract_transport_response_data(res.json())
         );
         tasks_before = response_data["reports"][0];
         assert len(tasks_before) == 1 , f"Should have 1 task before restart, got {len(
@@ -509,7 +529,7 @@ test "data persists after server restart for sqlite" {
         res = requests.post(f"{base_url}/walker/GetAllTasks", json={}, timeout=5);
         assert res.status_code == 200 , f"Post-restart request failed: {res.status_code}";
         response_data = cast(
-            dict[str, Any], extract_transport_response_data(res.json())
+            dict[str, any], extract_transport_response_data(res.json())
         );
         tasks_after = response_data["reports"][0];
         assert len(tasks_after) == 1 , f"Task should persist after SQLite restart, got {len(
@@ -534,9 +554,6 @@ test "data persists after server restart for sqlite" {
             os.environ[key] = value;
         }
 
-        time.sleep(0.5);
-        gc.collect();
-
         if data_dir.exists() {
             import shutil;
             shutil.rmtree(data_dir);
@@ -557,21 +574,12 @@ test "L2 and L3 commit with server restart" {
         shutil.rmtree(data_dir);
     }
 
-    mongo_container = MongoDbContainer("mongo:latest");
-    mongo_container.start();
-    mongo_uri = mongo_container.get_connection_url();
+    _reset_mongo();
+    _reset_redis();
+    (mongo_client, mongo_uri) = _get_mongo();
+    (redis_client, redis_url) = _get_redis();
     os.environ["MONGODB_URI"] = mongo_uri;
-    mongo_client = MongoClient(mongo_uri);
-
-    redis_container = RedisContainer("redis:latest", port=6379);
-    redis_container.start();
-    redis_host = redis_container.get_container_host_ip();
-    redis_port = redis_container.get_exposed_port(6379);
-    redis_url = f"redis://{redis_host}:{redis_port}/0";
     os.environ["REDIS_URL"] = redis_url;
-    redis_client = redis.Redis(
-        host=redis_host, port=int(redis_port), decode_responses=False
-    );
 
     port = get_free_port();
     base_url = f"http://localhost:{port}";
@@ -634,7 +642,7 @@ test "L2 and L3 commit with server restart" {
             timeout=2
         );
         response_data = cast(
-            dict[str, Any], extract_transport_response_data(res.json())
+            dict[str, any], extract_transport_response_data(res.json())
         );
         tasks_before = response_data["reports"][0];
         assert len(tasks_before) == 1 , "Should have 1 task before restart";
@@ -692,11 +700,14 @@ test "L2 and L3 commit with server restart" {
         # Login as existing user after server restart (user persisted in MongoDB)
         res = requests.post(
             f"{base_url}/user/login",
-            json={"username": "testuser", "password": "testpass"},
+            json={
+                "identity": {"type": "username", "value": "testuser"},
+                "credential": {"type": "password", "password": "testpass"}
+            },
             timeout=2
         );
         assert res.status_code == 200 , f"Login failed: {res.status_code} - {res.text}";
-        login_data = cast(dict[str, Any], extract_transport_response_data(res.json()));
+        login_data = cast(dict[str, any], extract_transport_response_data(res.json()));
         token_after_restart = login_data["token"];
 
         # Verify task persists after restart (proves L3 commit worked) - use authenticated request
@@ -707,7 +718,7 @@ test "L2 and L3 commit with server restart" {
             timeout=2
         );
         response_data = cast(
-            dict[str, Any], extract_transport_response_data(res.json())
+            dict[str, any], extract_transport_response_data(res.json())
         );
         tasks_after = response_data["reports"][0];
         assert len(tasks_after) == 1 , "Task should persist after restart (L3 commit)";
@@ -726,16 +737,6 @@ test "L2 and L3 commit with server restart" {
                 server.wait(timeout=2);
             }
         }
-        system_dbs = {"admin","config","local"};
-        for db_name in mongo_client.list_database_names() {
-            if db_name not in system_dbs {
-                mongo_client.drop_database(db_name);
-            }
-        }
-        mongo_container.stop();
-        redis_container.stop();
-        time.sleep(0.5);
-        gc.collect();
         if data_dir.exists() {
             import shutil;
             shutil.rmtree(data_dir);
@@ -754,21 +755,12 @@ test "Redis write cycle via commit" {
         shutil.rmtree(data_dir);
     }
 
-    # Setup MongoDB + Redis
-    mongo_container = MongoDbContainer("mongo:latest");
-    mongo_container.start();
-    mongo_uri = mongo_container.get_connection_url();
+    _reset_mongo();
+    _reset_redis();
+    (_, mongo_uri) = _get_mongo();
+    (redis_client, redis_url) = _get_redis();
     os.environ["MONGODB_URI"] = mongo_uri;
-
-    redis_container = RedisContainer("redis:latest", port=6379);
-    redis_container.start();
-    redis_host = redis_container.get_container_host_ip();
-    redis_port = redis_container.get_exposed_port(6379);
-    redis_url = f"redis://{redis_host}:{redis_port}/0";
     os.environ["REDIS_URL"] = redis_url;
-    redis_client = redis.Redis(
-        host=redis_host, port=int(redis_port), decode_responses=False
-    );
 
     port = get_free_port();
     base_url = f"http://localhost:{port}";
@@ -813,10 +805,6 @@ test "Redis write cycle via commit" {
                 server.wait(timeout=2);
             }
         }
-        mongo_container.stop();
-        redis_container.stop();
-        time.sleep(0.5);
-        gc.collect();
         if data_dir.exists() {
             import shutil;
             shutil.rmtree(data_dir);
@@ -868,9 +856,12 @@ test "hash-based dirty check detects all mutation types" {
 
 test "sequential requests work correctly" {
     # Validates: Multiple sequential requests don't cause crashes or data corruption
-    mongo_container = MongoDbContainer("mongo:latest");
-    mongo_container.start();
-    os.environ["MONGODB_URI"] = mongo_container.get_connection_url();
+    _reset_mongo();
+    (_, mongo_uri) = _get_mongo();
+    os.environ["MONGODB_URI"] = mongo_uri;
+    if "REDIS_URL" in os.environ {
+        del os.environ["REDIS_URL"];
+    }
 
     port = get_free_port();
     base_url = f"http://localhost:{port}";
@@ -889,7 +880,7 @@ test "sequential requests work correctly" {
 
         # Verify all 5 tasks were created
         res = requests.post(f"{base_url}/walker/GetAllTasks", json={}, timeout=5);
-        all_tasks = cast(dict[str, Any], extract_transport_response_data(res.json()))[
+        all_tasks = cast(dict[str, any], extract_transport_response_data(res.json()))[
             "reports"
         ][0];
         assert len(all_tasks) == 5 , f"Expected 5 tasks, got {len(all_tasks)}";
@@ -898,8 +889,112 @@ test "sequential requests work correctly" {
         with contextlib.suppress(Exception) {
             server.wait(timeout=2);
         }
-        mongo_container.stop();
-        gc.collect();
+    }
+}
+
+test "batch_get reduces MongoDB queries for edge traversals" {
+    # Validates: When traversing N edges, batch_get uses $in queries instead of N individual finds.
+    # Creates 10 tasks (10 edges + 10 nodes), restarts server to clear L1,
+    # then reads all tasks and verifies MongoDB query count is much less than 20.
+    if not JAC_FILE.exists() {
+        raise FileNotFoundError(f"Missing Jac file: {JAC_FILE}");
+    }
+
+    data_dir = FIXTURES_DIR / ".jac" / "data";
+    if data_dir.exists() {
+        import shutil;
+        shutil.rmtree(data_dir);
+    }
+
+    _reset_mongo();
+    (mongo_client, mongo_uri) = _get_mongo();
+    os.environ["MONGODB_URI"] = mongo_uri;
+
+    # No Redis — force all reads through MongoDB to measure query count accurately
+    env_backup = {};
+    if "REDIS_URL" in os.environ {
+        env_backup["REDIS_URL"] = os.environ["REDIS_URL"];
+        del os.environ["REDIS_URL"];
+    }
+
+    port = get_free_port();
+    base_url = f"http://localhost:{port}";
+    server = start_server(FIXTURES_DIR, JAC_FILE, port);
+
+    num_tasks = 10;
+
+    try {
+        db = mongo_client["jac_db"];
+        collection = db["_anchors"];
+
+        # Create N tasks (each creates 1 node + 1 edge = 2 anchors)
+        for i in range(num_tasks) {
+            res = requests.post(
+                f"{base_url}/walker/CreateTask",
+                json={"id": i, "title": f"Batch task {i}"},
+                timeout=5
+            );
+            assert res.status_code == 200 , f"Task {i} creation failed: {res.status_code}";
+        }
+
+        # Verify all tasks were stored in MongoDB
+        # 4 initial + num_tasks * 2 (node + edge per task)
+        expected_docs = 4 + num_tasks * 2;
+        actual_docs = collection.count_documents({});
+        assert actual_docs == expected_docs , (
+            f"Expected {expected_docs} docs in MongoDB, got {actual_docs}"
+        );
+
+        # Restart server to clear L1 memory — forces reads from L3 (MongoDB)
+        server.terminate();
+        server.wait(timeout=2);
+        server = start_server(FIXTURES_DIR, JAC_FILE, port);
+
+        # Capture MongoDB query count before the read traversal
+        server_status_before = mongo_client.admin.command("serverStatus");
+        queries_before = server_status_before["opcounters"]["query"];
+
+        # Read all tasks — this triggers _prefetch_edges -> batch_get
+        res = requests.post(f"{base_url}/walker/GetAllTasks", json={}, timeout=10);
+        assert res.status_code == 200;
+        response_data = cast(
+            dict[str, any], extract_transport_response_data(res.json())
+        );
+        tasks = response_data["reports"][0];
+        assert len(tasks) == num_tasks , (
+            f"Expected {num_tasks} tasks, got {len(tasks)}"
+        );
+
+        # Capture MongoDB query count after read
+        server_status_after = mongo_client.admin.command("serverStatus");
+        queries_after = server_status_after["opcounters"]["query"];
+
+        # Without batch_get: would need ~20+ individual find() calls (1 per edge + 1 per node)
+        # With batch_get: should be ~2-4 calls (batch edges + batch nodes + root load)
+        queries_used = queries_after - queries_before;
+        max_expected_queries = num_tasks;  # Should be well under N queries
+        assert queries_used < max_expected_queries , (
+            f"batch_get should reduce queries: used {queries_used} queries to traverse "
+            f"{num_tasks} edges, expected fewer than {max_expected_queries}. "
+            f"batch_get may not be working."
+        );
+    } finally {
+        if server {
+            server.terminate();
+            with contextlib.suppress(Exception) {
+                server.wait(timeout=2);
+            }
+        }
+
+        # Restore environment
+        for (key, value) in env_backup.items() {
+            os.environ[key] = value;
+        }
+
+        if data_dir.exists() {
+            import shutil;
+            shutil.rmtree(data_dir);
+        }
     }
 }
 
@@ -908,16 +1003,12 @@ glob MUTATION_JAC_FILE = FIXTURES_DIR / "mutation_app.jac";
 """Validates that in-place mutations (list.append, dict[k]=v) which bypass
 __setattr__ are still detected and persisted through hash comparison."""
 test "in-place mutations on list and dict are persisted via hash-based dirty check" {
-    mongo_container = MongoDbContainer("mongo:latest");
-    mongo_container.start();
-    os.environ["MONGODB_URI"] = mongo_container.get_connection_url();
-    mongo_client = MongoClient(mongo_container.get_connection_url());
-
-    redis_container = RedisContainer("redis:latest", port=6379);
-    redis_container.start();
-    redis_host = redis_container.get_container_host_ip();
-    redis_port = redis_container.get_exposed_port(6379);
-    os.environ["REDIS_URL"] = f"redis://{redis_host}:{redis_port}/0";
+    _reset_mongo();
+    _reset_redis();
+    (_, mongo_uri) = _get_mongo();
+    (_, redis_url) = _get_redis();
+    os.environ["MONGODB_URI"] = mongo_uri;
+    os.environ["REDIS_URL"] = redis_url;
 
     port = get_free_port();
     base_url = f"http://localhost:{port}";
@@ -970,14 +1061,484 @@ test "in-place mutations on list and dict are persisted via hash-based dirty che
         with contextlib.suppress(Exception) {
             server.wait(timeout=2);
         }
-        mongo_client.close();
-        mongo_container.stop();
-        redis_container.stop();
-        time.sleep(0.5);
-        gc.collect();
         if data_dir.exists() {
             import shutil;
             shutil.rmtree(data_dir);
         }
     }
+}
+
+"""Verify that put_partial touches only the mutated field's dot-path in MongoDB."""
+test "partial update only writes mutated fields — unmodified fields survive in MongoDB" {
+    data_dir = FIXTURES_DIR / ".jac" / "data";
+    if data_dir.exists() {
+        import shutil;
+        shutil.rmtree(data_dir);
+    }
+
+    _reset_mongo();
+    (mongo_client, mongo_uri) = _get_mongo();
+    os.environ["MONGODB_URI"] = mongo_uri;
+
+    env_backup = {};
+    if "REDIS_URL" in os.environ {
+        env_backup["REDIS_URL"] = os.environ["REDIS_URL"];
+        del os.environ["REDIS_URL"];
+    }
+
+    port = get_free_port();
+    base_url = f"http://localhost:{port}";
+    server: subprocess.Popen = start_server(FIXTURES_DIR, MUTATION_JAC_FILE, port);
+
+    try {
+        token = register_user(base_url, "sentinel_tester");
+        post_request(base_url, "/walker/CreateItem", {"id": 42}, token);
+
+        db = mongo_client["jac_db"];
+        collection = db["_anchors"];
+
+        item_doc = collection.find_one({"arch_type": "Item"});
+        assert item_doc is not None , "Item not found in MongoDB after creation";
+        item_id = item_doc["_id"];
+
+        # Inject a sentinel key directly into the metadata sub-document.
+        # A full $set would wipe it; a targeted $set on data.archetype.tags must not.
+        collection.update_one(
+            {"_id": item_id},
+            {"$set": {"data.archetype.metadata.__sentinel__": "PRESERVED"}}
+        );
+        sentinel_check = collection.find_one({"_id": item_id});
+        assert sentinel_check["data"]["archetype"]["metadata"].get("__sentinel__") == "PRESERVED" , (
+            "Sentinel injection failed"
+        );
+
+        # Mutate only tags (in-place list.append — no __setattr__ signal,
+        # goes through field-hash fallback → put_partial on data.archetype.tags only).
+        post_request(base_url, "/walker/AppendTag", {"id": 42, "tag": "urgent"}, token);
+
+        doc = collection.find_one({"_id": item_id});
+        assert "urgent" in doc["data"]["archetype"]["tags"] , (
+            "tags mutation was not persisted to MongoDB"
+        );
+        assert doc["data"]["archetype"]["metadata"].get("__sentinel__") == "PRESERVED" , (
+            "put_partial overwrote metadata — a full $set was issued instead of a partial one"
+        );
+    } finally {
+        server.terminate();
+        with contextlib.suppress(Exception) {
+            server.wait(timeout=2);
+        }
+        for (key, value) in env_backup.items() {
+            os.environ[key] = value;
+        }
+        if data_dir.exists() {
+            import shutil;
+            shutil.rmtree(data_dir);
+        }
+    }
+}
+
+
+test "mixed direct and in-place mutations in one request both persist after restart" {
+    data_dir = FIXTURES_DIR / ".jac" / "data";
+    if data_dir.exists() {
+        import shutil;
+        shutil.rmtree(data_dir);
+    }
+
+    _reset_mongo();
+    (_, mongo_uri) = _get_mongo();
+    os.environ["MONGODB_URI"] = mongo_uri;
+
+    env_backup = {};
+    if "REDIS_URL" in os.environ {
+        env_backup["REDIS_URL"] = os.environ["REDIS_URL"];
+        del os.environ["REDIS_URL"];
+    }
+
+    port = get_free_port();
+    base_url = f"http://localhost:{port}";
+    server: subprocess.Popen = start_server(FIXTURES_DIR, MUTATION_JAC_FILE, port);
+
+    try {
+        token = register_user(base_url, "mixed_tester");
+        post_request(base_url, "/walker/CreateItem", {"id": 7}, token);
+
+        # MixedMutate does: here.completed = True  (direct → __setattr__ tracks it)
+        #                   here.tags.append(tag)  (in-place → only field-hash catches it)
+        result = post_request(
+            base_url, "/walker/MixedMutate", {"id": 7, "tag": "mixed"}, token
+        );
+        item = result["reports"][0];
+        assert item["completed"] == True , "completed not set in response";
+        assert "mixed" in item["tags"] , "tag not in response";
+
+        # Restart with no Redis — forces cold reload from MongoDB only.
+        server.terminate();
+        with contextlib.suppress(Exception) {
+            server.wait(timeout=2);
+        }
+        server = start_server(FIXTURES_DIR, MUTATION_JAC_FILE, port);
+
+        result = post_request(base_url, "/walker/GetItems", {}, token);
+        items = result["reports"][0];
+        assert len(items) == 1 , f"Expected 1 item after restart, got {len(items)}";
+        item = items[0];
+        assert item["completed"] == True , (
+            "completed=True (direct assignment) was not persisted after restart"
+        );
+        assert "mixed" in item["tags"] , (
+            "tags.append (in-place mutation) was not persisted after restart — "
+            "combined dirty detection failed for mixed mutations"
+        );
+    } finally {
+        server.terminate();
+        with contextlib.suppress(Exception) {
+            server.wait(timeout=2);
+        }
+        for (key, value) in env_backup.items() {
+            os.environ[key] = value;
+        }
+        if data_dir.exists() {
+            import shutil;
+            shutil.rmtree(data_dir);
+        }
+    }
+}
+
+
+test "concurrent requests do not lose edges" {
+    if not JAC_FILE.exists() {
+        raise FileNotFoundError(f"Missing Jac file: {JAC_FILE}");
+    }
+
+    data_dir = FIXTURES_DIR / ".jac" / "data";
+    if data_dir.exists() {
+        import shutil;
+        shutil.rmtree(data_dir);
+    }
+
+    _reset_mongo();
+    (_, mongo_uri) = _get_mongo();
+    os.environ["MONGODB_URI"] = mongo_uri;
+    if "REDIS_URL" in os.environ {
+        del os.environ["REDIS_URL"];
+    }
+
+    port = get_free_port();
+    base_url = f"http://localhost:{port}";
+    server = start_server(FIXTURES_DIR, JAC_FILE, port);
+
+    try {
+        token = register_user(base_url, "race_user", "pass123");
+
+        # Seed: first CreateTask ensures the root has ≥1 edge before we race
+        res = requests.post(
+            f"{base_url}/walker/CreateTask",
+            json={"id": 1, "title": "first"},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=2
+        );
+        assert res.status_code == 200;
+
+        # The real race: CreateTask adds a new edge to root, while CompleteTask
+        # traverses root (loading a stale edge snapshot) and mutates a scalar.
+        # On main, CompleteTask's sync overwrites root.edges, erasing the new edge.
+        def create_task -> int {
+            r = requests.post(
+                f"{base_url}/walker/CreateTask",
+                json={"id": 2, "title": "survivor"},
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=5
+            );
+            return r.status_code;
+        }
+
+        def complete_task -> int {
+            r = requests.post(
+                f"{base_url}/walker/CompleteTask",
+                json={"id": 1},
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=5
+            );
+            return r.status_code;
+        }
+
+        # Fire edge-add + scalar-mutation concurrently (multiple rounds)
+        for _ in range(3) {
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool {
+                futures = [
+                    pool.submit(create_task),
+                    pool.submit(complete_task),
+                    pool.submit(complete_task),
+                    pool.submit(complete_task)
+                ];
+                concurrent.futures.wait(futures);
+            }
+        }
+
+        # Verify the new task edge survived concurrent scalar mutations
+        time.sleep(0.5);
+        res = requests.post(
+            f"{base_url}/walker/GetAllTasks",
+            json={},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=2
+        );
+        response_data = cast(
+            dict[str, any], extract_transport_response_data(res.json())
+        );
+        tasks = response_data["reports"][0];
+        task_titles = [t.get("title", "") for t in tasks];
+        assert "survivor" in task_titles , (
+            f"Edge lost after concurrent scalar mutations! Got: {task_titles}"
+        );
+    } finally {
+        if server {
+            server.terminate();
+            with contextlib.suppress(Exception) {
+                server.wait(timeout=2);
+            }
+        }
+        if data_dir.exists() {
+            import shutil;
+            shutil.rmtree(data_dir);
+        }
+    }
+}
+
+"""Unit test for issue 5931 fix: acommit() forwards anchor to commit().
+
+Before the fix, acommit() called asyncio.to_thread(self.commit) — anchor
+was silently dropped. After the fix it calls asyncio.to_thread(self.commit, anchor),
+so commit() receives whatever was passed.
+"""
+test "acommit forwards anchor argument to commit()" {
+    import asyncio;
+    import from unittest.mock { patch }
+    import from jac_scale.memory_hierarchy { ScaleTieredMemory }
+
+    received: list = [None];
+
+    def capture_commit(self: ScaleTieredMemory, anchor: any = None) {
+        received[0] = anchor;
+    }
+
+    with patch.object(ScaleTieredMemory, 'commit', capture_commit) {
+        mem = object.__new__(ScaleTieredMemory);
+        # Case 1: no anchor — commit() must receive None.
+        asyncio.run(mem.acommit());
+        assert received[0] is None , (
+            f"acommit() with no anchor must pass None to commit(), got {received[0]}"
+        );
+        # Case 2: specific anchor — commit() must receive the same object.
+        sentinel = object();
+        asyncio.run(mem.acommit(sentinel));
+        assert received[0] is sentinel , (
+            "acommit(anchor) must forward the anchor to commit(); "
+            f"commit() received {received[0]!r} instead"
+        );
+    }
+}
+
+"""Unit test for issue 1g fix: ScaleTieredMemory._committed flag.
+
+After the first acommit() the flag is set True. A second call (the
+middleware's redundant pass) returns immediately — MongoBackend.sync()
+and its O(L1-size) hash computation are skipped entirely.
+"""
+test "acommit is idempotent — _committed flag prevents second sync pass" {
+    import asyncio;
+    import from unittest.mock { patch }
+    import from jac_scale.memory_hierarchy { ScaleTieredMemory }
+
+    call_count = [0];
+
+    def mock_commit(self: ScaleTieredMemory, anchor: any = None) {
+        call_count[0] += 1;
+    }
+
+    with patch.object(ScaleTieredMemory, 'commit', mock_commit) {
+        mem = object.__new__(ScaleTieredMemory);
+        mem._committed = False;
+        asyncio.run(mem.acommit());
+        assert call_count[0] == 1 , f"expected 1 commit call after first acommit, got {call_count[
+            0
+        ]}";
+        assert mem._committed is True , "_committed must be True after first acommit";
+        asyncio.run(mem.acommit());
+        assert call_count[0] == 1 , (
+            f"second acommit (middleware pass) must be a no-op via _committed flag, "
+            f"but commit() was called {call_count[0]} times"
+        );
+    }
+}
+
+"""Unit test for issue 1g fix: _committed stays False when commit() raises.
+
+If the thread pool commit raises (e.g. MongoDB unreachable), _committed must
+remain False so the middleware safety-net path can retry the commit.
+"""
+test "acommit leaves _committed False when commit() raises" {
+    import asyncio;
+    import from unittest.mock { patch }
+    import from jac_scale.memory_hierarchy { ScaleTieredMemory }
+
+    def failing_commit(self: ScaleTieredMemory, anchor: any = None) {
+        raise RuntimeError("simulated commit failure");
+    }
+
+    with patch.object(ScaleTieredMemory, 'commit', failing_commit) {
+        mem = object.__new__(ScaleTieredMemory);
+        mem._committed = False;
+        raised = False;
+        try {
+            asyncio.run(mem.acommit());
+        } except Exception {
+            raised = True;
+        }
+        assert raised , "acommit() must propagate the exception from commit()";
+        assert mem._committed is False , (
+            "_committed must stay False when commit() raises — "
+            "the middleware safety net must still be able to retry"
+        );
+    }
+}
+
+
+# =============================================================================
+# In-process system root cache tests (no server subprocess needed)
+# =============================================================================
+"""Wipe process-level singletons so each test starts with a cold process cache."""
+def _reset_process_cache {
+    _process_cache.clear();
+    with contextlib.suppress(Exception) {
+        close_all_db_connections();
+    }
+}
+
+"""Create a JScaleExecutionContext pointed at mongo_uri with no Redis."""
+def _new_jscale_ctx(mongo_uri: str) -> JScaleExecutionContext {
+    os.environ["MONGODB_URI"] = mongo_uri;
+    os.environ.pop("REDIS_URL", None);
+    return JScaleExecutionContext();
+}
+
+"""Return L3 (MongoDB) fetch count for this context, or 0 if not Mongo."""
+def _ctx_l3_fetch_count(ctx: JScaleExecutionContext) -> int {
+    l3 = ctx.mem.l3;
+    if isinstance(l3, MongoBackend) {
+        return l3.fetch_count;
+    }
+    return 0;
+}
+
+
+"""After the very first JScaleExecutionContext(), _process_cache['system_root']
+must hold a NodeAnchor whose id equals SUPER_ROOT_UUID."""
+test "system root cache: populated with NodeAnchor after first context init" {
+    import from uuid { UUID }
+    import from jaclang.jac0core.constant { Constants as Con }
+    import from jaclang.jac0core.archetype { NodeAnchor }
+
+    _reset_process_cache();
+    _reset_mongo();
+    (_, uri) = _get_mongo();
+
+    assert "system_root" not in _process_cache;
+    _new_jscale_ctx(uri);
+
+    assert "system_root" in _process_cache , (
+        "_process_cache must contain 'system_root' after first context init"
+    );
+    cached = _process_cache["system_root"];
+    assert isinstance(cached, NodeAnchor) , (
+        f"Cached value must be a NodeAnchor, got {type(cached).__name__}"
+    );
+    assert cached.id == UUID(Con.SUPER_ROOT_UUID) , (
+        f"Cached anchor id {cached.id} != SUPER_ROOT_UUID"
+    );
+    _reset_process_cache();
+}
+
+
+"""First init must fetch the system root from MongoDB (fetch_count >= 1).
+Second init must find it in L1 from the process cache (fetch_count == 0).
+
+Each JScaleExecutionContext creates a fresh MongoBackend with fetch_count=0,
+so the count measured is per-context, not cumulative.
+"""
+test "system root cache: second context init skips MongoDB fetch" {
+    _reset_process_cache();
+    _reset_mongo();
+    (_, uri) = _get_mongo();
+
+    ctx1 = _new_jscale_ctx(uri);
+    first_fetches = _ctx_l3_fetch_count(ctx1);
+    assert first_fetches >= 1 , (
+        f"First context init must fetch system root from MongoDB "
+        f"(got fetch_count={first_fetches})"
+    );
+    assert "system_root" in _process_cache , "Cache must be warm after first init";
+
+    ctx2 = _new_jscale_ctx(uri);
+    second_fetches = _ctx_l3_fetch_count(ctx2);
+    assert second_fetches == 0 , (
+        f"Second context init issued {second_fetches} MongoDB fetch(es) "
+        "for system root, expected 0. "
+        "_process_cache pre-injection into L1 is not working."
+    );
+    _reset_process_cache();
+}
+
+
+"""When _process_cache is empty (fresh process), context init must succeed
+and set system_root, user_root, and entry_node correctly."""
+test "system root cache: cold cache still produces a valid system root" {
+    import from uuid { UUID }
+    import from jaclang.jac0core.constant { Constants as Con }
+
+    _reset_process_cache();
+    _reset_mongo();
+    (_, uri) = _get_mongo();
+
+    ctx = _new_jscale_ctx(uri);
+
+    assert ctx.system_root is not None , "system_root must not be None";
+    assert ctx.system_root.id == UUID(Con.SUPER_ROOT_UUID) , (
+        f"system_root.id {ctx.system_root.id} != SUPER_ROOT_UUID"
+    );
+    assert ctx.user_root is ctx.system_root , (
+        "user_root must default to system_root before auth"
+    );
+    assert ctx.entry_node is ctx.system_root , (
+        "entry_node must default to system_root before auth"
+    );
+    _reset_process_cache();
+}
+
+
+"""After the first init warms the cache, inits 2..N must each cost 0 fetches.
+Total MongoDB fetches for the system root across N inits equals the first
+init's fetch count, not N times that."""
+test "system root cache: N consecutive inits cost one MongoDB fetch total" {
+    N = 10;
+
+    _reset_process_cache();
+    _reset_mongo();
+    (_, uri) = _get_mongo();
+
+    ctx_first = _new_jscale_ctx(uri);
+    first_cost = _ctx_l3_fetch_count(ctx_first);
+    assert first_cost >= 1 , "First init must fetch from MongoDB";
+
+    for i in range(N - 1) {
+        ctx = _new_jscale_ctx(uri);
+        extra = _ctx_l3_fetch_count(ctx);
+        assert extra == 0 , (
+            f"Context init #{i + 2} of {N} issued {extra} MongoDB fetch(es) "
+            "for system root. Expected 0 — cache should be warm."
+        );
+    }
+    _reset_process_cache();
 }

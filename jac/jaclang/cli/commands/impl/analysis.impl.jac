@@ -29,7 +29,7 @@ impl check(
     start_time = time();
     ignore_list = _normalize_ignore_patterns(ignore);
     # Helper to process and store single file result
-    def process_file_result(file_path: str, idx: int, total: int) -> None {
+    def process_file_result(file_path: str, idx: int, total: int) {
         nonlocal total_files , total_errors , total_warnings , failed_files;
         total_files += 1;
         (success, errs, warns, errors_list, warnings_list) = check_single_file(
@@ -165,6 +165,9 @@ impl lint(paths: list, fix: bool = False, ignore: list = []) -> int {
         try {
             prog = JacProgram.jac_file_linter(str(path_obj));
             error_count = 0;
+            for warning in prog.warnings_had {
+                console.warning(f"{warning}");
+            }
             for error in prog.errors_had {
                 console.error(f"{error}");
                 error_count += 1;
@@ -478,7 +481,12 @@ impl format(
                 if res['formatted_code'] is not None {
                     try {
                         if to_screen {
-                            console.print(res['formatted_code']);
+                            # markup=False, highlight=False: prevent Rich from
+                            # interpreting Jac syntax like [root()-->], [?:Todo],
+                            # or [todo] as markup tags and silently stripping them.
+                            console.print(
+                                res['formatted_code'], markup=False, highlight=False
+                            );
                         } else {
                             with open(res['path'], 'w', encoding='utf-8') as f {
                                 f.write(res['formatted_code']);
@@ -492,7 +500,7 @@ impl format(
                 for (impl_path, impl_code) in res['impl_results'] {
                     try {
                         if to_screen {
-                            console.print(impl_code);
+                            console.print(impl_code, markup=False, highlight=False);
                         } else {
                             with open(impl_path, 'w', encoding='utf-8') as f {
                                 f.write(impl_code);
@@ -581,7 +589,6 @@ impl `test(
     verbose: bool = False
 ) -> int {
     import from jaclang.jac0core.runtime { JacRuntime as Jac }
-    Jac.setup();
     # e.g. jac test --test_name "typevar7 constrained operations"  (no filepath given)
     if (test_name and not filepath) {
         console.error(
@@ -707,19 +714,37 @@ def _normalize_ignore_patterns(ignore: list) -> list {
 }
 
 """Check if a file path should be ignored based on patterns.
-Supports both exact matches and wildcard patterns (e.g., 'jac-*').
+Supports exact matches, wildcard patterns (e.g., 'jac-*'), and
+path patterns containing '/' (e.g., 'jac-client/*/config_loader.impl.jac').
+
+Path patterns (containing '/') are matched against the full file path using
+fnmatch, so they can target specific files in specific packages. Simple
+patterns (no '/') are matched against each individual path component, which
+preserves the existing behavior of matching bare filenames.
 """
 def _should_ignore(file_path: str, ignore_patterns: list) -> bool {
     if not ignore_patterns {
         return False;
     }
     path_parts = Path(file_path).parts;
+    # Normalize file path to use forward slashes for consistent matching
+    normalized_path = '/'.join(path_parts);
     # Patterns are already normalized in ignore_list
     for pattern in ignore_patterns {
-        # fnmatch handles both exact and wildcard matches
-        for part in path_parts {
-            if fnmatch(part, pattern) {
+        if '/' in pattern {
+            # Path pattern: match against the full normalized path.
+            # This allows patterns like 'jac-client/*/config_loader.impl.jac'
+            # to target specific files in specific packages.
+            if fnmatch(normalized_path, '*/' + pattern)
+            or fnmatch(normalized_path, pattern) {
                 return True;
+            }
+        } else {
+            # Simple pattern: match against each path component (existing behavior)
+            for part in path_parts {
+                if fnmatch(part, pattern) {
+                    return True;
+                }
             }
         }
     }

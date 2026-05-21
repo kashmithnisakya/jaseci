@@ -13,10 +13,8 @@ node Profile {
     }
 
     can get with get_profile entry {
-        follwers = [
-            {"id": jid(i), "username": i.username} for i in [self-->[?:Profile]]
-        ];
-        report {"user": self, "followers": follwers};
+        followers = [self-->[?:Profile]];
+        report {"user": self, "followers": followers};
     }
 
     can follow with follow_request entry {
@@ -259,7 +257,7 @@ cl def TweetCard(tweet: ClientTweet) -> JsxElement {
 
 # Handle liking a tweet - calls server walker directly
 # The compiler automatically transforms this to __jacCallFunction at compile time!
-cl async def like_tweet_action(tweet_id: str) -> Any {
+cl async def like_tweet_action(tweet_id: str) -> any {
     try {
         result = await like_tweet(tweet_id);
         print("Tweet liked:", result);
@@ -285,13 +283,9 @@ cl def FeedView(tweets: list) -> JsxElement {
                 class="feed-header"
                 style={{"padding": "20px", "borderBottom": "1px solid #e1e8ed"}}
             >
-                <h1 style={{"margin": "0"}}>
-                    LittleX Feed
-                </h1>
+                <h1 style={{"margin": "0"}}>LittleX Feed</h1>
             </div>
-            <div class="feed-content">
-                {[TweetCard(tweet) for tweet in tweets]}
-            </div>
+            <div class="feed-content">{[TweetCard(tweet) for tweet in tweets]}</div>
         </div>;
 }
 
@@ -349,29 +343,19 @@ cl def LoginForm -> JsxElement {
                 >
                     Login
                 </Button>
-                <Button color="default" variant="dashed">
-                    Dashed
-                </Button>
-                <Button color="default" variant="filled">
-                    Filled
-                </Button>
-                <Button color="default" variant="text">
-                    Text
-                </Button>
-                <Button color="default" variant="link">
-                    Link
-                </Button>
+                <Button color="default" variant="dashed">Dashed</Button>
+                <Button color="default" variant="filled">Filled</Button>
+                <Button color="default" variant="text">Text</Button>
+                <Button color="default" variant="link">Link</Button>
             </form>
             <div style={{"marginTop": "15px", "textAlign": "center"}}>
-                <Link href="/signup">
-                    Don't have an account? Sign up
-                </Link>
+                <Link href="/signup">Don't have an account? Sign up</Link>
             </div>
         </Card>;
 }
 
 # Handle login form submission
-cl async def handle_login(event: Any) -> None {
+cl async def handle_login(event: any) {
     event.preventDefault();
     username = document.getElementById("username").value;
     password = document.getElementById("password").value;
@@ -462,9 +446,7 @@ cl def SignupForm -> JsxElement {
                 </button>
             </form>
             <div style={{"marginTop": "15px", "textAlign": "center"}}>
-                <Link href="/login">
-                    Already have an account? Login
-                </Link>
+                <Link href="/login">Already have an account? Login</Link>
             </div>
         </div>;
 }
@@ -472,7 +454,7 @@ cl def SignupForm -> JsxElement {
 # Navigation helper functions removed - using Link component and navigate() directly
 
 # Handle signup form submission
-cl async def handle_signup(event: Any) -> None {
+cl async def handle_signup(event: any) -> None {
     event.preventDefault();
     username = document.getElementById("signup-username").value;
     password = document.getElementById("signup-password").value;
@@ -493,15 +475,21 @@ cl async def handle_signup(event: Any) -> None {
     # Use runtime auth function - no need to know about /user/register endpoint!
     result = await jacSignup(username, password);
     if result["success"] if "success" in result else False {
-        alert("Account created successfully! Welcome to LittleX!");
-        navigate("/home");
+        # /user/register does not return a token, sign in to start a session
+        logged_in = await jacLogin(username, password);
+        if logged_in {
+            alert("Account created successfully! Welcome to LittleX!");
+            navigate("/home");
+        } else {
+            alert("Account created but login failed");
+        }
     } else {
         alert(result["error"] if "error" in result else "Signup failed");
     }
 }
 
 # Handle logout
-cl def logout_action -> None {
+cl def logout_action {
     jacLogout();
     navigate("/login");
 }
@@ -511,22 +499,22 @@ cl def:pub App -> JsxElement {
     # Create routes array manually (workaround for JS compiler bug with named args)
     login_route = {
         "path": "/login",
-        "component": lambda -> Any { return LoginForm(); },
+        "component": lambda -> any { return LoginForm(); },
         "guard": None
     };
     signup_route = {
         "path": "/signup",
-        "component": lambda -> Any { return SignupForm(); },
+        "component": lambda -> any { return SignupForm(); },
         "guard": None
     };
     home_route = {
         "path": "/home",
-        "component": lambda -> Any { return HomeView(); },
+        "component": lambda -> any { return HomeView(); },
         "guard": jacIsLoggedIn
     };
     profile_route = {
         "path": "/profile",
-        "component": lambda -> Any { return ProfileView(); },
+        "component": lambda -> any { return ProfileView(); },
         "guard": jacIsLoggedIn
     };
 
@@ -540,9 +528,7 @@ cl def:pub App -> JsxElement {
         <div class="app-container">
             {build_nav_bar(currentPath)}
             <Rotate>
-                <span>
-                    😂
-                </span>
+                <span>😂</span>
             </Rotate>
             {router.render()}
         </div>;
@@ -627,15 +613,9 @@ cl def HomeView -> JsxElement {
                 "fontFamily": "sans-serif"
             }}
         >
-            <h1>
-                Home Feed
-            </h1>
-            <p>
-                Welcome to LittleX! This is the home page.
-            </p>
-            <p>
-                The reactive router is working!
-            </p>
+            <h1>Home Feed</h1>
+            <p>Welcome to LittleX! This is the home page.</p>
+            <p>The reactive router is working!</p>
         </div>;
 }
 
@@ -656,9 +636,7 @@ cl def ProfileView -> JsxElement {
                 "fontFamily": "sans-serif"
             }}
         >
-            <h1>
-                Profile
-            </h1>
+            <h1>Profile</h1>
             <div
                 style={{
                     "padding": "15px",
@@ -666,9 +644,7 @@ cl def ProfileView -> JsxElement {
                     "borderRadius": "8px"
                 }}
             >
-                <p>
-                    Profile information will be displayed here.
-                </p>
+                <p>Profile information will be displayed here.</p>
             </div>
         </div>;
 }

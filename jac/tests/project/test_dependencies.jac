@@ -7,6 +7,7 @@ import shutil;
 import from pathlib { Path }
 import from unittest.mock { MagicMock, patch }
 
+import from jaclang.cli.commands { project as proj_cmds }
 import from jaclang.project.config { JacConfig }
 import from jaclang.project.dependencies {
     DependencyInstaller,
@@ -56,6 +57,22 @@ def create_test_project(tmpdir: str, toml_content: str = "") -> str {
     f.write(toml_content);
     f.close();
     return project_path;
+}
+
+"""Get venv bin directory path (Scripts on Windows, bin on Unix)."""
+def get_venv_bin_dir(venv_dir: Path) -> Path {
+    return venv_dir / ("Scripts" if sys.platform == "win32" else "bin");
+}
+
+"""Set up a mock venv with site-packages and bin directories. Returns (config, bin_str, site_str)."""
+def setup_mock_venv(project_dir: Path) -> tuple[JacConfig, str, str] {
+    config = JacConfig.load(project_dir / "jac.toml");
+    venv_dir = config.get_venv_dir();
+    site_packages = get_venv_site_packages(venv_dir);
+    site_packages.mkdir(parents=True, exist_ok=True);
+    bin_dir = get_venv_bin_dir(venv_dir);
+    bin_dir.mkdir(parents=True, exist_ok=True);
+    return (config, str(bin_dir), str(site_packages));
 }
 
 # ===== TestDependencyInstaller =====
@@ -733,6 +750,61 @@ test "add_venv_dir_not_exists" {
     }
 }
 
+test "add_venv_to_path adds bin to PATH env" {
+    reset_config();
+    (tmp, project_dir) = make_temp_project();
+    saved_path = list(sys.path);
+    saved_env_path = os.environ.get("PATH", "");
+    try {
+        (config, bin_str, _) = setup_mock_venv(project_dir);
+
+        # Ensure bin_str is not in PATH before test
+        os.environ["PATH"] = os.pathsep.join(
+            [
+                p
+                for p in saved_env_path.split(os.pathsep)
+                if p != bin_str
+            ]
+        );
+
+        add_venv_to_path(config);
+
+        assert bin_str in os.environ.get("PATH", "").split(os.pathsep);
+    } finally {
+        sys.path.clear();
+        sys.path.extend(saved_path);
+        os.environ["PATH"] = saved_env_path;
+        shutil.rmtree(tmp, ignore_errors=True);
+        reset_config();
+    }
+}
+
+test "remove_venv_from_path removes bin from PATH env" {
+    reset_config();
+    (tmp, project_dir) = make_temp_project();
+    saved_path = list(sys.path);
+    saved_env_path = os.environ.get("PATH", "");
+    try {
+        (config, bin_str, site_str) = setup_mock_venv(project_dir);
+
+        # Add bin to PATH and site-packages to sys.path before test
+        os.environ["PATH"] = bin_str + os.pathsep + saved_env_path;
+        if site_str not in sys.path {
+            sys.path.insert(0, site_str);
+        }
+
+        remove_venv_from_path(config);
+
+        assert bin_str not in os.environ.get("PATH", "").split(os.pathsep);
+    } finally {
+        sys.path.clear();
+        sys.path.extend(saved_path);
+        os.environ["PATH"] = saved_env_path;
+        shutil.rmtree(tmp, ignore_errors=True);
+        reset_config();
+    }
+}
+
 # ===== TestProjectCommands =====
 test "install with pip and git deps" {
     reset_config();
@@ -1393,7 +1465,11 @@ test "remove dev dep without flag" {
             ) as _ev, patch(
                 "jaclang.project.dependencies.DependencyInstaller._run_pip"
             ) as mock_pip {
-                mock_pip.return_value = (0, "Successfully uninstalled pytest-8.0.0", "");
+                mock_pip.return_value = (
+                    0,
+                    "Successfully uninstalled pytest-8.0.0",
+                    ""
+                );
                 result = proj_cmds.remove(packages=["pytest"]);
             }
             assert result == 0;
@@ -1458,6 +1534,157 @@ test "remove nonexistent package" {
         try {
             result = proj_cmds.remove(packages=["nonexistent"]);
             assert result == 0;
+        } finally {
+            os.chdir(original_cwd);
+            reset_config();
+        }
+    } finally {
+        shutil.rmtree(tmp, ignore_errors=True);
+    }
+}
+
+# ===== TestGetExtraPackageSpecs =====
+glob EXTRAS_TOML = '[project]\nname = "mypkg"\nversion = "0.1.0"\n\n[dependencies]\n\n[optional-dependencies.data]\npymongo = ">=4.0,<5.0"\nredis = ">=7.0,<8.0"\n\n[optional-dependencies.monitoring]\nprometheus-client = ">=0.21.0,<1.0.0"\n\n[optional-dependencies.all]\n"mypkg[data,monitoring]" = "*"\n\n[optional-dependencies.test]\n"mypkg[all]" = "*"\n"testcontainers[mongodb,redis]" = "*"\nrequests = "*"\n';
+
+test "get_extra_package_specs basic group" {
+    reset_config();
+    tmp = tempfile.mkdtemp(prefix="jac_test_");
+    try {
+        project_path = create_test_project(tmp, EXTRAS_TOML);
+        config = JacConfig.load(Path(project_path) / "jac.toml");
+        installer = DependencyInstaller(config=config);
+        specs = installer.get_extra_package_specs(["data"]);
+        assert "pymongo>=4.0,<5.0" in specs;
+        assert "redis>=7.0,<8.0" in specs;
+        assert len(specs) == 2;
+        specs = installer.get_extra_package_specs(["test"]);
+        assert "pymongo>=4.0,<5.0" in specs;
+        assert "redis>=7.0,<8.0" in specs;
+        assert "prometheus-client>=0.21.0,<1.0.0" in specs;
+        assert "testcontainers[mongodb,redis]" in specs;
+        assert "requests" in specs;
+        assert len(specs) == 5;
+    } finally {
+        shutil.rmtree(tmp, ignore_errors=True);
+        reset_config();
+    }
+}
+
+test "get_extra_package_specs multiple groups no duplicates" {
+    reset_config();
+    tmp = tempfile.mkdtemp(prefix="jac_test_");
+    try {
+        project_path = create_test_project(tmp, EXTRAS_TOML);
+        config = JacConfig.load(Path(project_path) / "jac.toml");
+        installer = DependencyInstaller(config=config);
+        specs = installer.get_extra_package_specs(["data", "all"]);
+        pkg_names = [s.split(">=")[0].split("~=")[0].split("==")[0] for s in specs];
+        assert pkg_names.count("pymongo") == 1;
+        assert pkg_names.count("redis") == 1;
+    } finally {
+        shutil.rmtree(tmp, ignore_errors=True);
+        reset_config();
+    }
+}
+
+test "get_extra_package_specs unknown group raises ValueError" {
+    reset_config();
+    tmp = tempfile.mkdtemp(prefix="jac_test_");
+    try {
+        project_path = create_test_project(tmp, EXTRAS_TOML);
+        config = JacConfig.load(Path(project_path) / "jac.toml");
+        installer = DependencyInstaller(config=config);
+        raised = False;
+        try {
+            installer.get_extra_package_specs(["typo"]);
+        } except ValueError as e {
+            raised = True;
+            assert "typo" in str(e);
+            assert "Available:" in str(e);
+        }
+        assert raised , "Expected ValueError for unknown extras group";
+    } finally {
+        shutil.rmtree(tmp, ignore_errors=True);
+        reset_config();
+    }
+}
+
+# ===== TestMakePipSpec =====
+test "DependencyInstaller _make_pip_spec special version values" {
+    reset_config();
+    (tmp, project_dir) = make_temp_project();
+    try {
+        config = JacConfig.load(project_dir / "jac.toml");
+        installer = DependencyInstaller(config=config);
+        # Empty version returns bare name (no version constraint)
+        assert installer._make_pip_spec("requests", "") == "requests";
+        # "*" is treated as unconstrained — must not produce ==*
+        assert installer._make_pip_spec("requests", "*") == "requests";
+        # "latest" is treated as unconstrained — must not produce ==latest
+        assert installer._make_pip_spec("requests", "latest") == "requests";
+        # Specifier-prefixed versions are passed through unchanged
+        assert installer._make_pip_spec("numpy", ">=1.24.0") == "numpy>=1.24.0";
+        assert installer._make_pip_spec("django", "~=4.0") == "django~=4.0";
+        assert installer._make_pip_spec("flask", "==3.0") == "flask==3.0";
+        assert installer._make_pip_spec("celery", "!=4.0") == "celery!=4.0";
+        # Bare version gets an == prefix
+        assert installer._make_pip_spec("mylib", "1.2.3") == "mylib==1.2.3";
+    } finally {
+        shutil.rmtree(tmp, ignore_errors=True);
+        reset_config();
+    }
+}
+
+# ===== TestInstallFlags =====
+test "DependencyInstaller install_flags passed to pip" {
+    reset_config();
+    (tmp, project_dir) = make_temp_project();
+    try {
+        config = JacConfig.load(project_dir / "jac.toml");
+        installer = DependencyInstaller(
+            config=config, install_flags=["--no-cache-dir"]
+        );
+        with patch.object(installer, "ensure_venv") as _ev, patch.object(
+            installer, "_run_pip"
+        ) as mock_pip {
+            mock_pip.return_value = (0, "Successfully installed requests-2.31.0", "");
+            installer.install_package(["requests>=2.28.0"]);
+            call_args = mock_pip.call_args[0][0];
+            assert "install" in call_args;
+            assert "--upgrade" in call_args;
+            assert "--no-cache-dir" in call_args;
+        }
+    } finally {
+        shutil.rmtree(tmp, ignore_errors=True);
+        reset_config();
+    }
+}
+
+test "update always uses upgrade flag" {
+    reset_config();
+    tmp = tempfile.mkdtemp(prefix="jac_test_");
+    try {
+        project_path = create_test_project(tmp);
+        os.makedirs(os.path.join(project_path, ".jac", "venv"), exist_ok=True);
+        original_cwd = os.getcwd();
+        os.chdir(project_path);
+        reset_config();
+        try {
+            with patch(
+                "jaclang.project.dependencies.DependencyInstaller.ensure_venv"
+            ) as _ev, patch(
+                "jaclang.project.dependencies.DependencyInstaller._run_pip"
+            ) as mock_pip {
+                mock_pip.side_effect = [
+                    (0, "Successfully installed requests-2.31.0 flask-3.1.0", ""),
+                    (0, "Name: requests\nVersion: 2.31.0", ""),
+                    (0, "Name: flask\nVersion: 3.1.0", "")
+                ];
+                result = proj_cmds.update();
+            }
+            assert result == 0;
+            first_call_args = mock_pip.call_args_list[0][0][0];
+            assert "--upgrade" in first_call_args;
         } finally {
             os.chdir(original_cwd);
             reset_config();

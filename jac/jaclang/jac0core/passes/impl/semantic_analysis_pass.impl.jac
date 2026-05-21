@@ -3,7 +3,7 @@
 impl SemanticAnalysisPass.enter_archetype(
     self: SemanticAnalysisPass, nd: uni.Archetype
 ) -> None {
-    def inform_from_walker(nd: uni.UniNode) -> None {
+    def inform_from_walker(nd: uni.UniNode) {
         for i in nd.get_all_sub_nodes(uni.VisitStmt) + nd.get_all_sub_nodes(
             uni.DisengageStmt
         ) + nd.get_all_sub_nodes(uni.EdgeOpRef) + nd.get_all_sub_nodes(
@@ -34,6 +34,9 @@ impl SemanticAnalysisPass._check_archetype(
                 continue;
             }
             for var in stmnt.vars {
+                if var.accessors is not None {
+                    continue;  # property declarations aren't dataclass fields
+                }
                 if ((var.value is not None) or var.defer) {
                     found_default_init = True;
                 } elif found_default_init {

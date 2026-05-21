@@ -47,7 +47,7 @@ def _get_argnames(func: Callable[(..., Any)]) -> (tuple[(str, ...)] | None) {
             )
         );
     } except (ValueError, TypeError) { }
-    code = getattr(func, '__code__', None);
+    code = func?.__code__;
     if code is not None {
         nargs = code.co_argcount + code.co_kwonlyargcount;
         return tuple(code.co_varnames[:nargs]);
@@ -71,7 +71,7 @@ obj HookCaller {
         _hookimpls: list[HookImpl] by postinit,
         _firstresult: bool = False;
 
-    def postinit -> None {
+    def postinit {
         self._hookimpls = [];
     }
 
@@ -94,7 +94,7 @@ obj PluginManager {
         _plugin_distinfo: list[tuple[(object, Any)]] by postinit,
         hook: HookRelay by postinit;
 
-    def postinit -> None {
+    def postinit {
         self._name2plugin = {};
         self._plugin2name = {};
         self._plugin_distinfo = [];
@@ -114,7 +114,7 @@ obj PluginManager {
 }
 
 def _canonical_name(plugin: object) -> str {
-    return getattr(plugin, '__name__', None) or `type(plugin).__name__;
+    return plugin?.__name__ or `type(plugin).__name__;
 }
 
 """Thin wrapper around importlib.metadata.Distribution."""

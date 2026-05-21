@@ -100,91 +100,320 @@ def collect_field_names(
     return [field.sym_name for field in arch.get_has_vars()];
 }
 
-"""Collect symbols narrowed by a condition expression.
+"""Build a dotted key string from a Name or AtomTrailer expression.
 
-Extracted from CFGBuildPass._collect_narrowing_symbols.
-Handles isinstance, None checks, truthiness, walrus, boolean ops.
+Returns keys like "x" or "obj.speed" for use in affected_symbols.
+Returns None for expressions that cannot be represented as a key.
 """
-def collect_narrowing_symbols(condition: uni.Expr) -> set[str] {
-    symbols: set[str] = set();
-    # Pattern: isinstance(x, T) or isinstance((x := expr), T) — collect 'x'
-    if isinstance(condition, uni.FuncCall) {
+def int_subscript_suffix(right: uni.IndexSlice) -> str | None {
+    if (not right.is_range and len(right.slices) == 1) {
+        idx = right.slices[0];
+        if (idx.start is not None and idx.stop is None and idx.step is None) {
+            start = idx.start;
+            # items[0] - positive integer literal
+            if isinstance(start, uni.Int) {
+                return f"[{start.lit_value}]";
+            }
+            # items[-1] - negative integer (UnaryExpr with minus op)
+            if (
+                isinstance(start, uni.UnaryExpr)
+                and isinstance(start.op, uni.Token)
+                and start.op.name == "MINUS"
+                and isinstance(start.operand, uni.Int)
+            ) {
+                return f"[-{start.operand.lit_value}]";
+            }
+            # config["host"] - string literal index (MultiString wraps String in Jac AST)
+            if isinstance(start, uni.MultiString)
+            and len(start.strings) == 1
+            and isinstance(start.strings[0], uni.String) {
+                return f'[{start.strings[0].lit_value!r}]';
+            }
+            # items[i] - simple name index. The CFG assignment barrier
+            # consults the narrowing target's `deps` set (populated by
+            # `reference_key_deps` from the AST) so reassigning `i`
+            # invalidates the narrowing; `if x[i] is not None: x[i].foo`
+            # narrows under the same loop iteration while still dying
+            # the moment any index is rebound.
+            if isinstance(start, uni.Name) {
+                return f"[{start.value}]";
+            }
+        }
+    }
+    return None;
+}
+
+"""Reference-key dependencies that invalidate narrowing when reassigned.
+
+A narrowing fact on `x[r] is not None` is keyed by the exact spelling
+`"x[r]"`, so the CFG predecessor walk drops the narrowing when the
+same key is rebound. But the key *also* depends on the base name `x`
+and the index name `r` -- reassigning either changes what `x[r]`
+denotes, so the narrowing must die too. Walks the AST to collect
+those identifier names; literal indices like `[0]` / `["host"]`
+contribute nothing because they're stable.
+"""
+def reference_key_deps(expr: uni.Expr) -> set[str] {
+    deps: set[str] = set();
+    cur: uni.UniNode | None = expr;
+    while cur is not None {
+        if isinstance(cur, uni.AtomUnit) and cur.value is not None {
+            cur = cur.value;
+            continue;
+        }
+        if isinstance(cur, uni.Name) {
+            deps.add(cur.value);
+            return deps;
+        }
+        if isinstance(cur, uni.AtomTrailer) {
+            if (
+                not cur.is_attr
+                and isinstance(cur.right, uni.IndexSlice)
+                and not cur.right.is_range
+                and len(cur.right.slices) == 1
+            ) {
+                idx = cur.right.slices[0];
+                if (
+                    idx.start is not None
+                    and idx.stop is None
+                    and idx.step is None
+                    and isinstance(idx.start, uni.Name)
+                ) {
+                    deps.add(idx.start.value);
+                }
+            }
+            cur = cur.target;
+            continue;
+        }
+        break;
+    }
+    return deps;
+}
+
+def get_expr_key(expr: uni.Expr) -> str | None {
+    if isinstance(expr, uni.Name) {
+        return expr.value;
+    }
+    if isinstance(expr, uni.AtomTrailer) and expr.is_attr {
+        base = get_expr_key(expr.target);
+        if base and isinstance(expr.right, uni.Name) {
+            return f"{base}.{expr.right.value}";
+        }
+    }
+    if isinstance(expr, uni.AtomTrailer) and not expr.is_attr {
+        base = get_expr_key(expr.target);
+        if base and isinstance(expr.right, uni.IndexSlice) {
+            suffix = int_subscript_suffix(expr.right);
+            if suffix {
+                return f"{base}{suffix}";
+            }
+        }
+    }
+    # Unwrap parentheses
+    if isinstance(expr, uni.AtomUnit) and expr.value {
+        return get_expr_key(expr.value);
+    }
+    return None;
+}
+
+"""Extract narrowing key from the first argument of a builtin call (isinstance/callable).
+
+Handles unwrapping parentheses, Name, AtomTrailer, and walrus expressions.
+"""
+def _extract_first_arg_key(arg: uni.Expr) -> str | None {
+    if isinstance(arg, uni.AtomUnit) and arg.value {
+        arg = arg.value;
+    }
+    if isinstance(arg, uni.Name) {
+        return arg.value;
+    }
+    if isinstance(arg, uni.AtomTrailer) {
+        return get_expr_key(arg);
+    }
+    if (
+        isinstance(arg, uni.BinaryExpr)
+        and isinstance(arg.op, uni.Token)
+        and arg.op.name == "WALRUS_EQ"
+        and isinstance(arg.left, uni.Name)
+    ) {
+        return arg.left.value;
+    }
+    return None;
+}
+
+"""Extract narrowing key from the left side of a CompareExpr.
+
+Handles unwrapping parentheses, Name, AtomTrailer, and walrus expressions.
+"""
+def _extract_compare_left_key(left: uni.Expr) -> str | None {
+    if isinstance(left, uni.AtomUnit) and left.value {
+        left = left.value;
+    }
+    if isinstance(left, uni.Name) {
+        return left.value;
+    }
+    if isinstance(left, uni.AtomTrailer) {
+        return get_expr_key(left);
+    }
+    if (
+        isinstance(left, uni.BinaryExpr)
+        and isinstance(left.op, uni.Token)
+        and left.op.name == "WALRUS_EQ"
+        and isinstance(left.left, uni.Name)
+    ) {
+        return left.left.value;
+    }
+    return None;
+}
+
+"""Classify a leaf condition and extract its narrowing key (type-free).
+
+Free-standing function for use in symbol_utils where TypeEvaluator is unavailable.
+Returns the narrowing key or None.
+"""
+def classify_condition_key(condition: uni.Expr) -> str | None {
+    # isinstance(x, T) or callable(x)
+    if isinstance(condition, uni.FuncCall) and isinstance(condition.target, uni.Name) {
         if (
-            isinstance(condition.target, uni.Name)
-            and condition.target.value == "isinstance"
+            condition.target.value in ("isinstance", "callable")
             and len(condition.params) >= 1
         ) {
-            first_arg = condition.params[0];
-            # Unwrap parentheses
-            if isinstance(first_arg, uni.AtomUnit) and first_arg.value {
-                first_arg = first_arg.value;
-            }
-            if isinstance(first_arg, uni.Name) {
-                symbols.add(first_arg.value);
-            } elif (
-                isinstance(first_arg, uni.BinaryExpr)
-                and isinstance(first_arg.op, uni.Token)
-                and first_arg.op.name == "WALRUS_EQ"
-                and isinstance(first_arg.left, uni.Name)
-            ) {
-                # isinstance((x := expr), T) -> collect 'x'
-                symbols.add(first_arg.left.value);
-            }
+            return _extract_first_arg_key(condition.params[0]);
         }
     }
-    # Pattern: x is None / x is not None — collect 'x'
-    # Also handles: (x := expr) is not None — collect 'x' from walrus
-    elif isinstance(condition, uni.CompareExpr) {
-        left = condition.left;
-        # Unwrap AtomUnit (parentheses)
-        if isinstance(left, uni.AtomUnit) {
-            inner = left.value;
-            if inner {
-                left = inner;
-            }
-        }
-        if isinstance(left, uni.Name) {
-            symbols.add(left.value);
-        } elif isinstance(left, uni.BinaryExpr) {
-            if (
-                isinstance(left.op, uni.Token)
-                and left.op.name == "WALRUS_EQ"
-                and isinstance(left.left, uni.Name)
-            ) {
-                # (x := expr) is not None -> collect 'x'
-                symbols.add(left.left.value);
-            }
-        }
+    # CompareExpr: x is None, x == literal, etc.
+    if isinstance(condition, uni.CompareExpr) {
+        return _extract_compare_left_key(condition.left);
     }
-    # Pattern: not <condition> — recurse
-    elif isinstance(condition, uni.UnaryExpr) {
-        symbols.update(collect_narrowing_symbols(condition.operand));
+    # Truthiness: x / x.attr
+    if isinstance(condition, uni.Name) {
+        return condition.value;
     }
-    # Pattern: <cond1> and/or <cond2> — collect from both
-    elif isinstance(condition, uni.BoolExpr) {
-        for val in condition.values {
-            symbols.update(collect_narrowing_symbols(val));
-        }
+    if isinstance(condition, uni.AtomTrailer) and condition.is_attr {
+        return get_expr_key(condition);
     }
-    # Pattern: (parenthesized) — unwrap
-    elif isinstance(condition, uni.AtomUnit)
-    and isinstance(condition.value, uni.Expr) {
-        symbols.update(collect_narrowing_symbols(condition.value));
-    }
-    # Pattern: x (truthiness check like `if val:`) — collect 'x'
-    elif isinstance(condition, uni.Name) {
-        symbols.add(condition.value);
-    }
-    # Pattern: (x := expr) walrus operator — collect 'x'
-    elif (
+    # Walrus: (x := expr)
+    if (
         isinstance(condition, uni.BinaryExpr)
         and isinstance(condition.op, uni.Token)
         and condition.op.name == "WALRUS_EQ"
         and isinstance(condition.left, uni.Name)
     ) {
-        symbols.add(condition.left.value);
+        return condition.left.value;
+    }
+    return None;
+}
+
+"""Collect symbols narrowed by a condition expression.
+
+Extracted from CFGBuildPass._collect_narrowing_symbols.
+Structural wrappers (parens, NOT, AND/OR) recurse; leaf conditions
+are classified via classify_condition_key.
+"""
+def collect_narrowing_symbols(condition: uni.Expr) -> set[str] {
+    symbols: set[str] = set();
+    # Structural wrappers — recurse
+    if isinstance(condition, uni.CfgExpr) {
+        symbols.update(collect_narrowing_symbols(condition.expr));
+    } elif isinstance(condition, uni.AtomUnit)
+    and isinstance(condition.value, uni.Expr) {
+        symbols.update(collect_narrowing_symbols(condition.value));
+    } elif isinstance(condition, uni.UnaryExpr) {
+        symbols.update(collect_narrowing_symbols(condition.operand));
+    } elif isinstance(condition, uni.BoolExpr) {
+        for val in condition.values {
+            symbols.update(collect_narrowing_symbols(val));
+        }
+    } else {
+        # Leaf classification — single dispatch point
+        key = classify_condition_key(condition);
+        if key is not None {
+            symbols.add(key);
+        }
     }
     return symbols;
+}
+
+"""Find the positional index path of a reference key inside a single
+destructuring target, or `None` if the key isn't written there.
+
+For `(x, _) = ...` with key `"x"` the result is `[0]`; for
+`((a, b), c) = ...` with key `"b"` it's `[0, 1]`. The starred slot in
+`(a, *rest) = ...` is intentionally excluded because its type is the
+list of the tail, not a single element at a fixed index — callers that
+want to narrow `rest` need different logic.
+
+Only the first occurrence wins; a well-formed destructuring target
+binds each key at most once anyway.
+"""
+def find_destructure_index_path(target: uni.UniNode, key: str) -> list[int] | None {
+    if isinstance(target, uni.Name) {
+        return [] if target.value == key else None;
+    }
+    if isinstance(target, uni.AtomTrailer) and target.is_attr {
+        matched_key = get_expr_key(target);
+        return [] if matched_key == key else None;
+    }
+    if isinstance(target, uni.AtomUnit) and isinstance(target.value, uni.UniNode) {
+        return find_destructure_index_path(target.value, key);
+    }
+    if isinstance(target, (uni.TupleVal, uni.ListVal)) and target.values {
+        for (i, sub) in enumerate(target.values) {
+            if not isinstance(sub, uni.UniNode) {
+                continue;
+            }
+            # Skip starred slots — their type isn't a single element.
+            if (
+                isinstance(sub, uni.UnaryExpr)
+                and isinstance(sub.op, uni.Token)
+                and sub.op.name == Tok.STAR_MUL
+            ) {
+                continue;
+            }
+            sub_path = find_destructure_index_path(sub, key);
+            if sub_path is not None {
+                return [i] + sub_path;
+            }
+        }
+    }
+    return None;
+}
+
+"""Collect every reference key bound by a single assignment target.
+
+Walks one element of `Assignment.target`, extracting the reference keys
+it writes. Handles flat names, dotted attribute paths, recursive
+tuple/list destructuring (e.g. `(a, (b, c)) = ...`), and starred
+unpack slots (`(a, *rest) = ...`).
+"""
+def collect_assignment_target_keys(target: uni.UniNode) -> set[str] {
+    keys: set[str] = set();
+    if isinstance(target, uni.Name) {
+        keys.add(target.value);
+    } elif isinstance(target, uni.AtomTrailer) {
+        if key := get_expr_key(target) {
+            keys.add(key);
+        }
+    } elif isinstance(target, (uni.TupleVal, uni.ListVal)) {
+        if target.values {
+            for sub in target.values {
+                if isinstance(sub, uni.UniNode) {
+                    keys.update(collect_assignment_target_keys(sub));
+                }
+            }
+        }
+    } elif (
+        isinstance(target, uni.UnaryExpr)
+        and isinstance(target.op, uni.Token)
+        and target.op.name == Tok.STAR_MUL
+    ) {
+        # Starred unpack slot: `*rest` inside (a, *rest) = ...
+        keys.update(collect_assignment_target_keys(target.operand));
+    } elif isinstance(target, uni.AtomUnit) and isinstance(target.value, uni.UniNode) {
+        # Parenthesized target: `(x) = ...` or `((x, y)) = ...`.
+        keys.update(collect_assignment_target_keys(target.value));
+    }
+    return keys;
 }
 
 """Collect all symbols assigned/bound in a statement.
@@ -194,12 +423,10 @@ Handles assignments, for-loops, and walrus operators.
 """
 def collect_assigned_symbols(nd: uni.UniNode) -> set[str] {
     symbols: set[str] = set();
-    # Assignment: x = ...
+    # Assignment: x = ..., (x, y) = ..., obj.attr = ...
     if isinstance(nd, uni.Assignment) {
         for target in nd.target {
-            if isinstance(target, uni.Name) {
-                symbols.add(target.value);
-            }
+            symbols.update(collect_assignment_target_keys(target));
         }
     }
     # For loop: for x in ...

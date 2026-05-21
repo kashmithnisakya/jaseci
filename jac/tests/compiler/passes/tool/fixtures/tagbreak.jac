@@ -139,7 +139,7 @@ with entry {
     a = 4 if True else 4;
 }
 
-import from typing { Any, Awaitable, Callable, Coroutine, Optional, ParamSpec, TypeVar }
+import from typing { Awaitable, Callable, Coroutine, Optional, ParamSpec, TypeVar }
 
 import from jaclang.jac0core.constant {
     JacSemTokenModifier as SemTokMod,
@@ -331,8 +331,7 @@ async def type_check(self: JacLangServer, file_path: str) -> None {
         # Start new thread for type checking
         print(" debounced_type_check ->", time.time(), file=sys.stderr);
         self.type_check_threads[file_path] = threading.Thread(
-            target=self.type_check_file,
-            args=(file_path, self.cancel_tokens[file_path])
+            target=self.type_check_file, args=(file_path, self.cancel_tokens[file_path])
         );
         self.type_check_threads[file_path].start();
         self.type_check_threads[file_path].join();
@@ -431,7 +430,7 @@ cl {
 
     # Handle liking a tweet - calls server walker directly
     # The compiler automatically transforms this to __jacCallFunction at compile time!
-    async def like_tweet_action(tweet_id: str) -> Any {
+    async def like_tweet_action(tweet_id: str) -> any {
         try {
             result = await like_tweet(tweet_id);
             print("Tweet liked:", result);

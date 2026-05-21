@@ -1,21 +1,23 @@
 """Client bundle generation utilities for Jac web front-ends."""
 import hashlib;
 import json;
+import os;
 import from collections.abc { Iterable, Sequence }
 import from pathlib { Path }
 import from types { ModuleType }
-import from typing { TYPE_CHECKING, Any, NamedTuple }
+import from typing { Any, NamedTuple }
 import from jaclang.jac0core.modresolver { convert_to_js_import_path }
-
-with entry {
-    if TYPE_CHECKING {
-        import from jaclang.jac0core.codeinfo { ClientManifest }
-        import from jaclang.jac0core.unitree { Module }
-    }
-}
+import type from jaclang.jac0core.codeinfo { ClientManifest }
+import type from jaclang.jac0core.unitree { Module }
 
 """Raised when the client bundle cannot be generated."""
 class ClientBundleError(RuntimeError) {}
+
+"""Lookup module in hub with cross-platform path normalization (Windows case/separators)."""
+def _lookup_module_in_hub(path_key: str, hub: dict) -> (Module | None);
+
+"""Run EsastGenPass if JS missing (Windows may skip ES pass during initial compile)."""
+def _ensure_js_generated(mod: Module, program: any) -> None;
 
 """Result of processing client imports."""
 class ProcessedImports(NamedTuple) {
@@ -51,11 +53,14 @@ obj ClientBundleBuilder {
     def _extract_client_exports(manifest: (ClientManifest | None)) -> list[str];
     def _extract_client_globals(
         manifest: (ClientManifest | None), module: ModuleType
-    ) -> dict[str, Any];
+    ) -> dict[str, any];
 
     def _compile_bundle(module: ModuleType, module_path: Path) -> ClientBundle;
     def _compile_to_js(source_path: Path) -> tuple[str, Module];
-    static def _strip_import_statements(js_code: str, bundled_modules: set[str]) -> str;
+    static def _strip_import_statements(
+        js_code: str, bundled_modules: set[str]
+    ) -> str;
+
     static def _signature(paths: Iterable[Path]) -> str;
     static def _generate_registration_js(
         module_name: str,

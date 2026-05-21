@@ -18,14 +18,13 @@ import struct;
 import sys;
 import zlib;
 import from pathlib { Path }
-import from typing { Any }
 
 # --- Constants ---
 """JIR file magic bytes."""
 glob MAGIC = b"JIR\x00";
 
 """Current format version. Increment on breaking changes."""
-glob FORMAT_VERSION: int = 10;
+glob FORMAT_VERSION: int = 11;
 
 """Header size in bytes."""
 glob HEADER_SIZE: int = 32;
@@ -38,7 +37,7 @@ glob EXTERNAL_REF: int = 0xFFFFFF;
 
 # --- Section constants (extended JIR format) ---
 """Magic bytes marking the start of optional TLV sections after the AST payload."""
-glob SECTIONS_MAGIC: Any = b"JIRX";
+glob SECTIONS_MAGIC: any = b"JIRX";
 
 """Section type: raw marshal.dumps(code_object) bytes."""
 glob SEC_BYTECODE: int = 0x02;
@@ -79,7 +78,7 @@ glob FLAG_BOOTSTRAP: int = 0x04;
 
 # --- Varint (LEB128) ---
 """Encode an unsigned integer as LEB128 varint, appending to buf."""
-def write_varint(buf: bytearray, value: int) -> None {
+def write_varint(buf: bytearray, value: int) {
     while value >= 0x80 {
         buf.append((value & 0x7F) | 0x80);
         value >>= 7;
@@ -135,7 +134,7 @@ def deserialize_string_pool(
 # --- Header ---
 """JIR file header (32 bytes fixed size)."""
 obj JirHeader {
-    has magic: Any = b"JIR\x00",
+    has magic: any = b"JIR\x00",
         format_version: int = FORMAT_VERSION,
         python_version: int = 0,
         jaclang_version_hash: int = 0,
@@ -303,7 +302,7 @@ def write_sections(sections: (dict[int, bytes] | None)) -> bytes {
     if not sections {
         return bytes();
     }
-    magic: Any = SECTIONS_MAGIC;
+    magic: any = SECTIONS_MAGIC;
     buf = bytearray(magic);
     for (sec_type, data) in sections.items() {
         buf.append(sec_type);
@@ -354,7 +353,7 @@ Returns None if no bytecode section is present.
 """
 def read_bytecode_only(data: bytes) -> (bytes | None) {
     try {
-        magic_bytes: Any = SECTIONS_MAGIC;
+        magic_bytes: any = SECTIONS_MAGIC;
         pos = data.find(magic_bytes, HEADER_SIZE);
         if pos < 0 {
             return None;
@@ -403,7 +402,10 @@ version (same jaclang + Python), and is newer than the source file and
 all its annex files (impl, test) and variant files (sv, cl, na).
 """
 def is_module_cache_valid(source_path: str, cache_path: Path) -> bool {
-    import from jaclang.jac0core.bccache { discover_annex_files, discover_variant_files }
+    import from jaclang.jac0core.bccache {
+        discover_annex_files,
+        discover_variant_files
+    }
     if not cache_path.exists() {
         return False;
     }

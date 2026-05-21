@@ -1,3 +1,5 @@
+import from jaclang.cli.console { console }
+
 """Get the client build directory from project config."""
 impl ViteCompiler._get_client_dir(self: ViteCompiler) -> Path {
     # Try to get from project config
@@ -67,6 +69,7 @@ impl ViteCompiler.compile_and_bundle(
 
 """Create the main entry file for Vite bundling."""
 impl ViteCompiler.create_entry_file(self: ViteCompiler, module_path: Path) -> None {
+    import from jaclang.runtimelib.react_entry { build_simple_react_entry_script }
     # Use _entry.js to avoid conflict with compiled modules that may be named main.js
     entry_file = self.compiled_dir / '_entry.js';
     if self._has_pages {
@@ -74,8 +77,7 @@ impl ViteCompiler.create_entry_file(self: ViteCompiler, module_path: Path) -> No
         entry_content = self._create_pages_entry_content(module_path);
     } else {
         # Explicit routing mode: import app from entry module (original behavior)
-        app_module_name = module_path.stem;
-        entry_content = f'import React from "react";\nimport {{ createRoot }} from "react-dom/client";\nimport {{ app as App }} from "./{app_module_name}.js";\nimport {{ JacClientErrorBoundary, ErrorFallback, __jacInstallErrorHandlers }} from "@jac/runtime";\n\n__jacInstallErrorHandlers();\nconst root = createRoot(document.getElementById("root"));\nroot.render(\n\tReact.createElement(\n\t\tJacClientErrorBoundary,{{ FallbackComponent: ErrorFallback }},\n\t\tReact.createElement(App, null)\n\t)\n);\n';
+        entry_content = build_simple_react_entry_script(module_path.stem);
     }
     entry_file.write_text(entry_content, encoding='utf-8');
 }
@@ -91,7 +93,11 @@ impl ViteCompiler._create_pages_entry_content(
         if config and config?.routing and config.routing {
             auth_redirect = config.routing.get('auth_redirect', '/login');
         }
-    } except Exception { }
+    } except Exception as e {
+        console.warning(
+            f"Failed to load routing config, using default auth_redirect='/login': {e}"
+        );
+    }
     # Check if main.jac exists and exports app (used as wrapper)
     app_module = self.compiled_dir / f"{module_path.stem}.js";
     has_app_wrapper = app_module.exists();
@@ -100,7 +106,7 @@ impl ViteCompiler._create_pages_entry_content(
     lines.append('import { createRoot } from "react-dom/client";');
     lines.append('import { BrowserRouter, Routes, Route } from "react-router-dom";');
     lines.append(
-        'import { JacClientErrorBoundary, ErrorFallback, AuthGuard, __jacInstallErrorHandlers } from "@jac/runtime";'
+        'import { JacClientErrorBoundary, ErrorFallback, AuthGuard, __jacInstallErrorHandlers, __jacReactErrorHandler } from "@jac/runtime";'
     );
     lines.append('import { routes, layouts } from "./_routes.js";');
     lines.append('');
@@ -128,7 +134,9 @@ impl ViteCompiler._create_pages_entry_content(
     lines.append(
         f'function _AuthGuardRoute() {{ return AuthGuard("{auth_redirect}"); }}'
     );
-    lines.append('const authGuardElement = React.createElement(_AuthGuardRoute, null);');
+    lines.append(
+        'const authGuardElement = React.createElement(_AuthGuardRoute, null);'
+    );
     lines.append('');
     # --- Single App component with one BrowserRouter ---
     lines.append('function App() {');
@@ -166,7 +174,7 @@ impl ViteCompiler._create_pages_entry_content(
     lines.append('const root = createRoot(document.getElementById("root"));');
     lines.append('root.render(');
     lines.append(
-        '\tReact.createElement(JacClientErrorBoundary, { FallbackComponent: ErrorFallback }, appElement)'
+        '\tReact.createElement(JacClientErrorBoundary, { FallbackComponent: ErrorFallback, onError: __jacReactErrorHandler }, appElement)'
     );
     lines.append(');');
     lines.append('');
@@ -200,10 +208,12 @@ impl ViteCompiler._copy_asset_file(
         output_path = self.compiled_dir / asset_path.name;
     }
     output_path.parent.mkdir(parents=True, exist_ok=True);
-    with contextlib.suppress(FileNotFoundError, OSError) {
+    try {
         output_path.write_text(
             asset_path.read_text(encoding='utf-8'), encoding='utf-8'
         );
+    } except (FileNotFoundError, OSError) as e {
+        console.warning(f"Failed to copy asset '{asset_path}' to '{output_path}': {e}");
     }
 }
 
@@ -338,7 +348,9 @@ impl ViteCompiler.compile_dependencies_recursively(
                 }
             }
         }
-    } except Exception { }
+    } except Exception as e {
+        console.warning(f"Failed to generate source map for '{module_path}': {e}");
+    }
     if (not manifest or not manifest.imports) {
         return;
     }
@@ -374,7 +386,9 @@ impl ViteCompiler.compile_runtime_utils(self: ViteCompiler) -> tuple[str, list[s
     (runtimeutils_js, mod, runtimeutils_manifest) = self.jac_compiler.compile_module(
         runtime_utils_path
     );
-    runtimeutils_exports_list = self.jac_compiler.extract_exports(runtimeutils_manifest);
+    runtimeutils_exports_list = self.jac_compiler.extract_exports(
+        runtimeutils_manifest
+    );
     glob_names = list(runtimeutils_manifest.globals) if runtimeutils_manifest else [];
     all_exports = sorted(
         set(runtimeutils_exports_list + self.ROUTER_EXPORTS + glob_names)
@@ -407,12 +421,16 @@ impl ViteCompiler.compile_pwa_runtime(self: ViteCompiler) -> tuple[str, list[str
 
 """Convert a .jac relative path string to .js, handling compound extensions."""
 impl ViteCompiler._jac_path_to_js(self: ViteCompiler, rel_str: str) -> str {
+    # Convert Windows backslashes to forward slashes for JS imports
+    rel_str = rel_str.replace('\\', '/');
     for compound_ext in self.COMPOUND_EXTENSIONS {
         if rel_str.endswith(compound_ext) {
             return rel_str[:-len(compound_ext)] + '.js';
         }
     }
-    return str(Path(rel_str).with_suffix('.js'));
+    result = str(Path(rel_str).with_suffix('.js'));
+    # Ensure forward slashes in the final result (Path may reintroduce backslashes on Windows)
+    return result.replace('\\', '/');
 }
 
 """Scan pages/ directory, compile page files, and generate _routes.js manifest.
@@ -515,24 +533,13 @@ impl ViteCompiler.init(
     vite_output_dir: (Path | None) = None,
     vite_minify: bool = False,
     runtime_path: (Path | None) = None,
-    compile_to_js_func:
-        (Callable[([Path], tuple[(str, (ModuleType | None))])] | None) = None,
-    extract_exports_func: (Callable[([Any], list[str])] | None) = None,
-    extract_globals_func:
-        (Callable[([Any, ModuleType], dict[(str, Any)])] | None) = None
+    compile_to_js_func: Callable[([Path], tuple[(str, (ModuleType | None))])],
+    extract_exports_func: Callable[([any], list[str])],
+    extract_globals_func: Callable[([any, ModuleType], dict[(str, Any)])]
 ) {
     if (not vite_package_json or not vite_package_json.exists()) {
         raise ClientBundleError(
             'Vite package.json not found. Set vite_package_json when using ViteCompiler'
-        );
-    }
-    if (
-        (compile_to_js_func is None)
-        or (extract_exports_func is None)
-        or (extract_globals_func is None)
-    ) {
-        raise ClientBundleError(
-            'compile_to_js_func, extract_exports_func, and extract_globals_func are required'
         );
     }
     self.vite_package_json = vite_package_json;

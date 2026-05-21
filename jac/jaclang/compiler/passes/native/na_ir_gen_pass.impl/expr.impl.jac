@@ -1,9 +1,18 @@
 """Expression codegen: binary, unary, comparisons, bool expressions."""
-"""Generate IR for an expression, returning the resulting value."""
+import os;
+"""Generate IR for an expression, returning the resulting value.
+
+Sets val.jac_loc = "file:line" on every non-None result so that downstream
+helpers (_coerce_type, _box_value_tuple, etc.) can attribute RC allocations
+to the originating source line without needing a loc parameter.
+"""
 impl NaIRGenPass._codegen_expr(nd: (uni.UniNode | None)) -> (ir.Value | None) {
     if nd is None {
         return None;
     }
+    _jac_loc: str = f"{os.path.basename(self.ir_in.loc.mod_path)}:{nd.loc.first_line
+        if nd.loc
+        else 0}";
     if isinstance(nd, uni.Int) {
         # Handle hex, octal, binary literals based on name attribute
         tok_name = nd?.name;
@@ -27,67 +36,227 @@ impl NaIRGenPass._codegen_expr(nd: (uni.UniNode | None)) -> (ir.Value | None) {
     if isinstance(nd, uni.Null) {
         return ir.Constant(ir.IntType(8).as_pointer(), None);
     }
+    # Unwrap CfgExpr (CFG-participating wrapper) to its inner expression.
+    # CfgExpr nodes are introduced by cfg_build_pass to wrap BoolExpr operands
+    # and IfElseExpr branches; native codegen treats them transparently.
+    if isinstance(nd, uni.CfgExpr) {
+        return self._codegen_expr(nd.expr);
+    }
+    _result: (ir.Value | None) = None;
     if isinstance(nd, uni.Name) {
-        return self._codegen_name(nd);
+        _result = self._codegen_name(nd);
+    } elif isinstance(nd, uni.BinaryExpr) {
+        _result = self._codegen_binary(nd);
+    } elif isinstance(nd, uni.CompareExpr) {
+        _result = self._codegen_compare(nd);
+    } elif isinstance(nd, uni.UnaryExpr) {
+        _result = self._codegen_unary(nd);
+    } elif isinstance(nd, uni.FuncCall) {
+        _call_result = self._codegen_call(nd);
+        if _call_result is not None and isinstance(_call_result.type, ir.PointerType) {
+            self._mark_owned(_call_result);
+        }
+        _result = _call_result;
+    } elif isinstance(nd, uni.AtomTrailer) {
+        _result = self._codegen_atom_trailer(nd);
+    } elif isinstance(nd, uni.BoolExpr) {
+        _result = self._codegen_bool_expr(nd);
+    } elif isinstance(nd, uni.IfElseExpr) {
+        _result = self._codegen_if_else_expr(nd);
+    } elif isinstance(nd, uni.MultiString) {
+        _result = self._codegen_multistring(nd);
+    } elif isinstance(nd, uni.String) {
+        _result = self._codegen_string(nd);
+    } elif isinstance(nd, uni.FString) {
+        _result = self._codegen_fstring(nd);
+    } elif isinstance(nd, uni.ListVal) {
+        _result = self._codegen_list_val(nd);
+        # Check dict and set comprehensions BEFORE list comprehension
+        # (DictCompr and SetCompr do NOT inherit from ListCompr)
+    } elif isinstance(nd, uni.DictCompr) {
+        _result = self._codegen_dict_compr(nd);
+    } elif isinstance(nd, uni.SetCompr) {
+        _result = self._codegen_set_compr(nd);
+    } elif isinstance(nd, uni.ListCompr) {
+        _result = self._codegen_list_compr(nd);
+    } elif isinstance(nd, uni.TupleVal) {
+        _result = self._codegen_tuple_val(nd);
+    } elif isinstance(nd, uni.DictVal) {
+        _result = self._codegen_dict_val(nd);
+    } elif isinstance(nd, uni.SetVal) {
+        _result = self._codegen_set_val(nd);
+        # Handle parenthesized expressions: (expr) → AtomUnit
+    } elif isinstance(nd, uni.AtomUnit) {
+        _result = self._codegen_expr(nd.value);
+        # Lambda expressions: emit an anonymous LLVM function and return
+        # a function pointer to it.
+    } elif isinstance(nd, uni.LambdaExpr) {
+        _result = self._codegen_lambda(nd);
+    } elif (
+        isinstance(nd, uni.Slice)
+        or isinstance(nd, uni.IndexSlice)
+        or isinstance(nd, uni.KVPair)
+        or isinstance(nd, uni.KWPair)
+        or isinstance(nd, uni.InnerCompr)
+        or isinstance(nd, uni.FormattedValue)
+    ) {
+        # Container/wrapper nodes — callers walk into them and call
+        # _codegen_expr on the inner pieces (e.g. slice.start). When
+        # one of these flows in directly, the convention is to return
+        # None so the caller can fall back. NOT an error.
+    } else {
+        # Catch-all: any expression node we didn't recognize is a real
+        # gap, not a no-op. Emit a structured error so silent-failure
+        # bugs (yield, await, flow/wait, edge refs, JSX, ...) become
+        # loud at compile time instead of returning 0 at runtime.
+        self.emit(E5090, node_override=nd, kind="expression", name=type(nd).__name__);
     }
-    if isinstance(nd, uni.BinaryExpr) {
-        return self._codegen_binary(nd);
+    # Stamp source location on every produced value so downstream helpers
+    # (_coerce_type clib.box path, _box_value_tuple) can attribute RC
+    # allocations without needing a loc parameter threaded through.
+    if _result is not None {
+        _result.jac_loc = _jac_loc;
     }
-    if isinstance(nd, uni.CompareExpr) {
-        return self._codegen_compare(nd);
+    return _result;
+}
+
+"""Collect free variable names referenced in a lambda body that are not
+in the lambda's own parameter list. Walks the AST looking for Name nodes.
+"""
+impl NaIRGenPass._find_free_vars(body: object, param_names: list[str]) -> list[str] {
+    free: list[str] = [];
+    seen: set[str] = set(param_names);
+    stack: list = [body] if not isinstance(body, list) else list(body);
+    while stack {
+        cur = stack.pop();
+        if cur is None {
+            continue;
+        }
+        if isinstance(cur, uni.Name) {
+            vname = cur.value;
+            if vname not in seen and vname in self.local_vars {
+                seen.add(vname);
+                free.append(vname);
+            }
+            continue;
+        }
+        # Walk children via kid list
+        if cur?.kid and cur.kid {
+            for child in cur.kid {
+                stack.append(child);
+            }
+        }
     }
-    if isinstance(nd, uni.UnaryExpr) {
-        return self._codegen_unary(nd);
+    return free;
+}
+
+"""Generate IR for a lambda expression.
+
+Emits an anonymous LLVM function from the lambda body and returns a
+pointer to it. If the lambda references variables from the enclosing
+scope (free variables), those are appended as extra hidden parameters
+to the anonymous function, and the call site injects them automatically
+via the lambda_captures side table.
+"""
+impl NaIRGenPass._codegen_lambda(nd: uni.LambdaExpr) -> (ir.Value | None) {
+    # --- Resolve parameter types and return type from the signature ---
+    sig = nd.signature;
+    param_types: list[ir.Type] = [];
+    param_names: list[str] = [];
+    if sig is not None and sig.params {
+        for p in sig.params {
+            p_name = p.name.value if p?.name and p.name else f"arg{len(param_names)}";
+            p_type = self._resolve_jac_type(p.type_tag)
+                if p?.type_tag and p.type_tag
+                else ir.IntType(64);
+            param_types.append(p_type);
+            param_names.append(p_name);
+        }
     }
-    if isinstance(nd, uni.FuncCall) {
-        return self._codegen_call(nd);
+    ret_type = ir.IntType(64);  # default
+    if sig is not None and sig.return_type is not None {
+        ret_type = self._resolve_jac_type(sig.return_type);
     }
-    if isinstance(nd, uni.AtomTrailer) {
-        return self._codegen_atom_trailer(nd);
+    # --- Detect captured (free) variables from the enclosing scope ---
+    captures: list[tuple] = [];  # list of (name, ir.Value, ir.Type)
+    free_var_names = self._find_free_vars(nd.body, param_names);
+    for fv_name in free_var_names {
+        if fv_name in self.local_vars {
+            alloca = self.local_vars[fv_name];
+            val = self.builder.load(alloca, name=f"cap.{fv_name}");
+            captures.append((fv_name, val, val.type));
+        }
     }
-    if isinstance(nd, uni.BoolExpr) {
-        return self._codegen_bool_expr(nd);
+    # Build the full parameter list: explicit params + captured vars
+    all_param_types = list(param_types);
+    all_param_names = list(param_names);
+    for (cap_name, _cap_val, cap_type) in captures {
+        all_param_types.append(cap_type);
+        all_param_names.append(cap_name);
     }
-    if isinstance(nd, uni.IfElseExpr) {
-        return self._codegen_if_else_expr(nd);
+    # --- Create the anonymous function ---
+    self._str_count += 1;
+    anon_name = f"__jac_lambda_{self._str_count}";
+    fn_type = ir.FunctionType(ret_type, all_param_types);
+    anon_fn = ir.Function(self.llvm_module, fn_type, name=anon_name);
+    anon_fn.linkage = "private";
+    for (i, arg) in enumerate(anon_fn.args) {
+        if i < len(all_param_names) {
+            arg.name = all_param_names[i];
+        }
     }
-    if isinstance(nd, uni.MultiString) {
-        return self._codegen_multistring(nd);
+    # --- Emit the lambda body ---
+    saved_builder = self.builder;
+    saved_locals = self.local_vars;
+    saved_func_symtab = dict(self.func_symtab);
+    entry_bb = anon_fn.append_basic_block("entry");
+    self.builder = ir.IRBuilder(entry_bb);
+    self.local_vars = {};
+    # Allocate ALL parameters (explicit + captured) as local variables
+    for (i, arg) in enumerate(anon_fn.args) {
+        alloca = self._entry_alloca(arg.type, all_param_names[i]);
+        self.builder.store(arg, alloca);
+        self.local_vars[all_param_names[i]] = alloca;
     }
-    if isinstance(nd, uni.String) {
-        return self._codegen_string(nd);
+    # Codegen the body
+    body = nd.body;
+    if isinstance(body, list) {
+        self._codegen_body(body);
+    } else {
+        val = self._codegen_expr(body);
+        if val is not None {
+            self.builder.ret(self._coerce_type(val, ret_type));
+        } else {
+            self.builder.ret(ir.Constant(ret_type, 0));
+        }
     }
-    if isinstance(nd, uni.FString) {
-        return self._codegen_fstring(nd);
+    # Ensure every basic block has a terminator
+    for bb in anon_fn.basic_blocks {
+        if not bb.is_terminated {
+            term_builder = ir.IRBuilder(bb);
+            if ret_type == ir.VoidType() {
+                term_builder.ret_void();
+            } else {
+                term_builder.ret(ir.Constant(ret_type, 0));
+            }
+        }
     }
-    if isinstance(nd, uni.ListVal) {
-        return self._codegen_list_val(nd);
+    # --- Restore parent context ---
+    self.builder = saved_builder;
+    self.local_vars = saved_locals;
+    self.func_symtab = saved_func_symtab;
+    # --- Record pending captures for the assignment to associate with a var name ---
+    if captures {
+        capture_info: list[tuple] = [];
+        for (cap_name, _cap_val, _cap_type) in captures {
+            # Store the alloca (not the loaded value) so it can be loaded at call time
+            capture_info.append((cap_name, self.local_vars[cap_name]));
+        }
+        self._pending_lambda_captures = capture_info;
+    } else {
+        self._pending_lambda_captures = None;
     }
-    # Check dict and set comprehensions BEFORE list comprehension
-    # (DictCompr and SetCompr do NOT inherit from ListCompr)
-    if isinstance(nd, uni.DictCompr) {
-        return self._codegen_dict_compr(nd);
-    }
-    if isinstance(nd, uni.SetCompr) {
-        return self._codegen_set_compr(nd);
-    }
-    if isinstance(nd, uni.ListCompr) {
-        return self._codegen_list_compr(nd);
-    }
-    if isinstance(nd, uni.TupleVal) {
-        return self._codegen_tuple_val(nd);
-    }
-    if isinstance(nd, uni.DictVal) {
-        return self._codegen_dict_val(nd);
-    }
-    if isinstance(nd, uni.SetVal) {
-        return self._codegen_set_val(nd);
-    }
-    # Handle parenthesized expressions: (expr) → AtomUnit
-    if isinstance(nd, uni.AtomUnit) {
-        return self._codegen_expr(nd.value);
-    }
-    return None;
+    return anon_fn;
 }
 
 """Load a variable or return a function reference."""
@@ -114,13 +283,43 @@ impl NaIRGenPass._codegen_name(nd: uni.Name) -> (ir.Value | None) {
 
 """Generate binary expression."""
 impl NaIRGenPass._codegen_binary(nd: uni.BinaryExpr) -> (ir.Value | None) {
+    op = nd.op.name if isinstance(nd.op, uni.Token) else str(nd.op);
+    # Inspect the op before recursing into operands. Some operators
+    # (walrus `:=`, pipe-forward `|>`) have non-standard evaluation
+    # semantics: their left side is a binding target, not an rvalue.
+    # Trying to evaluate `nd.left` first would return None, and the
+    # function would silently exit returning None — masking the real
+    # gap. Catch known-unsupported ops here so the error is loud.
+    if op in (Tok.WALRUS_EQ, Tok.PIPE_FWD) {
+        self.emit(E5090, node_override=nd, kind="binary operator", name=op);
+        return None;
+    }
     left = self._codegen_expr(nd.left);
     right = self._codegen_expr(nd.right);
     if left is None or right is None {
         return None;
     }
-    op = nd.op.name if isinstance(nd.op, uni.Token) else str(nd.op);
-    return self._emit_binary_op(op, left, right);
+    result = self._emit_binary_op(op, left, right);
+    # RC: for string concatenation (i8* + i8*), _emit_binary_op creates a new
+    # owned buffer and returns it.  The input operands are borrowed — if the
+    # caller owns them (e.g. freshly-allocated fstring or prior concat result),
+    # release them here.  Mirrors the same release pattern in _codegen_multistring.
+    if result is not None {
+        i8p = ir.IntType(8).as_pointer();
+        if op == Tok.PLUS and left.type == i8p and right.type == i8p {
+            if self._is_owned(left) {
+                self._emit_rc_release_typed(
+                    left, op="binop_lhs", loc=getattr(left, 'jac_loc', '')
+                );
+            }
+            if self._is_owned(right) {
+                self._emit_rc_release_typed(
+                    right, op="binop_rhs", loc=getattr(right, 'jac_loc', '')
+                );
+            }
+        }
+    }
+    return result;
 }
 
 """Generate comparison expression."""
@@ -133,6 +332,9 @@ impl NaIRGenPass._codegen_compare(nd: uni.CompareExpr) -> (ir.Value | None) {
     if right is None {
         return None;
     }
+    # Save originals before any type coercions (bitcast/promote) for cleanup.
+    _cmp_left_orig = left;
+    _cmp_right_orig = right;
     op = nd.ops[0].name if isinstance(nd.ops[0], uni.Token) else str(nd.ops[0]);
     # Handle "in" operator for dicts and sets: left in right
     if op == Tok.KW_IN or op == Tok.KW_NIN {
@@ -362,7 +564,24 @@ impl NaIRGenPass._codegen_compare(nd: uni.CompareExpr) -> (ir.Value | None) {
             if left.type != right.type {
                 right = self.builder.bitcast(right, left.type);
             }
-            return self.builder.icmp_unsigned("==", left, right, name="is.eq");
+            _is_result = self.builder.icmp_unsigned("==", left, right, name="is.eq");
+            if isinstance(_cmp_left_orig.type, ir.PointerType)
+            and self._is_owned(_cmp_left_orig) {
+                self._emit_rc_release_simple(
+                    _cmp_left_orig,
+                    op="cmp_is",
+                    loc=getattr(_cmp_left_orig, 'jac_loc', '')
+                );
+            }
+            if isinstance(_cmp_right_orig.type, ir.PointerType)
+            and self._is_owned(_cmp_right_orig) {
+                self._emit_rc_release_simple(
+                    _cmp_right_orig,
+                    op="cmp_is",
+                    loc=getattr(_cmp_right_orig, 'jac_loc', '')
+                );
+            }
+            return _is_result;
         }
         # i64 is None: compare against -1 sentinel (for optional enum/int)
         if isinstance(left.type, ir.IntType)
@@ -378,7 +597,24 @@ impl NaIRGenPass._codegen_compare(nd: uni.CompareExpr) -> (ir.Value | None) {
             if left.type != right.type {
                 right = self.builder.bitcast(right, left.type);
             }
-            return self.builder.icmp_unsigned("!=", left, right, name="is.ne");
+            _isn_result = self.builder.icmp_unsigned("!=", left, right, name="is.ne");
+            if isinstance(_cmp_left_orig.type, ir.PointerType)
+            and self._is_owned(_cmp_left_orig) {
+                self._emit_rc_release_simple(
+                    _cmp_left_orig,
+                    op="cmp_isn",
+                    loc=getattr(_cmp_left_orig, 'jac_loc', '')
+                );
+            }
+            if isinstance(_cmp_right_orig.type, ir.PointerType)
+            and self._is_owned(_cmp_right_orig) {
+                self._emit_rc_release_simple(
+                    _cmp_right_orig,
+                    op="cmp_isn",
+                    loc=getattr(_cmp_right_orig, 'jac_loc', '')
+                );
+            }
+            return _isn_result;
         }
         # i64 is not None: compare against -1 sentinel (for optional enum/int)
         if isinstance(left.type, ir.IntType)
@@ -393,7 +629,20 @@ impl NaIRGenPass._codegen_compare(nd: uni.CompareExpr) -> (ir.Value | None) {
     if is_float {
         (left, right) = self._promote_to_float(left, right);
     }
-    return self._emit_comparison(op, left, right, is_float);
+    _cmp_result = self._emit_comparison(op, left, right, is_float);
+    if isinstance(_cmp_left_orig.type, ir.PointerType)
+    and self._is_owned(_cmp_left_orig) {
+        self._emit_rc_release_simple(
+            _cmp_left_orig, op="cmp_op", loc=getattr(_cmp_left_orig, 'jac_loc', '')
+        );
+    }
+    if isinstance(_cmp_right_orig.type, ir.PointerType)
+    and self._is_owned(_cmp_right_orig) {
+        self._emit_rc_release_simple(
+            _cmp_right_orig, op="cmp_op", loc=getattr(_cmp_right_orig, 'jac_loc', '')
+        );
+    }
+    return _cmp_result;
 }
 
 """Generate unary expression."""

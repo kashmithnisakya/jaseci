@@ -245,6 +245,9 @@ impl UnparsePass.exit_import(nd: uni.Import) -> None {
     } else {
         parts.append("import");
     }
+    if nd.is_typed {
+        parts.append("type");
+    }
     items = self._comma_sep(nd.items);
     if nd.from_loc {
         parts.append("from");
@@ -367,7 +370,9 @@ impl UnparsePass.exit_enum(nd: uni.Enum) -> None {
         parts.append(nd.access.gen.jac);
     }
     parts.append(nd.name.gen.jac);
-    if nd.base_classes {
+    if nd.value_type {
+        parts.append(": " + nd.value_type.gen.jac);
+    } elif nd.base_classes {
         parts.append("(" + self._comma_sep(nd.base_classes) + ")");
     }
     if nd.body {
@@ -499,7 +504,7 @@ impl UnparsePass.exit_param_var(nd: uni.ParamVar) -> None {
     }
     result = result + nd.name.gen.jac;
     if nd.type_tag {
-        result = result + " " + nd.type_tag.gen.jac;
+        result = result + nd.type_tag.gen.jac;
     }
     if nd.value {
         result = result + " = " + nd.value.gen.jac;
@@ -525,7 +530,7 @@ impl UnparsePass.exit_arch_has(nd: uni.ArchHas) -> None {
 impl UnparsePass.exit_has_var(nd: uni.HasVar) -> None {
     result = nd.name.gen.jac;
     if nd.type_tag {
-        result = result + " " + nd.type_tag.gen.jac;
+        result = result + nd.type_tag.gen.jac;
     }
     if nd.value {
         result = result + " = " + nd.value.gen.jac;
@@ -762,6 +767,11 @@ impl UnparsePass.exit_await_expr(nd: uni.AwaitExpr) -> None {
     nd.gen.jac = "await " + nd.target.gen.jac;
 }
 
+"""CastExpr: value as cast_type"""
+impl UnparsePass.exit_cast_expr(nd: uni.CastExpr) -> None {
+    nd.gen.jac = nd.value.gen.jac + " as " + nd.cast_type.gen.jac;
+}
+
 """GlobalStmt: global names ;"""
 impl UnparsePass.exit_global_stmt(nd: uni.GlobalStmt) -> None {
     nd.gen.jac = "global " + self._comma_sep(nd.target) + ";";
@@ -825,6 +835,11 @@ impl UnparsePass.exit_compare_expr(nd: uni.CompareExpr) -> None {
         result = result + " " + nd.ops[i].gen.jac + " " + nd.rights[i].gen.jac;
     }
     nd.gen.jac = result;
+}
+
+"""CfgExpr: propagate inner expression's unparsed source."""
+impl UnparsePass.exit_cfg_expr(nd: uni.CfgExpr) -> None {
+    nd.gen.jac = nd.expr.gen.jac;
 }
 
 """BoolExpr: expr1 op expr2 op expr3."""
@@ -1149,6 +1164,24 @@ impl UnparsePass.exit_jsx_text(nd: uni.JsxText) -> None {
 """JsxExpression."""
 impl UnparsePass.exit_jsx_expression(nd: uni.JsxExpression) -> None {
     nd.gen.jac = nd.expr.gen.jac;
+}
+
+"""JsxSlot: statement-form `{...}` slot — emit each kid in order so the
+raw `{ stmt; stmt; ... }` shape round-trips through the formatter."""
+impl UnparsePass.exit_jsx_slot(nd: uni.JsxSlot) -> None {
+    parts: list[str] = [];
+    for k in nd.kid {
+        s = k.gen.jac;
+        if s is not None {
+            parts.append(s);
+        }
+    }
+    nd.gen.jac = "".join(parts);
+}
+
+"""JsxComment: emit the raw `{#* ... *#}` text verbatim."""
+impl UnparsePass.exit_jsx_comment(nd: uni.JsxComment) -> None {
+    nd.gen.jac = nd.value.value if isinstance(nd.value, uni.Token) else str(nd.value);
     # ── Match / Switch ───────────────────────────────────────────────────
 }
 

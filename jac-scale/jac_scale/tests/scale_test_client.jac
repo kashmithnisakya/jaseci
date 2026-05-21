@@ -18,7 +18,6 @@ import glob;
 import tempfile;
 import contextlib;
 import from pathlib { Path }
-import from typing { Any }
 
 import from jaclang { JacRuntime as Jac }
 import from jaclang.jac0core.constant { Constants as Con }
@@ -39,13 +38,13 @@ def make_client(fixture_file: str = "test_api.jac") -> ScaleTestClient {
 }
 
 """Extract data from TransportResponse envelope format."""
-def extract_data(json_response: dict[str, Any]) -> dict[str, Any] {
+def extract_data(json_response: dict[str, any]) -> dict[str, any] {
     if isinstance(json_response, dict) and "ok" in json_response {
         if json_response.get("ok") and json_response.get("data") is not None {
             return json_response["data"];
         } elif not json_response.get("ok") and json_response.get("error") {
             error_info = json_response["error"];
-            result: dict[str, Any] = {
+            result: dict[str, any] = {
                 "error": error_info.get("message", "Unknown error")
             };
             if "code" in error_info {
@@ -61,8 +60,8 @@ def extract_data(json_response: dict[str, Any]) -> dict[str, Any] {
 obj ScaleTestClient {
     has _jac_file: str,
         _base_path: str,
-        _server: Any | None = None,
-        _client: Any | None = None,
+        _server: any | None = None,
+        _client: any | None = None,
         _tmp_dir: str | None = None;
 
     """Create test client from a .jac file path."""
@@ -80,7 +79,7 @@ obj ScaleTestClient {
     }
 
     """Initialize the jac-scale server and Starlette TestClient."""
-    def _initialize -> None {
+    def _initialize {
         import from starlette.testclient { TestClient }
         import from jac_scale.serve { JacAPIServer }
 
@@ -108,13 +107,8 @@ obj ScaleTestClient {
         self._server.load_module();
 
         # Register all endpoints (same as start() but without run_server)
-        self._server.register_create_user_endpoint();
-        self._server.register_login_endpoint();
-        self._server.register_refresh_token_endpoint();
-        self._server.register_update_username_endpoint();
-        self._server.register_update_password_endpoint();
-        self._server.register_sso_endpoints();
-        self._server.register_api_key_endpoints();
+        self._server.register_health_endpoint();
+        self._server.register_auth_endpoints();
         self._server.register_graph_endpoint();
         self._server.register_admin_endpoints();
         self._server.register_llm_telemetry_endpoints();
@@ -124,7 +118,9 @@ obj ScaleTestClient {
         self._server.register_static_file_endpoint();
         self._server.register_page_endpoint();
         self._server.register_client_js_endpoint();
-        self._server.user_manager.create_user(Con.GUEST.value, '__no_password__');
+        self._server.user_manager.create_internal_user(
+            Con.GUEST.value, '__no_password__'
+        );
 
         # Execute endpoint registration (compiles JEndPoints into FastAPI routes)
         self._server.server.create_server();
@@ -139,27 +135,24 @@ obj ScaleTestClient {
     def get(
         path: str,
         headers: dict[str, str] | None = None,
-        params: dict[str, Any] | None = None,
+        params: dict[str, any] | None = None,
         allow_redirects: bool = True
-    ) -> Any {
+    ) -> any {
         return self._client.get(
-            path,
-            headers=headers or {},
-            params=params,
-            follow_redirects=allow_redirects
+            path, headers=headers or {}, params=params, follow_redirects=allow_redirects
         );
     }
 
     """Make a POST request with JSON body."""
     def post(
         path: str,
-        json: dict[str, Any] | None = None,
+        json: dict[str, any] | None = None,
         headers: dict[str, str] | None = None,
-        data: dict[str, Any] | None = None,
+        data: dict[str, any] | None = None,
         content: str | bytes | None = None,
-        files: Any | None = None
-    ) -> Any {
-        kwargs: dict[str, Any] = {"headers": headers or {}};
+        files: any | None = None
+    ) -> any {
+        kwargs: dict[str, any] = {"headers": headers or {}};
         if json is not None {
             kwargs["json"] = json;
         }
@@ -178,25 +171,38 @@ obj ScaleTestClient {
     """Make a PUT request with JSON body."""
     def put(
         path: str,
-        json: dict[str, Any] | None = None,
+        json: dict[str, any] | None = None,
         headers: dict[str, str] | None = None
-    ) -> Any {
+    ) -> any {
         return self._client.put(path, json=json, headers=headers or {});
     }
 
     """Make a DELETE request."""
-    def delete(path: str, headers: dict[str, str] | None = None) -> Any {
+    def delete(path: str, headers: dict[str, str] | None = None) -> any {
         return self._client.delete(path, headers=headers or {});
     }
 
-    """Register a user and return (username, token) tuple."""
+    """Register a user and return (user_id, message) tuple.
+    If the user already exists, returns the username as user_id."""
     def register_user(username: str, password: str) -> tuple[str, str] {
         response = self.post(
-            "/user/register", json={"username": username, "password": password}
+            "/user/register",
+            json={
+                "identities": [{"type": "username", "value": username}],
+                "credential": {"type": "password", "password": password}
+            }
         );
         data = response.json();
         if data.get("ok") and data.get("data") {
-            return (data["data"]["username"], data["data"]["token"]);
+            return (
+                data["data"].get("user_id", username),
+                data["data"].get("message", "")
+            );
+        }
+        # If user already exists, treat as success
+        error = data.get("error", {});
+        if error.get("code") == "IDENTITY_TAKEN" {
+            return (username, "User already exists");
         }
         raise RuntimeError(f"User registration failed: {data}");
     }
@@ -204,7 +210,11 @@ obj ScaleTestClient {
     """Login a user and return the token."""
     def login_user(username: str, password: str) -> str {
         response = self.post(
-            "/user/login", json={"username": username, "password": password}
+            "/user/login",
+            json={
+                "identity": {"type": "username", "value": username},
+                "credential": {"type": "password", "password": password}
+            }
         );
         data = response.json();
         if data.get("ok") and data.get("data") and "token" in data["data"] {
@@ -247,18 +257,18 @@ obj ScaleTestClient {
 
     """Get the underlying server instance."""
     @property
-    def server -> Any {
+    def server -> any {
         return self._server;
     }
 
     """Get the underlying Starlette TestClient."""
     @property
-    def raw_client -> Any {
+    def raw_client -> any {
         return self._client;
     }
 
     """Cleanup resources."""
-    def close -> None {
+    def close {
         if self._client {
             self._client.close();
             self._client = None;

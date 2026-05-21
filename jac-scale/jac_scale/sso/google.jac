@@ -6,7 +6,6 @@ This module implements the SSOProvider interface for Google OAuth authentication
 import from fastapi { Request, Response }
 import from fastapi_sso.sso.google { GoogleSSO }
 import from jac_scale.sso.provider { SSOProvider, SSOUserInfo }
-import from jac_scale.enums { Platforms }
 
 """Google OAuth SSO Provider.
 
@@ -21,7 +20,7 @@ obj GoogleSSOProvider(SSOProvider) {
         _google_sso: (GoogleSSO | None) = None;
 
     """Initialize the Google SSO provider."""
-    def postinit -> None {
+    def postinit {
         self._google_sso = GoogleSSO(
             client_id=self.client_id,
             client_secret=self.client_secret,
@@ -63,21 +62,20 @@ obj GoogleSSOProvider(SSOProvider) {
 
         with self._google_sso {
             user_info = await self._google_sso.verify_and_process(request);
+            if user_info is None {
+                raise RuntimeError("Google SSO verification returned no user info");
+            }
+            if user_info.email is None or user_info.id is None {
+                raise RuntimeError("Google SSO user info is missing email or id");
+            }
             return SSOUserInfo(
-                email=user_info.email,
-                external_id=user_info.id,
-                platform=self.get_platform_name(),
-                display_name=user_info?.display_name
+                email=str(user_info.email),
+                external_id=str(user_info.id),
+                display_name=user_info.display_name,
+                first_name=user_info.first_name,
+                last_name=user_info.last_name,
+                picture=user_info.picture
             );
         }
-    }
-
-    """Get the platform identifier.
-
-    Returns:
-        str: 'google'
-    """
-    def get_platform_name -> str {
-        return Platforms.GOOGLE.value;
     }
 }

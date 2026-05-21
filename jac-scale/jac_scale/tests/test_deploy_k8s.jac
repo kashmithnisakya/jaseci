@@ -24,6 +24,7 @@ import from jac_scale.factories.database_factory { DatabaseProviderFactory }
 import from jac_scale.factories.utility_factory { UtilityFactory }
 import from jac_scale.targets.kubernetes.kubernetes_config { KubernetesConfig }
 import from jac_scale.targets.kubernetes.ingress { IngressDeployer }
+import from jac_scale.targets.kubernetes.hpa.hpa { create_hpa }
 
 """Get current git repository URL, branch, and commit hash.
 
@@ -168,7 +169,7 @@ def _get_git_config -> tuple[str, str, str] {
 def _request_with_retry(
     method: str,
     url: str,
-    json: dict[str, Any] | None = None,
+    json: dict[str, any] | None = None,
     timeout: int = 10,
     max_retries: int = 60,
     retry_interval: float = 2.0
@@ -314,7 +315,9 @@ test "deploy all in one" {
     assert "password" in mongodb_secret.data;
     assert base64.b64decode(mongodb_secret.data["username"]).decode() == "admin";
     assert base64.b64decode(mongodb_secret.data["password"]).decode() == "password";
-    print(f"MongoDB Secret '{app_name}-mongodb-secret' exists with correct credentials");
+    print(
+        f"MongoDB Secret '{app_name}-mongodb-secret' exists with correct credentials"
+    );
 
     # Validate MongoDB StatefulSet uses secretKeyRef (env value is None when secretKeyRef is used)
     mongo_user_value = next(
@@ -409,8 +412,31 @@ test "deploy all in one" {
         None
     );
     assert ri_proxy_path_env == "/cache-dashboard";
+    ri_username_env = next(
+        (
+            e
+            for e in insight_container.env
+            if e.name == "RI_REDIS_USERNAME"
+        ),
+        None
+    );
+    assert ri_username_env is not None , "RI_REDIS_USERNAME env var must be set";
+    assert ri_username_env.value_from is not None , "RI_REDIS_USERNAME must use secretKeyRef";
+    assert ri_username_env.value_from.secret_key_ref.key == "username";
+    ri_password_env = next(
+        (
+            e
+            for e in insight_container.env
+            if e.name == "RI_REDIS_PASSWORD"
+        ),
+        None
+    );
+    assert ri_password_env is not None , "RI_REDIS_PASSWORD env var must be set";
+    assert ri_password_env.value_from is not None , "RI_REDIS_PASSWORD must use secretKeyRef";
+    assert ri_password_env.value_from.secret_key_ref.key == "password";
     print(
-        f"RedisInsight Deployment '{insight_name}' exists with RI_REDIS_HOST/PORT pre-configured and RIPROXYPATH=/cache-dashboard"
+        f"RedisInsight Deployment '{insight_name}' exists with RI_REDIS_HOST/PORT pre-configured, "
+        f"RI_REDIS_USERNAME/PASSWORD from secret, and RIPROXYPATH=/cache-dashboard"
     );
 
     insight_service = core_v1.read_namespaced_service(
@@ -596,7 +622,9 @@ test "deploy all in one" {
     print(f"kube-state-metrics ClusterRoleBinding '{cluster_role_name}' exists");
 
     # Validate node-exporter DaemonSet and Service
-    ne_daemonset = apps_v1.read_namespaced_daemon_set(name=ne_name, namespace=namespace);
+    ne_daemonset = apps_v1.read_namespaced_daemon_set(
+        name=ne_name, namespace=namespace
+    );
     assert ne_daemonset.metadata.name == ne_name;
     print(f"node-exporter DaemonSet '{ne_name}' exists");
 
@@ -703,6 +731,37 @@ test "deploy all in one" {
         f"HPA verified: min_replicas={hpa.spec.min_replicas}, max_replicas={hpa.spec.max_replicas}, cpu_target=50%"
     );
 
+    # Validate HPA is updated on redeploy (not silently ignored)
+    create_hpa(
+        namespace=namespace,
+        deployment_name=app_name,
+        min_replicas=2,
+        max_replicas=5,
+        cpu_target=70
+    );
+    hpa_updated = autoscaling_v2.read_namespaced_horizontal_pod_autoscaler(
+        name=f"{app_name}-hpa", namespace=namespace
+    );
+    assert hpa_updated.spec.min_replicas == 2 , f"Expected min_replicas=2, got {hpa_updated.spec.min_replicas}";
+    assert hpa_updated.spec.max_replicas == 5 , f"Expected max_replicas=5, got {hpa_updated.spec.max_replicas}";
+    assert hpa_updated.spec.metrics[0].resource.target.average_utilization == 70 , (
+        f"Expected cpu_target=70, got {hpa_updated.spec.metrics[
+            0
+        ].resource.target.average_utilization}"
+    );
+    print(
+        f"HPA update verified: min_replicas={hpa_updated.spec.min_replicas}, max_replicas={hpa_updated.spec.max_replicas}, cpu_target=70%"
+    );
+
+    # Restore original HPA values for remaining tests
+    create_hpa(
+        namespace=namespace,
+        deployment_name=app_name,
+        min_replicas=1,
+        max_replicas=3,
+        cpu_target=50
+    );
+
     # Validate NGINX Ingress controller resources
     nginx_controller_name = f"{app_name}-ingress-nginx";
     nginx_cluster_resource_name = f"{namespace}-{nginx_controller_name}";
@@ -777,13 +836,83 @@ test "deploy all in one" {
     assert "/db-dashboard" in ingress_paths , f"Main ingress must route '/db-dashboard'; got paths: {ingress_paths}";
     print(f"Main Ingress '{ingress_name}' exists with routes: {ingress_paths}");
 
+    # Validate rate limiting annotations are present with correct default values
+    ingress_annotations = main_ingress.metadata.annotations or {};
+    assert ingress_annotations.get("nginx.ingress.kubernetes.io/limit-rps") == "20" , (
+        f"Expected limit-rps=20, got: {ingress_annotations.get(
+            'nginx.ingress.kubernetes.io/limit-rps'
+        )}"
+    );
+    assert ingress_annotations.get(
+        "nginx.ingress.kubernetes.io/limit-burst-multiplier"
+    ) == "5" , (
+        f"Expected limit-burst-multiplier=5, got: {ingress_annotations.get(
+            'nginx.ingress.kubernetes.io/limit-burst-multiplier'
+        )}"
+    );
+    assert ingress_annotations.get("nginx.ingress.kubernetes.io/limit-connections") == "20" , (
+        f"Expected limit-connections=20, got: {ingress_annotations.get(
+            'nginx.ingress.kubernetes.io/limit-connections'
+        )}"
+    );
+    assert ingress_annotations.get(
+        "nginx.ingress.kubernetes.io/limit-req-status-code"
+    ) == "429" , (
+        f"Expected limit-req-status-code=429, got: {ingress_annotations.get(
+            'nginx.ingress.kubernetes.io/limit-req-status-code'
+        )}"
+    );
+    print(
+        f"Rate limiting annotations verified: rps=20, burst-multiplier=5, connections=20, status=429"
+    );
+
+    # Validate sticky session annotations are present (enabled by default)
+    assert ingress_annotations.get("nginx.ingress.kubernetes.io/affinity") == "cookie" , (
+        f"Expected affinity=cookie, got: {ingress_annotations.get(
+            'nginx.ingress.kubernetes.io/affinity'
+        )}"
+    );
+    assert ingress_annotations.get(
+        "nginx.ingress.kubernetes.io/session-cookie-name"
+    ) == "route" , (
+        f"Expected session-cookie-name=route, got: {ingress_annotations.get(
+            'nginx.ingress.kubernetes.io/session-cookie-name'
+        )}"
+    );
+    assert ingress_annotations.get(
+        "nginx.ingress.kubernetes.io/session-cookie-max-age"
+    ) == "2147483647" , (
+        f"Expected session-cookie-max-age=2147483647, got: {ingress_annotations.get(
+            'nginx.ingress.kubernetes.io/session-cookie-max-age'
+        )}"
+    );
+    assert ingress_annotations.get(
+        "nginx.ingress.kubernetes.io/session-cookie-expires"
+    ) == "2147483647" , (
+        f"Expected session-cookie-expires=2147483647, got: {ingress_annotations.get(
+            'nginx.ingress.kubernetes.io/session-cookie-expires'
+        )}"
+    );
+    assert ingress_annotations.get(
+        "nginx.ingress.kubernetes.io/session-cookie-change-on-failure"
+    ) == "true" , (
+        f"Expected session-cookie-change-on-failure=true, got: {ingress_annotations.get(
+            'nginx.ingress.kubernetes.io/session-cookie-change-on-failure'
+        )}"
+    );
+    print(
+        "Sticky session annotations verified: affinity=cookie, cookie-name=route, max-age=2147483647"
+    );
+
     ri_ingress = networking_v1.read_namespaced_ingress(
         name=redis_ingress_name, namespace=namespace
     );
     assert ri_ingress.metadata.name == redis_ingress_name;
     ri_paths = [p.path for rule in ri_ingress.spec.rules for p in rule.http.paths];
     assert any(p.startswith("/cache-dashboard") for p in ri_paths) , f"Redis Insight ingress must route '/cache-dashboard'; got: {ri_paths}";
-    print(f"Redis Insight Ingress '{redis_ingress_name}' exists with route: {ri_paths}");
+    print(
+        f"Redis Insight Ingress '{redis_ingress_name}' exists with route: {ri_paths}"
+    );
 
     # Send POST request to create a todo (with retry for 503)
     url = f"http://localhost:{ingress_node_port}/walker/create_todo";
@@ -1108,7 +1237,9 @@ test "deploy all in one" {
 
     # Verify database cleanup (first destroyed by full destroy)
     try {
-        apps_v1.read_namespaced_stateful_set(f"{app_name}-mongodb", namespace=namespace);
+        apps_v1.read_namespaced_stateful_set(
+            f"{app_name}-mongodb", namespace=namespace
+        );
         raise AssertionError("MongoDB StatefulSet should have been deleted");
     } except ApiException as e {
         assert e.status == 404 , f"Expected 404, got {e.status}";
@@ -1329,7 +1460,9 @@ test "deploy all in one" {
     }
 
     try {
-        core_v1.read_namespaced_secret(name=redis_auth_secret_name, namespace=namespace);
+        core_v1.read_namespaced_secret(
+            name=redis_auth_secret_name, namespace=namespace
+        );
         raise AssertionError("Redis Insight auth Secret should have been deleted");
     } except ApiException as e {
         assert e.status == 404 , f"Expected 404, got {e.status}";
@@ -1404,7 +1537,9 @@ test "deploy all in one" {
     }
 
     try {
-        core_v1.read_namespaced_secret(name='letsencrypt-prod-key', namespace=namespace);
+        core_v1.read_namespaced_secret(
+            name='letsencrypt-prod-key', namespace=namespace
+        );
         raise AssertionError("ACME private key Secret should have been deleted");
     } except ApiException as e {
         assert e.status == 404 , f"Expected 404 for letsencrypt-prod-key Secret, got {e.status}";
@@ -1885,7 +2020,9 @@ test "deploy with domain set stores domain in annotation not ingress host rule" 
 
     mock_networking_v1 = unittest.mock.MagicMock();
     # Simulate ingress not yet existing (first deploy) so create path is taken
-    mock_networking_v1.replace_namespaced_ingress.side_effect = ApiException(status=404);
+    mock_networking_v1.replace_namespaced_ingress.side_effect = ApiException(
+        status=404
+    );
 
     mock_core_v1 = unittest.mock.MagicMock();
     # Simulate basic-auth secret not yet existing (replace returns 404, so create path is taken)
@@ -1929,7 +2066,9 @@ test "redis ingress rule must not set host before TLS is enabled" {
 
     mock_networking_v1 = unittest.mock.MagicMock();
     # Simulate ingress not yet existing for both main and Redis ingresses
-    mock_networking_v1.replace_namespaced_ingress.side_effect = ApiException(status=404);
+    mock_networking_v1.replace_namespaced_ingress.side_effect = ApiException(
+        status=404
+    );
 
     mock_core_v1 = unittest.mock.MagicMock();
     # Simulate basic-auth secret not yet existing (replace returns 404, so create path is taken)
@@ -1956,4 +2095,161 @@ test "redis ingress rule must not set host before TLS is enabled" {
     # Redis rule must NOT have a host — same requirement as the main ingress
     redis_rule = redis_created_body["spec"]["rules"][0];
     assert "host" not in redis_rule , "Redis ingress rule must not set host before TLS is enabled";
+}
+# ---------------------------------------------------------------------------
+# Startup probe + resilient experimental runtime setup (no live cluster)
+# Covers: startup-probe gating, SSH->HTTPS clone normalization, and the
+# deb822-aware, non-blocking apt-get update.
+# ---------------------------------------------------------------------------
+test "startup probe gates liveness and experimental setup is resilient" {
+    scale_config = get_scale_config();
+    logger = UtilityFactory.create_logger('standard');
+
+    # --- startup probe: present, on the health path, generous window so the
+    # slow experimental install can't trip liveness into a crash loop ---
+    base_cfg = scale_config.get_kubernetes_config();
+    base_cfg['app_name'] = 'test-app';
+    target = DeploymentTargetFactory.create('kubernetes', base_cfg, logger);
+    probes = target._build_probe_config('/docs');
+    assert 'startup' in probes , "startup probe must be built";
+    sp = probes['startup'];
+    assert sp['httpGet']['path'] == '/docs';
+    assert sp['httpGet']['port'] == target.k8s_config.container_port;
+    assert sp['failureThreshold'] >= 60 , "startup window too small for experimental install";
+    container = target._build_container_config(
+        'test-app', 'example/image:latest', probes, target._build_resource_config()
+    );
+    assert container['startupProbe'] == sp , "container must carry the startup probe";
+
+    # --- experimental runtime setup: SSH urls normalized to anonymous HTTPS
+    # (pod has no SSH key) and apt-get update is deb822-aware + non-fatal ---
+    app_config = AppConfig(
+        code_folder='/tmp', file_name='main.jac', build=False, experimental=True
+    );
+    # _build_runtime_setup_command returns ['bash', '-c', '<cmd && cmd && ...>']
+    for (repo_in, expected) in [
+        ('git@github.com:owner/repo.git', 'https://github.com/owner/repo.git'),
+        ('ssh://git@github.com/owner/repo.git', 'https://github.com/owner/repo.git'),
+        ('https://github.com/owner/repo.git', 'https://github.com/owner/repo.git')
+    ] {
+        cfg = scale_config.get_kubernetes_config();
+        cfg['app_name'] = 'test-app';
+        cfg['jaseci_repo_url'] = repo_in;
+        t = DeploymentTargetFactory.create('kubernetes', cfg, logger);
+        cmds = t._build_runtime_setup_command(app_config);
+        assert cmds[0] == 'bash' and cmds[1] == '-c' , "runtime setup must be a bash -c script";
+        steps = cmds[2].split(' && ');
+        clone = next(
+            (
+                s
+                for s in steps
+                if s.startswith('git clone')
+            ),
+            ''
+        );
+        assert expected in clone , f"{repo_in} not normalized: {clone}";
+        assert 'git@' not in clone and 'ssh://' not in clone , f"SSH url leaked: {clone}";
+    }
+    # apt assertions are repo-independent; check once on the last script
+    assert any(
+        'sources.list.d/*.sources' in s and 'trixie-updates' in s for s in steps
+    ) , "deb822 .sources trixie-updates strip missing";
+    assert any(
+        s.startswith('apt-get') and 'Acquire::Retries' in s and '|| true' in s
+        for s in steps
+    ) , "resilient (bounded, non-fatal) apt-get update missing";
+    assert 'apt-get update' not in steps , "bare blocking apt-get update must be replaced";
+}
+# ---------------------------------------------------------------------------
+# RedisInsight (cache-dashboard) spec construction (no live cluster)
+# Covers the PR's EULA auto-accept + encryption key, the sub-path proxy
+# config, and secret-backed (never inlined) Redis credentials.
+# ---------------------------------------------------------------------------
+test "redis insight cache dashboard spec is correctly built" {
+    provider = DatabaseProviderFactory.create(
+        'kubernetes_redis', None, {'app_name': 'test-app'}
+    );
+    dash = provider.deploy_dashboard();
+    assert dash['deployment_name'] == 'test-app-redis-insight';
+    assert dash['service_name'] == 'test-app-redis-insight-service';
+
+    container = dash['deployment']['spec']['template']['spec']['containers'][0];
+    assert container['image'] == 'redis/redisinsight:3.2.0';
+    assert container['ports'][0]['containerPort'] == 5540;
+    sc = container['securityContext'];
+    assert sc['runAsNonRoot'] is True;
+    assert sc['readOnlyRootFilesystem'] is True;
+    assert sc['allowPrivilegeEscalation'] is False;
+    assert sc['capabilities']['drop'] == ['ALL'];
+
+    env = {e['name']: e for e in container['env']};
+    # EULA auto-accept + explicit encryption key (container has no OS keyring)
+    assert env['RI_ACCEPT_TERMS_AND_CONDITIONS']['value'] == 'true';
+    assert env['RI_ENCRYPTION_KEY']['value'] , "RI_ENCRYPTION_KEY must be set";
+    # Pre-seeded connection to the in-cluster Redis service, served under the
+    # ingress sub-path
+    assert env['RI_REDIS_HOST']['value'] == 'test-app-redis-service';
+    assert env['RI_REDIS_PORT']['value'] == '6379';
+    assert env['RIPROXYPATH']['value'] == '/cache-dashboard';
+    # Credentials come from the redis secret, never inlined as plaintext
+    u = env['RI_REDIS_USERNAME']['valueFrom']['secretKeyRef'];
+    p = env['RI_REDIS_PASSWORD']['valueFrom']['secretKeyRef'];
+    assert u['name'] == 'test-app-redis-secret' and u['key'] == 'username';
+    assert p['name'] == 'test-app-redis-secret' and p['key'] == 'password';
+    assert 'value' not in env['RI_REDIS_PASSWORD'] , "password must not be inlined";
+
+    assert dash['service']['spec']['ports'][0]['port'] == 5540;
+    assert dash['service_account']['automountServiceAccountToken'] is False;
+}
+
+test "redis ACL is secret mounted not in configmap and creds validated" {
+    provider = DatabaseProviderFactory.create(
+        'kubernetes_redis', None, {'app_name': 'test-app'}
+    );
+    dep = provider.deploy();
+
+    conf = dep['configmap']['data']['redis.conf'];
+    assert 'aclfile /etc/redis-acl/users.acl' in conf;
+    assert 'user default on >' not in conf , "ACL (with password) inlined into ConfigMap";
+    secret_sd = dep['secret']['stringData'];
+    assert 'users.acl' in secret_sd , "ACL file must be in the Secret";
+    assert secret_sd['users.acl'].startswith('user default on >password');
+
+    # ACL is mounted from the Secret on its own path, read-only
+    pod = dep['deployment']['spec']['template']['spec'];
+    acl_vol = next(
+        (
+            v
+            for v in pod['volumes']
+            if v['name'] == 'redis-acl'
+        ),
+        None
+    );
+    assert acl_vol is not None , "redis-acl volume missing";
+    assert acl_vol['secret']['secretName'] == dep['secret_name'];
+    assert acl_vol['secret']['items'][0]['key'] == 'users.acl';
+    assert any(
+        m['name'] == 'redis-acl'
+        and m['mountPath'] == '/etc/redis-acl'
+        and m.get('readOnly') is True for m in pod['containers'][0]['volumeMounts']
+    ) , "redis-acl must be mounted read-only at /etc/redis-acl";
+
+    raised = False;
+    try {
+        provider._build_acl_file('admin', "pw\nuser eve on nopass ~* +@all");
+    } except ValueError {
+        raised = True;
+    }
+    assert raised , "newline in password must be rejected";
+    raised2 = False;
+    try {
+        provider._build_acl_file("ad min", 'password');
+    } except ValueError {
+        raised2 = True;
+    }
+    assert raised2 , "ACL-significant chars in username must be rejected";
+
+    assert provider._build_connection_string('default', 'pw', 'h') == 'redis://default:pw@h:6379/0';
+    assert provider._build_connection_string('admin', 'pw', 'h') == 'redis://admin:pw@h:6379/0';
+    assert secret_sd['connection-string'] == provider.get_connection_string();
 }

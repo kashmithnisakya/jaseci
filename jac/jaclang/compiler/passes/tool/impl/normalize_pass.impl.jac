@@ -156,6 +156,14 @@ impl NormalizePass.enter_client_block(nd: uni.ClientBlock) -> None {
         } else {
             new_kid.append(EmptyToken());
         }
+    } elif nd.implicit {
+        # Section-header form: 'to cl:' followed by body at module scope.
+        new_kid.append(nd.gen_token(Tok.KW_TO));
+        new_kid.append(nd.gen_token(Tok.KW_CLIENT));
+        new_kid.append(nd.gen_token(Tok.COLON));
+        for stmt in nd.body {
+            new_kid.append(stmt);
+        }
     } else {
         new_kid.append(nd.gen_token(Tok.KW_CLIENT));
         new_kid.append(nd.gen_token(Tok.LBRACE));
@@ -183,6 +191,14 @@ impl NormalizePass.enter_server_block(nd: uni.ServerBlock) -> None {
         } else {
             new_kid.append(EmptyToken());
         }
+    } elif nd.implicit {
+        # Section-header form: 'to sv:' followed by body at module scope.
+        new_kid.append(nd.gen_token(Tok.KW_TO));
+        new_kid.append(nd.gen_token(Tok.KW_SERVER));
+        new_kid.append(nd.gen_token(Tok.COLON));
+        for stmt in nd.body {
+            new_kid.append(stmt);
+        }
     } else {
         new_kid.append(nd.gen_token(Tok.KW_SERVER));
         new_kid.append(nd.gen_token(Tok.LBRACE));
@@ -209,6 +225,14 @@ impl NormalizePass.enter_native_block(nd: uni.NativeBlock) -> None {
             new_kid.extend(nd.body);
         } else {
             new_kid.append(EmptyToken());
+        }
+    } elif nd.implicit {
+        # Section-header form: 'to na:' followed by body at module scope.
+        new_kid.append(nd.gen_token(Tok.KW_TO));
+        new_kid.append(nd.gen_token(Tok.KW_NATIVE));
+        new_kid.append(nd.gen_token(Tok.COLON));
+        for stmt in nd.body {
+            new_kid.append(stmt);
         }
     } else {
         new_kid.append(nd.gen_token(Tok.KW_NATIVE));
@@ -249,6 +273,9 @@ impl NormalizePass.enter_import(nd: uni.Import) -> None {
         new_kid.append(nd.gen_token(Tok.KW_INCLUDE));
     } else {
         new_kid.append(nd.gen_token(Tok.KW_IMPORT));
+    }
+    if nd.is_typed {
+        new_kid.append(nd.gen_token(Tok.TYP_TYPE));
     }
     if nd.from_loc {
         new_kid.append(nd.gen_token(Tok.KW_FROM));
@@ -463,7 +490,10 @@ impl NormalizePass.enter_enum(nd: uni.Enum) -> None {
         new_kid.append(nd.access);
     }
     new_kid.append(nd.name);
-    if nd.base_classes {
+    if nd.value_type {
+        new_kid.append(nd.gen_token(Tok.COLON));
+        new_kid.append(nd.value_type);
+    } elif nd.base_classes {
         new_kid.append(nd.gen_token(Tok.LPAREN));
         for idx in range(len(nd.base_classes)) {
             new_kid.append(nd.base_classes[idx]);
@@ -480,7 +510,8 @@ impl NormalizePass.enter_enum(nd: uni.Enum) -> None {
             new_kid.append(nd.gen_token(Tok.LBRACE));
             prev_stmt = None;
             for stmt in nd.body {
-                if isinstance(prev_stmt, uni.EnumBlockStmt) and prev_stmt.is_enum_stmt {
+                if isinstance(prev_stmt, uni.EnumBlockStmt)
+                and prev_stmt.is_enum_stmt {
                     new_kid.append(nd.gen_token(Tok.COMMA));
                 }
                 new_kid.append(stmt);
@@ -736,7 +767,11 @@ impl NormalizePass.enter_else_if(nd: uni.ElseIf) -> None {
 
 """Normalize ElseStmt kid list."""
 impl NormalizePass.enter_else_stmt(nd: uni.ElseStmt) -> None {
-    new_kid: list[uni.UniNode] = [nd.gen_token(Tok.KW_ELSE), nd.gen_token(Tok.LBRACE), ];
+    new_kid: list[uni.UniNode] = [
+        nd.gen_token(Tok.KW_ELSE),
+        nd.gen_token(Tok.LBRACE),
+
+    ];
     for stmt in nd.body {
         new_kid.append(stmt);
     }
@@ -763,6 +798,9 @@ impl NormalizePass.enter_try_stmt(nd: uni.TryStmt) -> None {
         new_kid.append(stmt);
     }
     new_kid.append(nd.gen_token(Tok.RBRACE));
+    if nd.awaiting_body {
+        new_kid.append(nd.awaiting_body);
+    }
     for exc in nd.excepts {
         new_kid.append(exc);
     }
@@ -772,6 +810,20 @@ impl NormalizePass.enter_try_stmt(nd: uni.TryStmt) -> None {
     if nd.finally_body {
         new_kid.append(nd.finally_body);
     }
+    nd.set_kids(nodes=new_kid);
+}
+
+"""Normalize AwaitingClause kid list."""
+impl NormalizePass.enter_awaiting_clause(nd: uni.AwaitingClause) -> None {
+    new_kid: list[uni.UniNode] = [
+        nd.gen_token(Tok.KW_AWAITING),
+        nd.gen_token(Tok.LBRACE),
+
+    ];
+    for stmt in nd.body {
+        new_kid.append(stmt);
+    }
+    new_kid.append(nd.gen_token(Tok.RBRACE));
     nd.set_kids(nodes=new_kid);
 }
 
@@ -994,6 +1046,12 @@ impl NormalizePass.enter_await_expr(nd: uni.AwaitExpr) -> None {
     nd.set_kids(nodes=new_kid);
 }
 
+"""Normalize CastExpr kid list."""
+impl NormalizePass.enter_cast_expr(nd: uni.CastExpr) -> None {
+    new_kid: list[uni.UniNode] = [nd.value, nd.gen_token(Tok.KW_AS), nd.cast_type];
+    nd.set_kids(nodes=new_kid);
+}
+
 """Normalize GlobalStmt kid list."""
 impl NormalizePass.enter_global_stmt(nd: uni.GlobalStmt) -> None {
     new_kid: list[uni.UniNode] = [nd.gen_token(Tok.GLOBAL_OP)];
@@ -1081,6 +1139,11 @@ impl NormalizePass.enter_compare_expr(nd: uni.CompareExpr) -> None {
         new_kid.append(nd.rights[i]);
     }
     nd.set_kids(nodes=new_kid);
+}
+
+"""Normalize CfgExpr kid list."""
+impl NormalizePass.enter_cfg_expr(nd: uni.CfgExpr) -> None {
+    nd.set_kids(nodes=[nd.expr]);
 }
 
 """Normalize BoolExpr kid list."""
@@ -1655,6 +1718,32 @@ impl NormalizePass.enter_jsx_expression(nd: uni.JsxExpression) -> None {
 
     ];
     nd.set_kids(nodes=new_kid);
+}
+
+"""Normalize JsxSlot kid list.
+
+A `JsxSlot` is a statement-form `{...}` JSX child whose kids are the raw
+brace tokens flanking the body statements (the parser emits
+`[LBRACE, ...body, RBRACE]`). Rebuild the kid list deterministically so
+later passes and the formatter can round-trip the slot regardless of how
+the body was produced.
+"""
+impl NormalizePass.enter_jsx_slot(nd: uni.JsxSlot) -> None {
+    new_kid: list[uni.UniNode] = [nd.gen_token(Tok.LBRACE)];
+    for stmt in nd.body {
+        new_kid.append(stmt);
+    }
+    new_kid.append(nd.gen_token(Tok.RBRACE));
+    nd.set_kids(nodes=new_kid);
+}
+
+"""Normalize JsxComment kid list."""
+impl NormalizePass.enter_jsx_comment(nd: uni.JsxComment) -> None {
+    if isinstance(nd.value, uni.Token) {
+        nd.set_kids(nodes=[nd.value]);
+    } else {
+        nd.set_kids(nodes=[nd.gen_token(Tok.JSX_COMMENT, value=str(nd.value))]);
+    }
 }
 
 """Normalize MatchStmt kid list."""

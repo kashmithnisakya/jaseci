@@ -12,7 +12,7 @@ This page focuses on the three concepts that Jac adds beyond traditional program
 
 ## 1. How can one language target frontends, backends, and native binaries at the same time?
 
-Similar to namespaces, the Jac language introduces the concept of **codespaces**. A Jac program can contain code that runs in different environments. You denote the codespace either with a **block prefix** inside a file or with a **file extension**:
+Similar to namespaces, the Jac language introduces the concept of **codespaces**. A Jac program can contain code that runs in different environments. You denote the codespace with a **braced block** (or **section header** or **statement prefix**) inside a file, or with a **file extension**:
 
 ```mermaid
 graph LR
@@ -24,12 +24,14 @@ graph LR
     na { }"]
 ```
 
-**Inline blocks** -- mix codespaces in a single file:
+**Braced blocks** -- bracket a region of a file for one codespace:
 
-- `sv { }` -- code that runs on the server (compiles to Python)
-- `cl { }` -- code that runs in the browser (compiles to JavaScript)
-- `na { }` -- code that runs natively compiled on the host machine (compiles to native binary)
-- Code outside any block defaults to the server codespace
+- `sv { ... }` -- code inside the braces runs on the server (compiles to Python)
+- `cl { ... }` -- code inside the braces runs in the browser (compiles to JavaScript)
+- `na { ... }` -- code inside the braces compiles natively for the host machine (compiles to a native binary)
+- Code outside any block defaults to the server codespace. Blocks also work inside a function or class body.
+
+**Section headers** (`to sv:` / `to cl:` / `to na:`) are an alternative -- a header sets the default codespace for every following module-level element until the next header or end of file, convenient for a file that is mostly one codespace. A single-statement prefix (`cl def foo() ...`) tags one declaration.
 
 **File extensions** -- set the default top-level codespace for a file, e.g., for a module `prog`:
 
@@ -38,9 +40,9 @@ graph LR
 - `prog.na.jac` -- top-level code defaults to native
 - `prog.jac` -- defaults to the server codespace
 
-Any `.jac` file can still use all codespace blocks regardless of its extension. The extension only changes what the default is for code outside any block.
+Any `.jac` file can still use all codespace forms regardless of its extension. The extension only changes what the default is for untagged code.
 
-Here's a file that uses two codespaces via inline blocks:
+Here's a file that uses two codespaces via a braced block:
 
 ```jac
 # Server codespace (default)
@@ -50,10 +52,9 @@ node Todo {
 
 def:pub add_todo(title: str) -> dict {
     todo = root ++> Todo(title=title);
-    return {"id": todo[0].id, "title": todo[0].title};
+    return {"id": jid(todo[0]), "title": todo[0].title};
 }
 
-# Client codespace
 cl {
     def:pub app -> JsxElement {
         has items: list = [];
@@ -72,7 +73,7 @@ cl {
 }
 ```
 
-The server definitions are visible to the `cl` block. When the client calls `add_todo(...)`, the compiler generates the HTTP call, serialization, and routing between codespaces. You write one language; the compiler produces the interop layer.
+The server definitions are visible to the client section. When the client calls `add_todo(...)`, the compiler generates the HTTP call, serialization, and routing between codespaces. You write one language; the compiler produces the interop layer.
 
 Codespaces are similar to namespaces, but instead of organizing names, they organize where code executes. Interop between them -- function calls, spawn calls, type sharing -- is handled by the compiler and runtime.
 
@@ -211,9 +212,9 @@ In practice, these compose: walkers traverse a graph on the server, delegate dec
 
 | Syntax | Meaning |
 |--------|---------|
-| `sv { }` | Server codespace |
-| `cl { }` | Client codespace |
-| `na { }` | Native codespace |
+| `to sv:` | Server codespace section header |
+| `to cl:` | Client codespace section header |
+| `to na:` | Native codespace section header |
 | `node X { has ...; }` | Declare a graph data type |
 | `root` | Built-in starting node (persistence anchor) |
 | `a ++> b` | Connect node `a` to node `b` |

@@ -5,10 +5,7 @@ Direct implementations - no delegation.
 
 import os;
 import from jaclang.cli.console { console }
-import from jaclang.cli.commands.cli_helpers {
-    ensure_jac_runtime as _ensure_jac_runtime,
-    proc_file as _proc_file
-}
+import from jaclang.cli.commands.cli_helpers { proc_file as _proc_file }
 
 """Run the specified AST tool with optional arguments."""
 impl tool(tool: str, args: list = []) -> int {
@@ -43,7 +40,6 @@ impl dot(
     to_screen: bool = False,
     format: str = "dot"
 ) -> int {
-    _ensure_jac_runtime();
     import from jaclang.jac0core.runtime { JacRuntime as Jac }
     import from jaclang.runtimelib.builtin { printgraph }
     (base, mod, jac_machine) = _proc_file(filename);
@@ -115,7 +111,7 @@ impl completions(shell: str = "bash", install: bool = False) -> int {
 }
 
 """Extract command data from registry into simple dicts for shellcode generation."""
-def _extract_commands(registry: Any) -> list {
+def _extract_commands(registry: any) -> list {
     import from jaclang.cli.command { ArgKind }
     commands = [];
     for (name, spec) in sorted(registry.commands.items()) {
@@ -193,7 +189,7 @@ def _install_completion(shell: str, code: str) -> int {
     }
     new_block = f"{start_marker}\n{source_line}\n{end_marker}\n";
     if os.path.exists(config_file) {
-        with open(config_file, "r") as f {
+        with open(config_file, "r", encoding="utf-8") as f {
             content = f.read();
         }
     } else {
@@ -213,7 +209,7 @@ def _install_completion(shell: str, code: str) -> int {
     }
     try {
         os.makedirs(os.path.dirname(config_file), exist_ok=True);
-        with open(config_file, "w") as f {
+        with open(config_file, "w", encoding="utf-8") as f {
             f.write(content);
         }
         console.print(f"Completion script written to {comp_file}");
@@ -246,7 +242,9 @@ impl gen_jir_registry(verify: bool = False) -> int {
 
     # Run jac format to get canonical output (formatter may expand long lines)
     try {
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.jac', delete=False) as tmp {
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='.jac', delete=False
+        ) as tmp {
             tmp.write(content);
             tmp_path = tmp.name;
         }
@@ -254,14 +252,16 @@ impl gen_jir_registry(verify: bool = False) -> int {
             [sys.executable, '-m', 'jaclang', 'format', '--lintfix', tmp_path],
             capture_output=True
         );
-        content = Path(tmp_path).read_text();
+        content = Path(tmp_path).read_text(encoding="utf-8");
         Path(tmp_path).unlink(missing_ok=True);
     } except Exception {
         ;
     }
 
     if verify {
-        current = registry_path.read_text() if registry_path.exists() else "";
+        current = registry_path.read_text(encoding="utf-8")
+            if registry_path.exists()
+            else "";
         if current == content {
             console.print("jir_registry.jac is up to date.");
             return 0;

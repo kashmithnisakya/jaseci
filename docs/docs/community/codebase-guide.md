@@ -207,6 +207,8 @@ Registration happens in `pyproject.toml`:
 | `jac-mcp` | Exposes the Jac project as an MCP server so AI coding assistants can query it. |
 | `jac-super` | Pretty-printed console output via `rich`. |
 
+For the full how-to on writing your own plugin -- CLI extension, runtime hook overrides, jac.toml schemas, project templates, and the entry-point setup -- see the [Plugin Authoring Guide](../reference/plugin-authoring.md).
+
 ---
 
 ## Tests
@@ -296,4 +298,4 @@ Pre-commit hooks run formatting and linting on every commit locally. See `.pre-c
 
 - **Discord:** [discord.gg/6j3QNdtcN6](https://discord.gg/6j3QNdtcN6) -- the main community channel for questions and discussion
 - **Issues:** [github.com/Jaseci-Labs/jaseci/issues](https://github.com/Jaseci-Labs/jaseci/issues) -- check for unassigned issues to pick up
-- **Internals docs:** See the [Internals](internals/jac_import_patterns.md) section for deeper dives into specific subsystems
+- **Internals docs:** See the [Internals](../internals/abstractions.md) section for deeper dives into specific subsystems

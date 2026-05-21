@@ -1,8 +1,37 @@
 # jac-mcp Release Notes
 
-## jac-mcp 0.1.8 (Unreleased)
+## jac-mcp 0.1.16 (Latest Release)
 
-## jac-mcp 0.1.7 (Latest Release)
+### New Features
+
+- **MCP: Serve reference guides from the shared store**: The MCP server now serves the Jac reference guides from jaclang's bundled guide store (`jac://guide/*`) instead of vendoring its own copy, keeping one source of truth.
+
+## jac-mcp 0.1.12
+
+### New Features
+
+- **Add: `mode` setting for tool/prompt surface (lite/standard/full)**: The MCP server now reads a `mode` field from `[plugins.mcp]` in `jac.toml` and exposes a `--mode` CLI flag on `jac mcp` that writes the choice into the in-memory plugin config. Resolution order is CLI > `jac.toml` > default (`full`). `full` preserves existing behavior; `lite` and `standard` are reserved tiers for smaller models and currently expose the same surface as `full`. Per-mode exclusion sets will be populated in follow-up releases. Unknown values fall back to `full` with a logged warning.
+
+## jac-mcp 0.1.11
+
+- 1 small refactor/change.
+
+## jac-mcp 0.1.10
+
+- **Content QA fixes**: Updated `root` to `root()` in pitfalls and knowledge map to match current deprecation (W0062). Fixed invalid graph filter syntax `` [-->](`?B) `` → `[-->][?:B]` in pitfalls. Updated `root spawn` → `root() spawn` in client-side examples.
+- **New doc mappings**: Added `jac://docs/tutorial-fullstack-npm`, `jac://docs/tutorial-fullstack-advanced`, and `jac://docs/diagnostics` to DOC_MAPPINGS and knowledge map. Bundled docs updated.
+
+## jac-mcp 0.1.9
+
+- 1 small refactor/change.
+- **Knowledge map tools**: `understand_jac_and_jaseci` and `get_resource` tools for on-demand doc fetching with size-tagged URIs, expanded fullstack coverage, enum-validated example categories, and leaner tool/server descriptions.
+- **Client-side and full-stack pitfalls**: Added new pitfalls documentation covering client-side `.cl.jac` and full-stack gotchas.
+
+## jac-mcp 0.1.8
+
+- **Full CLI access over MCP**: AI models can now discover and run any `jac` CLI command (including plugin-provided ones) directly from the MCP session. `list_commands` returns a lightweight summary; `get_command(name)` returns full argument details; `execute_command` runs them. Replaces the narrower `start_server`, `create_project`, and `list_templates` tools.
+
+## jac-mcp 0.1.7
 
 - 2 small changes.
 - **8 new tools**: AI models can now run Jac code, lint files, convert Jac to Python or JavaScript, visualize graphs, list project templates, scaffold new projects, and start a local server - all from within the MCP session.

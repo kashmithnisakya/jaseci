@@ -1,6 +1,6 @@
 # React-Style Components
 
-Jac's client-side code uses JSX syntax (the same HTML-in-code approach popularized by React) to build UI components. Components are functions declared inside `cl { }` blocks that return `JsxElement` values. They support props for data passing, composition for building complex UIs from simple parts, and all the familiar React patterns -- conditional rendering, list mapping, and event handling.
+Jac's client-side code uses JSX syntax (the same HTML-in-code approach popularized by React) to build UI components. Components are functions declared in client-side code -- a `.cl.jac` file or a `to cl:` section -- that return `JsxElement` values. Each prop is a named parameter -- the type-checker validates every JSX call site per attribute -- and components compose just like in React, with conditional rendering, list mapping, and event handling.
 
 The key difference from a standard React setup: there's no separate JavaScript project, no webpack configuration, and no build toolchain to manage. You write components in Jac syntax, the compiler generates optimized JavaScript, and the dev server bundles and serves it automatically.
 
@@ -14,17 +14,17 @@ The key difference from a standard React setup: there's no separate JavaScript p
 ## Basic Component
 
 ```jac
-cl {
-    def:pub Greeting(props: dict) -> JsxElement {
-        return <h1>Hello, {props.name}!</h1>;
-    }
+to cl:
 
-    def:pub app() -> JsxElement {
-        return <div>
-            <Greeting name="Alice" />
-            <Greeting name="Bob" />
-        </div>;
-    }
+def:pub Greeting(name: str) -> JsxElement {
+    return <h1>Hello, {name}!</h1>;
+}
+
+def:pub app() -> JsxElement {
+    return <div>
+        <Greeting name="Alice" />
+        <Greeting name="Bob" />
+    </div>;
 }
 ```
 
@@ -32,8 +32,58 @@ cl {
 
 - Components are functions returning JSX
 - `def:pub` exports the component
-- `props` contains passed attributes
+- Each prop is a named parameter -- `<Greeting name="Alice" />` is type-checked against the `name: str` declaration
 - Self-closing tags: `<Component />`
+
+---
+
+## Typed props and `children`
+
+Declare **every prop as its own named, typed parameter**. The type-checker keys per-attribute validation on parameter names, so each `<Card title="..." />` call site is checked against the declared types -- unknown props, type mismatches, and missing required props are all caught at `jac check` time.
+
+`children` -- the JSX nested between a component's tags -- is just a regular parameter named `children`. It is not special-cased: React's reconciler fills it in and the compiler destructures it like any other prop. (The only genuinely reserved attribute names are `key` and `ref`.)
+
+```jac
+to cl:
+
+def:pub Card(title: str, description: str = "", children: any = None) -> JsxElement {
+    return <div className="card">
+        <h2>{title}</h2>
+        <p>{description}</p>
+        {children}
+    </div>;
+}
+
+def:pub app() -> JsxElement {
+    return <Card title="Welcome" description="Hello!">
+        <p>This is the card content.</p>
+    </Card>;
+}
+```
+
+!!! warning "`children` must have a default value"
+    The prop validator counts only JSX **attributes** toward matched parameters -- nested content does *not* count. A `children` parameter with no default is therefore treated as a *required* prop, and any call site that passes another attribute fails with `error[E1102]: Component 'Card' requires prop 'children'`. Always declare it as `children: any = None`.
+
+There is no `ReactNode`-style union type in Jac, and a children value can be an element, a string, a number, or a list of those -- so `any` is the honest type for a `children` parameter. The parameter type governs only how you use `children` inside the body; it is never checked against the nested content.
+
+---
+
+## Forwarding the props bundle (advanced)
+
+`props` is a Jac keyword that names the call-site argument object as a whole, the same way `self` names the receiver. A component declared with a single parameter literally named `props` receives the object verbatim instead of having each prop destructured into its own local:
+
+```jac
+to cl:
+
+# jac:ignore[W5015]
+def:pub PassThrough(props: dict) -> JsxElement {
+    return <Inner {**props} />;
+}
+```
+
+This shape is useful for higher-order components, wrappers, and forwarding helpers, but it has a real cost: the type-checker keys per-prop validation on parameter *names*, so a `props`-bundle signature cannot validate `<PassThrough title="..." />` per attribute. The compiler emits **W5015** on every single-`props` definition for that reason -- suppress it inline (`# jac:ignore[W5015]`) only when the forwarding behavior is intentional.
+
+**Default to direct named parameters.** Reach for `props: dict` only when you genuinely need the unstructured bundle.
 
 ---
 
@@ -42,15 +92,15 @@ cl {
 ### HTML Elements
 
 ```jac
-cl {
-    def:pub MyComponent() -> JsxElement {
-        return <div className="container">
-            <h1>Title</h1>
-            <p>Paragraph text</p>
-            <a href="/about">Link</a>
-            <img src="/logo.png" alt="Logo" />
-        </div>;
-    }
+to cl:
+
+def:pub MyComponent() -> JsxElement {
+    return <div className="container">
+        <h1>Title</h1>
+        <p>Paragraph text</p>
+        <a href="/about">Link</a>
+        <img src="/logo.png" alt="Logo" />
+    </div>;
 }
 ```
 
@@ -59,17 +109,17 @@ cl {
 ### JavaScript Expressions
 
 ```jac
-cl {
-    def:pub MyComponent() -> JsxElement {
-        name = "World";
-        items = [1, 2, 3];
+to cl:
 
-        return <div>
-            <p>Hello, {name}!</p>
-            <p>Sum: {1 + 2 + 3}</p>
-            <p>Items: {len(items)}</p>
-        </div>;
-    }
+def:pub MyComponent() -> JsxElement {
+    name = "World";
+    items = [1, 2, 3];
+
+    return <div>
+        <p>Hello, {name}!</p>
+        <p>Sum: {1 + 2 + 3}</p>
+        <p>Items: {len(items)}</p>
+    </div>;
 }
 ```
 
@@ -82,37 +132,37 @@ Use `{ }` to embed any Jac expression.
 ### Ternary Operator
 
 ```jac
-cl {
-    def:pub Status(props: dict) -> JsxElement {
-        return <span>
-            {("Active" if props.active else "Inactive")}
-        </span>;
-    }
+to cl:
+
+def:pub Status(active: bool) -> JsxElement {
+    return <span>
+        {("Active" if active else "Inactive")}
+    </span>;
 }
 ```
 
 ### Logical AND
 
 ```jac
-cl {
-    def:pub Notification(props: dict) -> JsxElement {
-        return <div>
-            {props.count > 0 and <span>You have {props.count} messages</span>}
-        </div>;
-    }
+to cl:
+
+def:pub Notification(count: int) -> JsxElement {
+    return <div>
+        {count > 0 and <span>You have {count} messages</span>}
+    </div>;
 }
 ```
 
 ### If Statement
 
 ```jac
-cl {
-    def:pub UserGreeting(props: dict) -> JsxElement {
-        if props.isLoggedIn {
-            return <h1>Welcome back!</h1>;
-        }
-        return <h1>Please sign in</h1>;
+to cl:
+
+def:pub UserGreeting(isLoggedIn: bool) -> JsxElement {
+    if isLoggedIn {
+        return <h1>Welcome back!</h1>;
     }
+    return <h1>Please sign in</h1>;
 }
 ```
 
@@ -121,22 +171,22 @@ cl {
 ## Lists and Iteration
 
 ```jac
-cl {
-    def:pub TodoList(props: dict) -> JsxElement {
-        return <ul>
-            {[<li key={item.id}>{item.text}</li> for item in props.items]}
-        </ul>;
-    }
+to cl:
 
-    def:pub app() -> JsxElement {
-        todos = [
-            {"id": 1, "text": "Learn Jac"},
-            {"id": 2, "text": "Build app"},
-            {"id": 3, "text": "Deploy"}
-        ];
+def:pub TodoList(items: list[dict[str, any]]) -> JsxElement {
+    return <ul>
+        {[<li key={item["id"]}>{item["text"]}</li> for item in items]}
+    </ul>;
+}
 
-        return <TodoList items={todos} />;
-    }
+def:pub app() -> JsxElement {
+    todos = [
+        {"id": 1, "text": "Learn Jac"},
+        {"id": 2, "text": "Build app"},
+        {"id": 3, "text": "Deploy"}
+    ];
+
+    return <TodoList items={todos} />;
 }
 ```
 
@@ -149,62 +199,62 @@ cl {
 ### Click Events
 
 ```jac
-cl {
-    def:pub Button() -> JsxElement {
-        def handle_click() -> None {
-            print("Button clicked!");
-        }
+to cl:
 
-        return <button onClick={lambda -> None { handle_click(); }}>
-            Click me
-        </button>;
+def:pub Button() -> JsxElement {
+    def handle_click() -> None {
+        print("Button clicked!");
     }
+
+    return <button onClick={lambda -> None { handle_click(); }}>
+        Click me
+    </button>;
 }
 ```
 
 ### Input Events
 
 ```jac
-cl {
-    def:pub SearchBox() -> JsxElement {
-        has query: str = "";
+to cl:
 
-        return <input
-            type="text"
-            value={query}
-            onChange={lambda e: any -> None { query = e.target.value; }}
-            placeholder="Search..."
-        />;
-    }
+def:pub SearchBox() -> JsxElement {
+    has query: str = "";
+
+    return <input
+        type="text"
+        value={query}
+        onChange={lambda e: ChangeEvent { query = e.target.value; }}
+        placeholder="Search..."
+    />;
 }
 ```
 
 ### Form Submit
 
 ```jac
-cl {
-    def:pub LoginForm() -> JsxElement {
-        has username: str = "";
-        has password: str = "";
+to cl:
 
-        def handle_submit(e: any) -> None {
-            e.preventDefault();
-            print(f"Login: {username}");
-        }
+def:pub LoginForm() -> JsxElement {
+    has username: str = "";
+    has password: str = "";
 
-        return <form onSubmit={lambda e: any -> None { handle_submit(e); }}>
-            <input
-                value={username}
-                onChange={lambda e: any -> None { username = e.target.value; }}
-            />
-            <input
-                type="password"
-                value={password}
-                onChange={lambda e: any -> None { password = e.target.value; }}
-            />
-            <button type="submit">Login</button>
-        </form>;
+    def handle_submit(e: FormEvent) -> None {
+        e.preventDefault();
+        print(f"Login: {username}");
     }
+
+    return <form onSubmit={lambda e: FormEvent { handle_submit(e); }}>
+        <input
+            value={username}
+            onChange={lambda e: ChangeEvent { username = e.target.value; }}
+        />
+        <input
+            type="password"
+            value={password}
+            onChange={lambda e: ChangeEvent { password = e.target.value; }}
+        />
+        <button type="submit">Login</button>
+    </form>;
 }
 ```
 
@@ -215,52 +265,197 @@ cl {
 ### Children
 
 ```jac
-cl {
-    def:pub Card(props: dict) -> JsxElement {
-        return <div className="card">
-            <div className="card-header">{props.title}</div>
-            <div className="card-body">{props.children}</div>
-        </div>;
-    }
+to cl:
 
-    def:pub app() -> JsxElement {
-        return <Card title="Welcome">
-            <p>This is the card content.</p>
-            <button>Action</button>
-        </Card>;
-    }
+def:pub Card(title: str, children: any = None) -> JsxElement {
+    return <div className="card">
+        <div className="card-header">{title}</div>
+        <div className="card-body">{children}</div>
+    </div>;
+}
+
+def:pub app() -> JsxElement {
+    return <Card title="Welcome">
+        <p>This is the card content.</p>
+        <button>Action</button>
+    </Card>;
 }
 ```
 
 ### Nested Components
 
 ```jac
-cl {
-    def:pub Header() -> JsxElement {
-        return <header>
-            <h1>My App</h1>
-            <Nav />
-        </header>;
+to cl:
+
+def:pub Header() -> JsxElement {
+    return <header>
+        <h1>My App</h1>
+        <Nav />
+    </header>;
+}
+
+def:pub Nav() -> JsxElement {
+    return <nav>
+        <a href="/">Home</a>
+        <a href="/about">About</a>
+    </nav>;
+}
+
+def:pub Footer() -> JsxElement {
+    return <footer>© 2024</footer>;
+}
+
+def:pub app() -> JsxElement {
+    return <div>
+        <Header />
+        <main>Content here</main>
+        <Footer />
+    </div>;
+}
+```
+
+---
+
+## JSX Slots: Control Flow as Children
+
+A component is just `def:pub Name(...) -> JsxElement { return <jsx>; }`. The interesting work happens inside the JSX itself, where every `{...}` is a **slot** -- a place where Jac code computes a child. Slots come in two shapes:
+
+- **Expression slot** (the usual case): `{name}`, `{user.profile.email}`, `{<Badge />}` -- whatever's inside renders directly.
+- **Statement slot**: when a slot begins with a statement keyword (`if`, `for`, `while`, `match`, `switch`, `with`, `try`, `return`), it switches into template mode. Each JSX statement inside the slot is appended to the element's children; control flow yields the JSX in its branches.
+
+The two forms share the same `{...}` syntax -- the compiler decides which shape applies from the body's first token.
+
+```jac
+to cl:
+
+def:pub Greeting(name: str) -> JsxElement {
+    return <div class="card">
+        {if name == "" {
+            <p>Hello, stranger</p>
+        } else {
+            <h1>Hello, {name}</h1>
+            <p>Welcome back.</p>
+        }}
+    </div>;
+}
+```
+
+**Key points:**
+
+- `{...}` slots replace inline comprehensions and nested ternaries -- the same `if`/`for`/`while`/etc. you write at function-body level works as a child.
+- A bare `return;` inside a statement slot is the **guard** form: rendering stops, the children accumulated so far become the slot's value.
+- A statement slot with no JSX renders to an empty fragment. Mix as needed: `<header>` and `<footer>` sit beside a `{for ... { ... }}` slot in the same parent.
+- The slot's bracketed shape is what disambiguates the keyword -- bare `for example` in JSX text remains plain text.
+
+### `for` and `while` loops
+
+`for it in items { <Row item={it} /> }` inside a slot lowers to a `JS` `for` loop that pushes each `<Row>` to the element's children -- not a comprehension over a `.map()`. Same shape for the `for x = 0 to n by 1 { ... }` form and for `while`.
+
+```jac
+to cl:
+
+def:pub ItemList(items: list[str]) -> JsxElement {
+    return <>
+        {if len(items) == 0 {
+            <p class="empty">Nothing here.</p>
+            return;
+        }}
+        <h2>Items</h2>
+        {for (i, item) in enumerate(items) {
+            <li key={i}>{item}</li>
+        }}
+    </>;
+}
+```
+
+`while` slots that emit keyless JSX get a `W2019` warning -- siblings produced by a loop need a stable `key=` so a re-render keeps their identity.
+
+### `has`-fields and Handlers
+
+A `def:pub -> JsxElement` body can declare `has`-fields and nested `def` handlers exactly like a regular component. `has`-fields keep the auto-`useState` wiring -- assigning to one rewrites to the generated setter:
+
+```jac
+to cl:
+
+def:pub Counter() -> JsxElement {
+    has count: int = 0;
+
+    def bump {
+        count = count + 1;
     }
 
-    def:pub Nav() -> JsxElement {
-        return <nav>
-            <a href="/">Home</a>
-            <a href="/about">About</a>
-        </nav>;
-    }
+    return <button onClick={bump}>Count: {count}</button>;
+}
+```
 
-    def:pub Footer() -> JsxElement {
-        return <footer>© 2024</footer>;
-    }
+### Dynamic Tags
 
-    def:pub app() -> JsxElement {
-        return <div>
-            <Header />
-            <main>Content here</main>
-            <Footer />
-        </div>;
-    }
+`<@expr />` chooses its element tag from an expression instead of a fixed name. The expression can be an identifier, a dotted access, or a brace-wrapped expression `<@{expr}>`, and resolves to a host-tag string, another component, or a `str | type` value:
+
+```jac
+to cl:
+
+def:pub Box(as_: str, children: any = None) -> JsxElement {
+    return <@as_ className="box">{children}</@as_>;
+}
+
+def:pub Demo() -> JsxElement {
+    return <>
+        <Box as_="article">Inside an article element</Box>
+        <Box as_="section">Inside a section element</Box>
+    </>;
+}
+```
+
+Use `as_`, not `as` -- `as` is reserved in Jac for import aliases.
+
+### `try` with `awaiting`: Suspense-shaped fallback
+
+A `try` slot can take an `awaiting` clause that names what to render while the work inside is still in flight. The cl-target compiler wraps the slot in a `<JacAwaiting>` element from `@jac/runtime` -- a thin shim over `React.Suspense` -- so the `awaiting` body renders during the dispatched-but-not-joined window and the `try` body's content takes over once the underlying async work settles.
+
+```jac
+to cl:
+
+def:pub UserCardSkeleton() -> JsxElement {
+    return <div class="card skeleton"><p>Loading user…</p></div>;
+}
+
+def:pub UserCardView(user: User) -> JsxElement {
+    return <div class="card"><h2>{user.name}</h2><p>{user.bio}</p></div>;
+}
+
+def:pub UserPanel(user: User) -> JsxElement {
+    return <section class="panel">
+        {try {
+            <UserCardView user={user}/>
+        } awaiting {
+            <UserCardSkeleton/>
+        }}
+    </section>;
+}
+```
+
+The `try` body needs a Suspense-aware data primitive (today: a `use(promise)` call or a Suspense-integrated fetcher inside the rendered subtree) for the fallback to actually fire. The wrapper is the language-level integration point -- once the `flow`/`wait` story plugs into `use()`, the same source picks up real async behavior with no call-site change.
+
+**Notes:**
+
+- `awaiting` is a clause of `try`; bare `awaiting { ... }` is a parse error.
+- `finally` alongside `awaiting` is rejected (`E2022`) -- the cleanup timing relative to the in-flight window is ambiguous.
+- `except` clauses are still legal but in v1 they don't render through the `<JacAwaiting>` wrapper -- wrap the slot with `<JacClientErrorBoundary>` for an error fallback.
+- On `sv` and `na` targets the `awaiting` body is silently dropped with a `W2020` warning; the construct compiles as an ordinary `try` until the streaming-SSR and native-thread lowerings land.
+
+### Raw HTML: `unsafe_html`
+
+By default `{value}` is rendered as escaped text. The `unsafe_html(x)` ambient builtin returns a sentinel that the client runtime renders as raw HTML (via `dangerouslySetInnerHTML` on React, `innerHTML` on bare-serve). Use it only with content you trust -- the name is the security review hint at the call site:
+
+```jac
+to cl:
+
+def:pub Comment(c: dict) -> JsxElement {
+    return <article>
+        <h3>{c["author"]}</h3>
+        <div class="body">{unsafe_html(c["trusted_html"])}</div>
+    </article>;
 }
 ```
 
@@ -271,11 +466,11 @@ cl {
 ### Header.cl.jac
 
 ```jac
-# No cl { } needed for .cl.jac files
+# No `to cl:` header needed for .cl.jac files
 
-def:pub Header(props: dict) -> JsxElement {
+def:pub Header(title: str) -> JsxElement {
     return <header>
-        <h1>{props.title}</h1>
+        <h1>{title}</h1>
     </header>;
 }
 ```
@@ -283,15 +478,15 @@ def:pub Header(props: dict) -> JsxElement {
 ### main.jac
 
 ```jac
-cl {
-    import from "./Header.cl.jac" { Header }
+to cl:
 
-    def:pub app() -> JsxElement {
-        return <div>
-            <Header title="My App" />
-            <main>Content</main>
-        </div>;
-    }
+import from "./Header.cl.jac" { Header }
+
+def:pub app() -> JsxElement {
+    return <div>
+        <Header title="My App" />
+        <main>Content</main>
+    </div>;
 }
 ```
 
@@ -317,15 +512,15 @@ export function Button({ label, onClick }: ButtonProps) {
 ### main.jac
 
 ```jac
-cl {
-    import from "./Button.tsx" { Button }
+to cl:
 
-    def:pub app() -> JsxElement {
-        return <Button
-            label="Click me"
-            onClick={lambda -> None { print("Clicked!"); }}
-        />;
-    }
+import from "./Button.tsx" { Button }
+
+def:pub app() -> JsxElement {
+    return <Button
+        label="Click me"
+        onClick={lambda -> None { print("Clicked!"); }}
+    />;
 }
 ```
 
@@ -336,31 +531,31 @@ cl {
 ### Inline Styles
 
 ```jac
-cl {
-    def:pub StyledBox() -> JsxElement {
-        return <div style={{
-            "backgroundColor": "#f0f0f0",
-            "padding": "20px",
-            "borderRadius": "8px",
-            "boxShadow": "0 2px 4px rgba(0,0,0,0.1)"
-        }}>
-            Styled content
-        </div>;
-    }
+to cl:
+
+def:pub StyledBox() -> JsxElement {
+    return <div style={{
+        "backgroundColor": "#f0f0f0",
+        "padding": "20px",
+        "borderRadius": "8px",
+        "boxShadow": "0 2px 4px rgba(0,0,0,0.1)"
+    }}>
+        Styled content
+    </div>;
 }
 ```
 
 ### CSS Classes
 
 ```jac
-cl {
-    import "./styles.css";
+to cl:
 
-    def:pub app() -> JsxElement {
-        return <div className="container">
-            <h1 className="title">Hello</h1>
-        </div>;
-    }
+import "./styles.css";
+
+def:pub app() -> JsxElement {
+    return <div className="container">
+        <h1 className="title">Hello</h1>
+    </div>;
 }
 ```
 
@@ -381,13 +576,20 @@ cl {
 
 | Concept | Syntax |
 |---------|--------|
-| Define component | `def:pub Name(props: dict) -> JsxElement { }` |
+| Define component | `def:pub Name(title: str, count: int) -> JsxElement { }` |
+| Statement slot | `{for x in xs { <li>{x}</li> }}` inside a JSX element |
+| Early-exit guard | bare `return;` inside a statement slot |
+| Suspense fallback | `{try { <Resolved/> } awaiting { <Loading/> }}` (cl only) |
+| Raw HTML opt-in | `{unsafe_html(trusted_html)}` |
+| Dynamic tag | `<@expr>...</@expr>` |
 | JSX element | `<div className="x">content</div>` |
 | Expression | `{expression}` |
-| Event handler | `onClick={lambda -> None { ... }}` |
+| Click handler | `onClick={lambda -> None { ... }}` |
+| Input handler | `onChange={lambda e: ChangeEvent { ... }}` |
 | List rendering | `{[<li>{x}</li> for x in items]}` |
 | Conditional | `{("A" if condition else "B")}` |
-| Children | `{props.children}` |
+| Children | `def:pub Card(children: any = None) { ... }` then `{children}` |
+| Forwarding bundle | `def:pub Wrap(props: dict)` (suppress W5015) |
 | Import component | `import from "./File.cl.jac" { Component }` |
 
 ---

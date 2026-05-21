@@ -9,7 +9,7 @@ It supports:
 """
 
 import argparse;
-import from typing { Any, Callable }
+import from typing { Callable }
 import from jaclang.cli.command {
     Arg,
     ArgKind,
@@ -24,7 +24,7 @@ obj CommandRegistry {
         _pending_extensions: dict[str, list[tuple]] = {},
         _finalized: bool = False,
         parser: argparse.ArgumentParser | None = None,
-        sub_parsers: Any = None;
+        sub_parsers: any = None;
 
     def init -> None;
     def command(
@@ -51,7 +51,10 @@ obj CommandRegistry {
     def get_groups -> list[str];
     def finalize -> argparse.ArgumentParser;
     def _apply_pending_extensions(name: str) -> None;
-    def _build_subparser(subparsers: Any, spec: CommandSpec) -> argparse.ArgumentParser;
+    def _build_subparser(
+        subparsers: any, spec: CommandSpec
+    ) -> argparse.ArgumentParser;
+
     def _add_argument(parser: argparse.ArgumentParser, arg: Arg) -> None;
 }
 

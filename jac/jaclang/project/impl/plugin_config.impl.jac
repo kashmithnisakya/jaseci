@@ -1,10 +1,10 @@
 """Implementation of base plugin configuration infrastructure."""
 import from pathlib { Path }
-import from typing { Any }
-import from jaclang.project.config { JacConfig }
+import from jaclang.project.config { JacConfig, find_project_root }
+import from jaclang.jac0core.runtime { JacRuntime }
 
 """Deep merge two dictionaries recursively."""
-impl deep_merge(base: dict[str, Any], override_dict: dict[str, Any]) -> dict[str, Any] {
+impl deep_merge(base: dict[str, any], override_dict: dict[str, any]) -> dict[str, any] {
     result = base.copy();
     for (key, value) in override_dict.items() {
         if (
@@ -22,18 +22,20 @@ impl deep_merge(base: dict[str, Any], override_dict: dict[str, Any]) -> dict[str
 
 """Initialize config loader with project directory."""
 impl PluginConfigBase.postinit{
-    if self.project_dir is None {
-        self.project_dir = Path.cwd();
-    } else {
-        self.project_dir = self.project_dir;
-    }
+    full_target = JacRuntime.get_full_target_path();
+    project_root_result = find_project_root(Path(full_target)) if full_target else None;
+    self.project_dir = (
+        self.project_dir
+            if self.project_dir is not None
+            else project_root_result[0] if project_root_result else Path.cwd()
+    );
     self.config_file = self.project_dir / 'jac.toml';
     self._config = None;
     self._jac_config = None;
 }
 
 """Load configuration from jac.toml, merging with defaults."""
-impl PluginConfigBase.load -> dict[str, Any] {
+impl PluginConfigBase.load -> dict[str, any] {
     if self._config is not None {
         return self._config;
     }
@@ -68,8 +70,8 @@ impl PluginConfigBase.get_jac_config -> JacConfig {
 
 """Get a configuration section with optional defaults."""
 impl PluginConfigBase.get_section(
-    section: str, defaults: dict[str, Any] | None = None
-) -> dict[str, Any] {
+    section: str, defaults: dict[str, any] | None = None
+) -> dict[str, any] {
     config = self.load();
     section_config = config.get(section, {});
     if defaults is not None {

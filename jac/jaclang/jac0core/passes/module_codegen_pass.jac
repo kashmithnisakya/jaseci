@@ -1,15 +1,9 @@
 """Shared base for codegen passes that operate on Module AST."""
 import from collections.abc { Sequence }
-import from typing { TYPE_CHECKING }
 import jaclang.jac0core.unitree as uni;
 import from jaclang.jac0core.constant { CodeContext }
 import from jaclang.jac0core.passes.transform { Transform }
-
-with entry {
-    if TYPE_CHECKING {
-        import from jaclang.jac0core.program { JacProgram }
-    }
-}
+import type from jaclang.jac0core.program { JacProgram }
 
 """Base for all module-level codegen passes.
 
@@ -65,8 +59,7 @@ obj ModuleCodegenPass(Transform[uni.Module, uni.Module]) {
             ) {
                 result.append(stmt);
             } elif (
-                not isinstance(stmt, uni.ContextAwareNode)
-                and ctx == CodeContext.SERVER
+                not isinstance(stmt, uni.ContextAwareNode) and ctx == CodeContext.SERVER
             ) {
                 # Undecorated top-level nodes default to SERVER context
                 result.append(stmt);

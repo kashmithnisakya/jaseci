@@ -34,6 +34,77 @@ with entry {
 }
 ```
 
+### Typing Your Reports
+
+**Declare `has reports: list[T]` on every walker.** It is the recommended default, not an opt-in optimization. The declaration is a single-source-of-truth contract: `report X` on the write side and `(spawn W).reports[i]` on the read side both type-check against the same `T`, so a typo or shape drift surfaces at `jac check` time instead of at the call site.
+
+A bare walker assumes `reports: list[any]`. That works, but it propagates `any` into consumer code -- and Jac's [strict gradual-typing rule](foundation.md#the-any-type-and-gradual-typing) will reject the consumer's typed assignment downstream. Typing `reports` at the source is almost always cheaper than annotating every receiving local as `any` and narrowing back.
+
+#### Pattern A: Single typed report (most walkers)
+
+The common case. The walker accumulates results internally and reports once at the end, or mutates state and reports the touched node.
+
+```jac
+node Task {
+    has title: str;
+    has done: bool = False;
+}
+
+walker:priv ToggleTask {
+    has task_id: str,
+        reports: list[Task] = [];   # typed report channel
+
+    can search with Root entry {
+        visit [-->];
+    }
+
+    can toggle with Task entry {
+        if jid(here) == self.task_id {
+            here.done = not here.done;
+            report here;        # `here` is Task -- type-checked against list[Task]
+            disengage;
+        }
+    }
+}
+
+with entry {
+    result = root spawn ToggleTask(task_id="abc123");
+    toggled: Task = result.reports[0];     # hydrated as Task on the consumer side
+}
+```
+
+Note that `has reports: list[Task] = [];` sits alongside the walker's other `has` declarations -- it is just another field with a default initializer, declared the same way as `task_id`.
+
+#### Pattern B: Single accumulated list (collection walkers)
+
+When the walker reports a *collection* once at exit, the element type is itself a list. The shape becomes `list[list[T]]` -- one outer slot for the single `report` call, one inner element type for each item in the reported list.
+
+```jac
+walker ListTasks {
+    has reports: list[list[Task]];
+
+    can collect with Root entry {
+        report [-->][?:Task];
+    }
+}
+
+with entry {
+    result = root spawn ListTasks();
+    tasks: list[Task] = result.reports[0];   # type-safe single-shot collection
+}
+```
+
+#### How the type checker enforces the declaration
+
+When `has reports` is declared, two rules are checked:
+
+1. The declaration itself must be a list type. `has reports: int = 0;` is rejected -- `reports` is the walker's report channel, not arbitrary state, so it must be `list[T]` for some `T`.
+2. Every `report` statement in the walker body must produce a value compatible with the element type `T`. If you `report "oops"` inside `ListTasks` above, the checker flags it as a type error.
+
+If you omit the declaration, the walker falls back to `reports: list[any]` and any value can be reported -- but downstream code that receives those values into typed destinations will hit Jac's strict-`any` rule. See [The `any` Type and Gradual Typing](foundation.md#the-any-type-and-gradual-typing) for the consumer side.
+
+When you cannot type the walker (for example, a third-party walker) but know the shape of a particular report, the [`as` cast operator](foundation.md#10-the-as-cast-operator) re-types it at the call site: `tasks = result.reports[0] as list[Task];`. The cast is unchecked -- prefer a typed `has reports: list[T]` declaration whenever the walker is yours to change.
+
 ## Common Patterns
 
 ### Pattern 1: Single Report (Recommended)
@@ -46,7 +117,8 @@ node Item {
 }
 
 walker:priv ListItems {
-    has items: list = [];
+    has reports: list[list[str]];
+    has items: list[str] = [];
 
     can collect with Root entry {
         visit [-->];
@@ -57,7 +129,7 @@ walker:priv ListItems {
     }
 
     can finish with Root exit {
-        report self.items;  # Single report with all data
+        report self.items;  # Single report with all data (type-checked)
     }
 }
 
@@ -93,7 +165,8 @@ node Item {
 }
 
 walker:priv FindMatches {
-    has search_term: str;
+    has search_term: str,
+        reports: list[Item] = [];   # one Item per match
 
     can search with Root entry {
         visit [-->];
@@ -101,7 +174,7 @@ walker:priv FindMatches {
 
     can check with Item entry {
         if self.search_term in here.name {
-            report here;  # One report per match
+            report here;  # `here` is Item -- type-checked against list[Item]
         }
     }
 }
@@ -109,7 +182,7 @@ walker:priv FindMatches {
 with entry {
     # Usage
     result = root spawn FindMatches(search_term="test");
-    matches = result.reports;  # Array of all matching nodes
+    matches: list[Item] = result.reports;  # typed end-to-end
 }
 ```
 
@@ -125,7 +198,8 @@ node Item {
 }
 
 walker:priv CreateItem {
-    has name: str;
+    has name: str,
+        reports: list[Item] = [];   # the created Item flows back typed
 
     can create with Root entry {
         new_item = here ++> Item(name=self.name);
@@ -136,7 +210,7 @@ walker:priv CreateItem {
 with entry {
     # Usage
     result = root spawn CreateItem(name="New Item");
-    created = result.reports[0];  # The new item
+    created: Item = result.reports[0];  # hydrated as Item on the client
 }
 ```
 
@@ -267,13 +341,53 @@ with entry {
 
 ## Best Practices
 
-1. **Prefer single reports** - Accumulate data and report once at the end
-2. **Use `with Root exit`** - Best place for final reports after traversal
-3. **Document report structure** - Comment what each report index contains
-4. **Always check `.reports`** - It may be empty or undefined
-5. **Keep reports serializable** - Stick to dicts, lists, strings, numbers, bools
+1. **Always declare `has reports: list[T]`** - The default `list[any]` propagates `any` into consumer code, and Jac's strict gradual-typing rule rejects `any` flowing into typed destinations. Typing the report channel at the walker is almost always cheaper than annotating every receiving local as `any` and narrowing back. See [The `any` Type and Gradual Typing](foundation.md#the-any-type-and-gradual-typing).
+2. **Prefer single reports** - Accumulate data and report once at the end
+3. **Use `with Root exit`** - Best place for final reports after traversal
+4. **Report typed objects directly** - Return node/obj instances instead of manually constructing dicts. The runtime automatically serializes typed objects with field metadata, and client code receives them as hydrated typed instances with proper field access (e.g., `task.title` instead of `task["title"]`)
+5. **Always check `.reports`** - It may be empty or undefined
+6. **Use typed return annotations** - For `def:pub` functions, annotate with `-> Task` or `-> list[Task]` instead of `-> dict` or `-> list` to enable automatic type hydration on the client
 
 ## Anti-Patterns
+
+### Don't: Manually construct dicts from typed objects
+
+```jac
+# Bad: Manual dict construction loses type information
+walker:priv BadCreate {
+    has name: str;
+
+    can create with Root entry {
+        item = here ++> Item(name=self.name);
+        report {"name": item[0].name, "data": item[0].data};  # Don't do this
+    }
+}
+
+# Good: Report the typed object directly
+walker:priv GoodCreate {
+    has name: str;
+
+    can create with Root entry {
+        item = here ++> Item(name=self.name);
+        report item[0];  # The runtime handles serialization automatically
+    }
+}
+```
+
+The same applies to `def:pub` functions -- return typed objects instead of manually constructed dicts:
+
+```jac
+# Bad: Manual dict return
+def:pub get_task(id: str) -> dict {
+    task = find_task(id);
+    return {"id": jid(task), "title": task.title, "done": task.done};
+}
+
+# Good: Typed return -- client receives a hydrated Task instance
+def:pub get_task(id: str) -> Task {
+    return find_task(id);
+}
+```
 
 ### Don't: Report in a loop without accumulation
 

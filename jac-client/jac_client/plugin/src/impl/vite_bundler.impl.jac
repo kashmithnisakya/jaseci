@@ -1,4 +1,19 @@
 import from jaclang.cli.console { console }
+import from jac_client.plugin.utils { get_bun }
+import from jaclang.runtimelib.client_bundle { ClientBundleError }
+
+
+"""Resolve the bun binary path or raise an error."""
+def _require_bun -> str {
+    bun = get_bun();
+    if not bun {
+        raise ClientBundleError(
+            'Bun is required but could not be found or installed. '
+            'Install manually: https://bun.sh'
+        ) from None;
+    }
+    return bun;
+}
 
 """Get the client build directory from project config."""
 impl ViteBundler._get_client_dir(self: ViteBundler) -> Path {
@@ -249,7 +264,7 @@ impl ViteBundler._resolve_api_base_url(
     return toml_base_url or api_base_url_override or env_override;
 }
 
-"""Get a valid JavaScript variable name from plugin module name."""
+
 impl ViteBundler._get_plugin_var_name(self: ViteBundler, plugin_name: str) -> str {
     name = plugin_name.split('/')[-1];
     name = name.replace('-', '_').replace('.', '_');
@@ -268,7 +283,7 @@ Example: To replace `APP_NAME` with the string "MyApp" in source code:
   - JS parses '"MyApp"' as the string: "MyApp"
   - Replacement in source: APP_NAME -> "MyApp" (valid JS!)
 """
-def _to_js_expr(value: Any) -> str {
+def _to_js_expr(value: any) -> str {
     # Handle None -> JS null literal
     if value is None {
         return "null";
@@ -308,9 +323,14 @@ impl ViteBundler._format_define_entries(
 ) -> str {
     # Vite define values must be valid JS expressions.
     # _to_js_expr() converts any Python/TOML value to a valid JS expression.
-    entries = ["    '" + JAC_API_BASE_URL_KEY + "': " + _to_js_expr(api_base_url)];
+    entries = [];
+    # Only add API base URL if explicitly set - skip for desktop builds where
+    # Tauri injects it at runtime via initialization_script
+    if api_base_url {
+        entries.append(f"    '{JAC_API_BASE_URL_KEY}': {_to_js_expr(api_base_url)}");
+    }
     for (key, value) in custom_defines.items() {
-        entries.append("    '" + key + "': " + _to_js_expr(value));
+        entries.append(f"    '{key}': {_to_js_expr(value)}");
     }
     return ',\n'.join(entries);
 }
@@ -321,7 +341,11 @@ impl ViteBundler._generate_vite_config_content(
     is_dev: bool,
     entry_file: Path,
     api_base_url: str,
-    api_port: int = 8000
+    base_path: str,
+    api_port: int = 8000,
+    for_mobile_dev: bool = False,
+    mobile_hmr_host: str = "",
+    mobile_hmr_port: int = 0
 ) -> str {
     build_dir = self._get_client_dir();
     vite_config_data = self.config_loader.get_vite_config();
@@ -406,6 +430,85 @@ impl ViteBundler._generate_vite_config_content(
         server_config_str = self._format_config_object(server_config, indent=2)
             if (isinstance(server_config, dict) and server_config)
             else '';
+        # Capacitor WebView: keep the HMR WebSocket alive so the full-reload plugin
+        # can push page reloads, but set explicit host/port so the device can connect.
+        if for_mobile_dev and mobile_hmr_host {
+            hmr_host = mobile_hmr_host;
+            hmr_port = mobile_hmr_port or 5173;
+            mobile_hmr_str = (
+                f'\n    hmr: {{ protocol: "ws", host: "{hmr_host}", port: {hmr_port}, clientPort: {hmr_port}, overlay: false }},'
+            );
+        } elif for_mobile_dev {
+            mobile_hmr_str = "\n    hmr: { overlay: false },";
+        } else {
+            mobile_hmr_str = "";
+        }
+        mobile_plug_in: str = "\n    jacMobileCompiledReload(),"
+            if for_mobile_dev
+            else "";
+        # After Jac writes compiled/*.js, push full-reload to the Capacitor WebView
+        mobile_compiled_block: str = (
+            r'''
+
+// When Jac recompiles, push full-reload to the WebView (Capacitor does not watch project files)
+function sendFullReload(server) {
+  let sent = false;
+  // Broadcast over the websocket first (works for both Vite 5 and Vite 6 clients).
+  try {
+    if (server.ws && typeof server.ws.send === "function") {
+      server.ws.send({ type: "full-reload", path: "*" });
+      sent = true;
+    }
+  } catch (e) {}
+  // Vite 6 environment fallback for runners that expose environment hot channels.
+  try {
+    const envs = server.environments;
+    if (envs && typeof envs === "object") {
+      for (const k of Object.keys(envs)) {
+        const env = envs[k];
+        if (env && env.hot && typeof env.hot.send === "function") {
+          env.hot.send({ type: "full-reload", path: "*" });
+          sent = true;
+        }
+      }
+    }
+  } catch (e) {}
+  return sent;
+}
+
+function jacMobileCompiledReload() {
+  return {
+    name: "jac-mobile-compiled-reload",
+    configureServer(server) {
+      const compiled = path.resolve(buildDir, "compiled");
+      try { server.watcher.add(compiled); } catch (e) {}
+      let timer = null;
+      const fire = (file) => {
+        if (typeof file !== "string") return;
+        const norm = file.split(path.sep).join("/");
+        if (!norm.includes("/compiled/") || !norm.endsWith(".js")) return;
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+          sendFullReload(server);
+        }, 300);
+      };
+      server.watcher.on("change", fire);
+      server.watcher.on("add", fire);
+    },
+    // Intercept hot updates for compiled files and force full-reload instead of module HMR
+    handleHotUpdate(ctx) {
+      const norm = ctx.file.split(path.sep).join("/");
+      if (norm.includes("/compiled/") && norm.endsWith(".js")) {
+        sendFullReload(ctx.server);
+        return [];
+      }
+    },
+  };
+}
+'''
+                if for_mobile_dev
+                else ""
+        );
         config_content = f'''import {{ defineConfig }} from "vite";
 import path from "path";
 import {{ fileURLToPath }} from "url";
@@ -441,19 +544,18 @@ function jacErrorReporter() {{
     }},
   }};
 }}
-
+{mobile_compiled_block}
 /**
  * Vite DEV configuration for HMR mode
  * Proxies API routes to Python server at localhost:{api_port}
  */
 export default defineConfig({{
+  base: "{base_path}",
   define: {{
 {define_str}
   }},
   plugins: [
-    jacErrorReporter(),{(
-            newline + plugins_str + newline + '  '
-        )
+    jacErrorReporter(),{mobile_plug_in}{(newline + plugins_str + newline + '  ')
             if plugins_str
             else ''}],
   root: buildDir,
@@ -464,7 +566,9 @@ export default defineConfig({{
     sourcemap: true, // Enable source maps for better error messages{build_overrides_str}
   }},
   server: {{
-    host: true,
+    host: {f'"{mobile_hmr_host}"'
+            if (for_mobile_dev and mobile_hmr_host)
+            else 'true'},
     watch: {{
       usePolling: true,
       interval: 100,
@@ -490,8 +594,33 @@ export default defineConfig({{
         target: "http://localhost:{api_port}",
         changeOrigin: true,
       }},
+      "/docs": {{
+        target: "http://localhost:{api_port}",
+        changeOrigin: true,
+      }},
+      "/openapi.json": {{
+        target: "http://localhost:{api_port}",
+        changeOrigin: true,
+      }},
+      "/admin": {{
+        target: "http://localhost:{api_port}",
+        changeOrigin: true,
+      }},
+      "/graph": {{
+        target: "http://localhost:{api_port}",
+        changeOrigin: true,
+      }},
+      "/redoc": {{
+        target: "http://localhost:{api_port}",
+        changeOrigin: true,
+      }},
+      // Backend serves project assets/ dir in dev; Vite owns /assets/* only at build time.
+      "/assets": {{
+        target: "http://localhost:{api_port}",
+        changeOrigin: true,
+      }},
     }},
-{server_config_str}
+{server_config_str}{mobile_hmr_str}
   }},
   resolve: {{
     alias: {{
@@ -587,13 +716,12 @@ function jacSourceMapper() {{
  */
 
 export default defineConfig({{
+  base: "{base_path}",
   define: {{
 {define_str}
   }},
   plugins: [
-    jacSourceMapper(),{(
-            newline + plugins_str + newline + '  '
-        )
+    jacSourceMapper(),{(newline + plugins_str + newline + '  ')
             if plugins_str
             else ''}],
   root: buildDir, // base folder (.jac/client/) so vite can find node_modules
@@ -636,13 +764,17 @@ api_base_url_override: overrides jac.toml base_url for desktop targets
     where the CLI knows the backend port at startup time.
 is_dev: if True, creates dev config with HMR proxy, else build config.
 api_port: port for API proxy in dev mode.
+for_mobile_dev: if True, configure Vite HMR for Capacitor WebView full-reload.
 """
 impl ViteBundler.create_vite_config(
     self: ViteBundler,
     entry_file: Path,
     api_base_url_override: str = "",
     is_dev: bool = False,
-    api_port: int = 8000
+    api_port: int = 8000,
+    for_mobile_dev: bool = False,
+    mobile_hmr_host: str = "",
+    mobile_hmr_port: int = 0
 ) -> Path {
     build_dir = self._get_client_dir();
     build_dir.mkdir(parents=True, exist_ok=True);
@@ -651,11 +783,16 @@ impl ViteBundler.create_vite_config(
     api_base_url = self._resolve_api_base_url(api_base_url_override);
     config_filename = 'vite.dev.config.js' if is_dev else 'vite.config.js';
     config_path = configs_dir / config_filename;
+    base_path = self.config_loader.get_base_path();
     config_content = self._generate_vite_config_content(
         is_dev=is_dev,
         entry_file=entry_file,
         api_base_url=api_base_url,
-        api_port=api_port
+        base_path=base_path,
+        api_port=api_port,
+        for_mobile_dev=for_mobile_dev,
+        mobile_hmr_host=mobile_hmr_host,
+        mobile_hmr_port=mobile_hmr_port
     );
     config_path.write_text(config_content, encoding='utf-8');
     return config_path;
@@ -697,13 +834,9 @@ impl ViteBundler.build(self: ViteBundler, entry_file: Optional[Path] = None) -> 
     import sys;
     import time;
     import shutil;
-    import from jac_client.plugin.utils { ensure_bun_available, ensure_client_deps }
-    # Ensure bun is available before proceeding
-    if not ensure_bun_available() {
-        raise ClientBundleError(
-            'Bun is required. Install manually: https://bun.sh'
-        ) from None;
-    }
+    import from jac_client.plugin.utils { ensure_client_deps }
+    # Resolve bun binary (system PATH → .jac/bin/ → auto-download)
+    bun = _require_bun();
     # Ensure client npm deps are configured; prompt to install defaults if missing
     if not ensure_client_deps(self.config_loader) {
         raise ClientBundleError(
@@ -736,40 +869,33 @@ impl ViteBundler.build(self: ViteBundler, entry_file: Optional[Path] = None) -> 
             if configs_npmrc.exists() and not build_npmrc.exists() {
                 shutil.copy2(configs_npmrc, build_npmrc);
             }
-            try {
-                # Install to .jac/client/node_modules with progress feedback
-                console.print("\n  ⏳ Installing dependencies...\n");
-                start_time = time.time();
-                result = subprocess.run(
-                    ['bun', 'install'],
-                    cwd=build_dir,
-                    check=False,
-                    text=True,
-                    capture_output=True
-                );
-                elapsed = time.time() - start_time;
-                if result.returncode != 0 {
-                    error_output = result.stderr or result.stdout;
-                    error_msg = f"Dependency installation failed after {elapsed:.1f}s\n\n{error_output}\nCommand: bun install";
-                    raise ClientBundleError(error_msg) from None;
-                }
-                console.print(f"\n  ✔ Dependencies installed ({elapsed:.1f}s)");
-            } except FileNotFoundError {
-                # This shouldn't happen since we check for bun at the start
-                raise ClientBundleError(
-                    'Bun command not found. Install Bun: https://bun.sh'
-                ) from None;
+            # Install to .jac/client/node_modules with progress feedback
+            console.print("\n  ⏳ Installing dependencies...\n");
+            start_time = time.time();
+            result = subprocess.run(
+                [bun, 'install'],
+                cwd=build_dir,
+                check=False,
+                text=True,
+                capture_output=True
+            );
+            elapsed = time.time() - start_time;
+            if result.returncode != 0 {
+                error_output = result.stderr or result.stdout;
+                error_msg = f"Dependency installation failed after {elapsed:.1f}s\n\n{error_output}\nCommand: bun install";
+                raise ClientBundleError(error_msg) from None;
             }
+            console.print(f"\n  ✔ Dependencies installed ({elapsed:.1f}s)");
         }
         if self.config_path {
             # Make config path relative to build_dir (where vite runs from)
             try {
                 config_rel = self.config_path.relative_to(build_dir);
-                command = ['bun', 'x', 'vite', 'build', '--config', str(config_rel)];
+                command = [bun, 'x', 'vite', 'build', '--config', str(config_rel)];
             } except ValueError {
                 # Config is outside client build dir, use absolute path
                 command = [
-                    'bun',
+                    bun,
                     'x',
                     'vite',
                     'build',
@@ -781,9 +907,9 @@ impl ViteBundler.build(self: ViteBundler, entry_file: Optional[Path] = None) -> 
             generated_config = self.create_vite_config(entry_file);
             # Config is in configs/, make it relative to build_dir
             config_rel = generated_config.relative_to(build_dir);
-            command = ['bun', 'x', 'vite', 'build', '--config', str(config_rel)];
+            command = [bun, 'x', 'vite', 'build', '--config', str(config_rel)];
         } else {
-            command = ['bun', 'run', 'build'];
+            command = [bun, 'run', 'build'];
         }
         # Run vite from client build directory so it can find node_modules
         console.print("\n  ⏳ Building client bundle...\n");
@@ -953,17 +1079,16 @@ def _toml_config_from_raw(config_data: dict) -> str {
 }
 
 """Build the Vite dev server command."""
-def _build_vite_dev_command(config_rel: Path, port: int) -> list[str] {
-    return [
-        'bun',
-        'x',
-        'vite',
-        '--config',
-        str(config_rel),
-        '--port',
-        str(port),
-        '--host'
-    ];
+def _build_vite_dev_command(config_rel: Path, port: int, host: str = "") -> list[str] {
+    bun = _require_bun();
+    cmd = [bun, 'x', 'vite', '--config', str(config_rel), '--port', str(port)];
+    if host {
+        cmd.append('--host');
+        cmd.append(host);
+    } else {
+        cmd.append('--host');
+    }
+    return cmd;
 }
 
 """Check if a line indicates Vite server is ready."""
@@ -993,11 +1118,8 @@ This runs in a separate thread to avoid blocking the main thread.
 Buffers output before ready so errors can be shown if startup fails.
 """
 def _forward_vite_output(
-    proc: Any,
-    ready_event: "threading.Event",
-    sys_module: Any,
-    output_buffer: list[str]
-) -> None {
+    proc: any, ready_event: "threading.Event", sys_module: any, output_buffer: list[str]
+) {
     try {
         for line in iter(proc.stdout.readline, '') {
             if not line {
@@ -1025,8 +1147,11 @@ def _forward_vite_output(
 
 """Start Vite dev server as a subprocess."""
 impl ViteBundler.start_dev_server(
-    self: ViteBundler, port: int = 3000, suppress_initial_output: bool = False
-) -> Any {
+    self: ViteBundler,
+    port: int = 3000,
+    suppress_initial_output: bool = False,
+    host: str = ""
+) -> any {
     import sys;
     import time;
     import threading;
@@ -1053,8 +1178,7 @@ impl ViteBundler.start_dev_server(
         # Config is outside build_dir, use absolute path
         config_rel = dev_config;
     }
-    command = _build_vite_dev_command(config_rel, port);
-    logger.debug(f"Starting Vite dev server on port {port}");
+    command = _build_vite_dev_command(config_rel, port, host=host);
     if suppress_initial_output {
         process = self._start_vite_with_output_capture(command, build_dir, sys);
     } else {
@@ -1110,6 +1234,7 @@ impl ViteBundler._ensure_dev_index_html(self: ViteBundler, build_dir: Path) -> N
 
 """Ensure dev dependencies are installed."""
 impl ViteBundler._ensure_dev_dependencies(self: ViteBundler, build_dir: Path) -> None {
+    bun = _require_bun();
     import time;
     node_modules = build_dir / 'node_modules';
     if node_modules.exists() {
@@ -1134,7 +1259,7 @@ impl ViteBundler._ensure_dev_dependencies(self: ViteBundler, build_dir: Path) ->
         console.print("\n  ⏳ Installing dependencies...\n");
         start_time = time.time();
         result = subprocess.run(
-            ['bun', 'install'], cwd=build_dir, check=False, text=True
+            [bun, 'install'], cwd=build_dir, check=False, text=True
         );
         elapsed = time.time() - start_time;
 
@@ -1157,8 +1282,8 @@ impl ViteBundler._ensure_dev_dependencies(self: ViteBundler, build_dir: Path) ->
 
 """Start Vite with output capture for clean startup messaging."""
 impl ViteBundler._start_vite_with_output_capture(
-    self: ViteBundler, command: list[str], build_dir: Path, sys_module: Any
-) -> Any {
+    self: ViteBundler, command: list[str], build_dir: Path, sys_module: any
+) -> any {
     import threading;
     process = subprocess.Popen(
         command,

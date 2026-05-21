@@ -8,5 +8,8 @@ exclude = [
     "*/examples/*",
     "*/tests/*",
     "console.impl.jac",
-    "cli_boot.jac"
+    "cli_boot.jac",
 ]
+
+[plugins.byllm.model]
+default_model = "anthropic/claude-opus-4-7"

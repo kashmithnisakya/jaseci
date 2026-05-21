@@ -4,7 +4,12 @@ Walks the module AST to detect calls between different codespace contexts
 (server/Python, native/LLVM, client/JavaScript) and builds an InteropManifest.
 """
 import jaclang.jac0core.unitree as uni;
-import from jaclang.jac0core.codeinfo { InteropBinding, InteropContext }
+import from jaclang.jac0core.constant { Tokens as Tok }
+import from jaclang.jac0core.codeinfo {
+    BoundaryTypeInfo,
+    InteropBinding,
+    InteropContext
+}
 import from jaclang.jac0core.passes.uni_pass { UniPass }
 """Identify cross-boundary function calls between sv, na, and cl contexts.
 
@@ -39,12 +44,72 @@ linking
         self: InteropAnalysisPass, module_name: str
     ) -> (str | None);
 
-    """Track imports from .na.jac modules."""
+    """Track imports from .na.jac modules and sv-to-sv microservice imports."""
     def enter_import(self: InteropAnalysisPass, nd: uni.Import) -> None;
+
+    """Register an sv-to-sv import: create InteropBindings for each item."""
+    def _register_sv_to_sv_import(
+        self: InteropAnalysisPass, nd: uni.Import, module_name: str
+    ) -> None;
+
+    """Walk a module AST collecting Ability nodes by name."""
+    def _collect_abilities(
+        self: InteropAnalysisPass, nd: any, out: dict[str, any]
+    ) -> None;
+
+    """Walk a module AST collecting public walker Archetype nodes by name.
+
+    Used by sv-to-sv import resolution to bind `sv import { SomeWalker }`
+    to a real walker definition on the provider side. Only `walker:pub`
+    archetypes participate -- private walkers are excluded since they
+    are not exposed at `/walker/<name>` on the HTTP boundary.
+    """
+    def _collect_pub_walkers(
+        self: InteropAnalysisPass, nd: any, out: dict[str, any]
+    ) -> None;
+
+    """Extract `has` field (name, type-name) pairs from a walker archetype.
+
+    Only `has` declarations participate in the wire contract; other body
+    members (abilities, can blocks, static state) stay on the provider.
+    Used by `_register_sv_to_sv_import` to derive RPC param shape.
+    """
+    def _extract_walker_has_fields(
+        self: InteropAnalysisPass, walker_nd: any
+    ) -> tuple[list[str], list[str]];
+
+    """Find an Archetype or Enum node by name via AST walk."""
+    def _find_archetype(self: InteropAnalysisPass, nd: any, target: str) -> any;
+
+    """Parse a source file standalone (no semantic analysis)."""
+    def _parse_only_source_module(self: InteropAnalysisPass, file_path: str) -> any;
 
     """Record function definition and its context."""
     def enter_ability(self: InteropAnalysisPass, nd: uni.Ability) -> None;
 
     """Check if a function call crosses context boundaries."""
     def enter_func_call(self: InteropAnalysisPass, nd: uni.FuncCall) -> None;
+
+    """Extract the inner type name from a subscript expression."""
+    def _extract_subscript_inner(
+        self: InteropAnalysisPass, expr: (uni.UniNode | None)
+    ) -> str;
+
+    """Extract all user-defined type names from a subscript."""
+    def _extract_all_subscript_types(
+        self: InteropAnalysisPass, expr: (uni.UniNode | None)
+    ) -> list[str];
+
+    """Extract all user-defined type names from a type annotation expression."""
+    def _extract_all_type_names(
+        self: InteropAnalysisPass, expr: (uni.UniNode | None)
+    ) -> list[str];
+
+    """Collect a type that crosses the codespace boundary into the manifest."""
+    def _collect_boundary_type(
+        self: InteropAnalysisPass, type_name: str, source_mod: (uni.Module | None)
+    ) -> None;
+
+    """After all nodes visited, collect boundary types from SV->CL bindings."""
+    def after_pass(self: InteropAnalysisPass) -> None;
 }

@@ -1,12 +1,10 @@
 """Implementation of project template registry."""
 
-import from typing { Any }
-
 # ===============================================================================
 # ProjectTemplate Implementation
 # ===============================================================================
 """Convert to dict for serialization (e.g., JSON bundling)."""
-impl ProjectTemplate.to_dict -> dict[str, Any] {
+impl ProjectTemplate.to_dict -> dict[str, any] {
     return {
         "name": self.name,
         "description": self.description,
@@ -21,7 +19,7 @@ impl ProjectTemplate.to_dict -> dict[str, Any] {
 # TemplateRegistry Implementation
 # ===============================================================================
 """Register a new template from plugin hook data."""
-impl TemplateRegistry.register(template_info: dict[str, Any]) -> None {
+impl TemplateRegistry.register(template_info: dict[str, any]) -> None {
     import from jaclang.project.template_registry { ProjectTemplate }
     name = template_info.get("name");
     if not name {
@@ -130,7 +128,7 @@ impl initialize_template_registry -> None {
 }
 
 """Register the default Jac project template."""
-def _register_default_template(registry: TemplateRegistry) -> None {
+def _register_default_template(registry: TemplateRegistry) {
     registry.register(
         {
             "name": "default",

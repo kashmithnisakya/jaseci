@@ -7,8 +7,7 @@ impl NaIRGenPass._resolve_jac_type(type_expr: (uni.UniNode | None)) -> ir.Type {
     # Tag-first fast path: use pre-computed backend_type_tag from UniTreeEnrichPass.
     # This avoids re-walking type annotation AST nodes for primitive and simple
     # collection types that TypeCheckPass already resolved.
-    if isinstance(type_expr, uni.Expr)
-    and getattr(type_expr, 'backend_type_tag', None) is not None {
+    if isinstance(type_expr, uni.Expr) and type_expr?.backend_type_tag is not None {
         tag = type_expr.backend_type_tag;
         if tag == "void" {
             return ir.VoidType();
@@ -91,7 +90,7 @@ impl NaIRGenPass._resolve_jac_type(type_expr: (uni.UniNode | None)) -> ir.Type {
         }
     }
     # Generic fallback: any node with .value matching a known type (handles Tokens)
-    if type_expr?.value and isinstance(getattr(type_expr, "value", None), str) {
+    if type_expr?.value and isinstance(type_expr?.value, str) {
         type_name = type_expr.value;
         if type_name in self.type_map {
             return self.type_map[type_name];
@@ -343,7 +342,7 @@ Returns "f64" for DoubleType, "ptr" for PointerType, and "i64" for all integer t
 (i8, i16, i32, i64, bool). This matches the classification used in _resolve_jac_type's
 AtomTrailer branches so collection helper keys are consistent.
 """
-impl NaIRGenPass._llvm_to_spec(t: Any) -> str {
+impl NaIRGenPass._llvm_to_spec(t: any) -> str {
     if isinstance(t, ir.DoubleType) {
         return "f64";
     }
@@ -451,7 +450,7 @@ impl NaIRGenPass._resolve_clib_type(type_expr: (uni.UniNode | None)) -> ir.Type 
     type_name: (str | None) = None;
     if isinstance(type_expr, uni.Name) {
         type_name = type_expr.value;
-    } elif type_expr?.value and isinstance(getattr(type_expr, "value", None), str) {
+    } elif type_expr?.value and isinstance(type_expr?.value, str) {
         type_name = type_expr.value;
     }
     if type_name is not None and type_name in self.clib_struct_names {
@@ -522,8 +521,20 @@ impl NaIRGenPass._to_bool(val: ir.Value) -> ir.Value {
     return val;
 }
 
-"""Coerce a value to the target type if needed."""
+
 impl NaIRGenPass._coerce_type(val: ir.Value, target_type: ir.Type) -> ir.Value {
+    _was_owned = self._is_owned(val);
+    _result = self._coerce_type_inner(val, target_type);
+    if _was_owned and _result is not val {
+        self._mark_owned(_result);
+    }
+    return _result;
+}
+
+"""Original coerce-type body — emits the actual cast/bitcast/inttoptr IR.
+Called only via _coerce_type so the ownership marker stays attached.
+"""
+impl NaIRGenPass._coerce_type_inner(val: ir.Value, target_type: ir.Type) -> ir.Value {
     if val.type == target_type {
         return val;
     }
@@ -601,6 +612,12 @@ impl NaIRGenPass._coerce_type(val: ir.Value, target_type: ir.Type) -> ir.Value {
         if isinstance(target_type, ir.IntType) and isinstance(val, ir.Constant) {
             return ir.Constant(target_type, -1);
         }
+        # Generic PointerType → IntType: ptrtoint.
+        # Needed for passing Jac obj references (struct pointers) or str (i8*)
+        # to C functions declared with int params, e.g. uv_fs_write(bufs: int).
+        if isinstance(target_type, ir.IntType) {
+            return self.builder.ptrtoint(val, target_type, name="ptr.toint");
+        }
     }
     # Struct value → struct pointer (C value → Jac pointer at call boundary)
     if not isinstance(val.type, ir.PointerType)
@@ -611,9 +628,17 @@ impl NaIRGenPass._coerce_type(val: ir.Value, target_type: ir.Type) -> ir.Value {
                 null_ptr, [ir.Constant(ir.IntType(32), 1)], name="clib.sizeof.gep"
             );
             size = self.builder.ptrtoint(size_gep, ir.IntType(64), name="clib.sizeof");
-            raw_ptr = self.builder.call(self.rc_alloc_fn, [size], name="clib.box.raw");
+            # Read jac_loc stamped by _codegen_tuple_val so attribution is precise.
+            _clib_loc = getattr(val, 'jac_loc', '');
+            raw_ptr = self._rc_call_with_ctx(
+                self.rc_alloc_fn, [size], op="box", loc=_clib_loc, name="clib.box.raw"
+            );
             typed_ptr = self.builder.bitcast(raw_ptr, target_type, name="clib.box.ptr");
             self.builder.store(val, typed_ptr);
+            # RC: fresh alloc is owned (RC=1) — mark so callers skip extra retain.
+            self._mark_owned(typed_ptr);
+            # Tag as "tuple" so RC debug log shows the type instead of "raw".
+            self._emit_set_type_tag(self.builder, raw_ptr, "tuple");
             return typed_ptr;
         }
         # ABI integer → struct pointer (e.g., i32 → %Color* for small C struct returns)
@@ -630,8 +655,8 @@ impl NaIRGenPass._coerce_type(val: ir.Value, target_type: ir.Type) -> ir.Value {
                     size = self.builder.ptrtoint(
                         size_gep, ir.IntType(64), name="clib.sizeof"
                     );
-                    raw_ptr = self.builder.call(
-                        self.rc_alloc_fn, [size], name="clib.box.raw"
+                    raw_ptr = self._rc_call_with_ctx(
+                        self.rc_alloc_fn, [size], op="box", name="clib.box.raw"
                     );
                     int_ptr = self.builder.bitcast(
                         raw_ptr, val.type.as_pointer(), name="clib.abi.cast"
@@ -640,10 +665,20 @@ impl NaIRGenPass._coerce_type(val: ir.Value, target_type: ir.Type) -> ir.Value {
                     typed_ptr = self.builder.bitcast(
                         raw_ptr, target_type, name="clib.box.ptr"
                     );
+                    # RC: fresh alloc is owned (RC=1) — mark so callers skip extra retain.
+                    self._mark_owned(typed_ptr);
+                    # Tag as the struct name so RC debug log shows the type.
+                    self._emit_set_type_tag(self.builder, raw_ptr, sname);
                     return typed_ptr;
                 }
             }
         }
+    }
+    # Generic IntType → PointerType: inttoptr.
+    # Needed for assigning calloc/malloc results (i64) to pointer-typed
+    # variables like str (i8*) or obj references, e.g. `txt: str = calloc_result;`
+    if isinstance(val.type, ir.IntType) and isinstance(target_type, ir.PointerType) {
+        return self.builder.inttoptr(val, target_type, name="int.toptr");
     }
     # Int width coercion (i1 to i64, etc.)
     if isinstance(val.type, ir.IntType) and isinstance(target_type, ir.IntType) {
@@ -675,7 +710,10 @@ impl NaIRGenPass._coerce_type(val: ir.Value, target_type: ir.Type) -> ir.Value {
             # Pointer-to-pointer bitcast (e.g., {i64,i64}* → i8*)
             if isinstance(boxed.type, ir.PointerType)
             and isinstance(target_type, ir.PointerType) {
-                return self.builder.bitcast(boxed, target_type, name="tuple.box.cast");
+                _cast = self.builder.bitcast(boxed, target_type, name="tuple.box.cast");
+                # RC: bitcast of owned boxed tuple is still owned.
+                self._mark_owned(_cast);
+                return _cast;
             }
         }
     }
@@ -721,9 +759,19 @@ impl NaIRGenPass._emit_binary_op(
         buf_size = self.builder.add(
             total, ir.Constant(ir.IntType(64), 1), name="buf_size"
         );
-        buf = self.builder.call(self.rc_alloc_fn, [buf_size], name="concat.buf");
+        _concat_loc = getattr(left, 'jac_loc', getattr(right, 'jac_loc', ''));
+        buf = self._rc_call_with_ctx(
+            self.rc_alloc_fn,
+            [buf_size],
+            op="str_concat",
+            loc=_concat_loc,
+            name="concat.buf"
+        );
         self.builder.call(strcpy_fn, [buf, left]);
         self.builder.call(strcat_fn, [buf, right]);
+        # RC: caller owns this freshly-allocated concat result (rc=1 from malloc).
+        # Mark it so the assign handler skips the extra RETAIN (avoiding rc=2 leak).
+        self._mark_owned(buf);
         return buf;
     }
     # String repeat (i8* * i64 or i64 * i8*): allocate n*len buffer, loop-copy
@@ -746,7 +794,9 @@ impl NaIRGenPass._emit_binary_op(
             slen = self.builder.call(strlen_fn, [str_val], name="rep.slen");
             total = self.builder.mul(slen, int_val, name="rep.total");
             alloc = self.builder.add(total, ir.Constant(i64, 1), name="rep.alloc");
+            self._set_rc_ctx("str_repeat", "");
             buf = self.builder.call(self.rc_alloc_fn, [alloc], name="rep.buf");
+            self._clear_rc_ctx();
             func = self.builder.basic_block.function;
             entry_bb = self.builder.basic_block;
             loop_bb = func.append_basic_block(name="rep.loop");
@@ -827,8 +877,12 @@ impl NaIRGenPass._emit_binary_op(
                 lmul_elem = self.builder.call(
                     lmul_helpers["get"], [lmul_list, lmul_ei], name="lmul.elem"
                 );
-                self.builder.call(lmul_helpers["append"], [lmul_new, lmul_elem]);
-                lmul_ne = self.builder.add(lmul_ei, ir.Constant(i64, 1), name="lmul.ne");
+                self._rc_call_with_ctx(
+                    lmul_helpers["append"], [lmul_new, lmul_elem], op="list_mul"
+                );
+                lmul_ne = self.builder.add(
+                    lmul_ei, ir.Constant(i64, 1), name="lmul.ne"
+                );
                 lmul_ei.add_incoming(lmul_ne, lmul_ibody_bb);
                 self.builder.branch(lmul_inner_bb);
                 self.builder.position_at_start(lmul_onext_bb);
@@ -869,22 +923,30 @@ impl NaIRGenPass._emit_binary_op(
                 self.builder.cbranch(end1, mid_bb, body1_bb);
                 self.builder.position_at_start(body1_bb);
                 e1 = self.builder.call(helpers["get"], [left, i1], name="lcat.e1");
-                self.builder.call(helpers["append"], [new_list, e1]);
+                self._rc_call_with_ctx(
+                    helpers["append"], [new_list, e1], op="list_cat"
+                );
                 n1 = self.builder.add(i1, ir.Constant(i64, 1), name="lcat.n1");
                 i1.add_incoming(n1, body1_bb);
                 self.builder.branch(loop1_bb);
                 # Append all from right
                 self.builder.position_at_start(mid_bb);
-                right_len = self.builder.call(helpers["len"], [right], name="lcat.rlen");
+                right_len = self.builder.call(
+                    helpers["len"], [right], name="lcat.rlen"
+                );
                 self.builder.branch(loop2_bb);
                 self.builder.position_at_start(loop2_bb);
                 i2 = self.builder.phi(i64, name="lcat.i2");
                 i2.add_incoming(ir.Constant(i64, 0), mid_bb);
-                end2 = self.builder.icmp_unsigned(">=", i2, right_len, name="lcat.end2");
+                end2 = self.builder.icmp_unsigned(
+                    ">=", i2, right_len, name="lcat.end2"
+                );
                 self.builder.cbranch(end2, done_bb, body2_bb);
                 self.builder.position_at_start(body2_bb);
                 e2 = self.builder.call(helpers["get"], [right, i2], name="lcat.e2");
-                self.builder.call(helpers["append"], [new_list, e2]);
+                self._rc_call_with_ctx(
+                    helpers["append"], [new_list, e2], op="list_cat"
+                );
                 n2 = self.builder.add(i2, ir.Constant(i64, 1), name="lcat.n2");
                 i2.add_incoming(n2, body2_bb);
                 self.builder.branch(loop2_bb);
@@ -1139,6 +1201,11 @@ impl NaIRGenPass._emit_binary_op(
     if op == Tok.KW_OR {
         return self.builder.or_(left, right, name="or");
     }
+    # Unknown operator — surface a loud error instead of silently emitting
+    # a function body that reads garbage at runtime. Catches walrus (`:=`,
+    # WALRUS_EQ), pipe-forward (`|>`), and any other binary operator the
+    # NA pass doesn't lower yet.
+    self.emit(E5090, node_override=self.cur_node, kind="binary operator", name=op);
     return None;
 }
 
@@ -1473,13 +1540,17 @@ impl NaIRGenPass._emit_comparison(
                     # For < and <=: ea < eb → True, ea > eb → False
                     # For > and >=: ea > eb → True, ea < eb → False
                     if op == Tok.LT or op == Tok.LTE {
-                        self.builder.cbranch(lcmp_lex_lt, lcmp_lex_true, lcmp_lex_lbody);
+                        self.builder.cbranch(
+                            lcmp_lex_lt, lcmp_lex_true, lcmp_lex_lbody
+                        );
                         self.builder.position_at_start(lcmp_lex_lbody);
                         self.builder.cbranch(
                             lcmp_lex_gt, lcmp_lex_false, lcmp_lex_next
                         );
                     } else {
-                        self.builder.cbranch(lcmp_lex_gt, lcmp_lex_true, lcmp_lex_lbody);
+                        self.builder.cbranch(
+                            lcmp_lex_gt, lcmp_lex_true, lcmp_lex_lbody
+                        );
                         self.builder.position_at_start(lcmp_lex_lbody);
                         self.builder.cbranch(
                             lcmp_lex_lt, lcmp_lex_false, lcmp_lex_next
@@ -1720,9 +1791,13 @@ impl NaIRGenPass._emit_comparison(
         return None;
     }
     if is_float {
+        # IEEE 754: != must use unordered compare so NaN != NaN → true.
+        # All other comparisons use ordered (NaN → false).
+        if op == Tok.NE {
+            return self.builder.fcmp_unordered("!=", left, right, name="fcmp");
+        }
         fcmp_map: dict[(str, str)] = {
             Tok.EE: "==",
-            Tok.NE: "!=",
             Tok.LT: "<",
             Tok.GT: ">",
             Tok.LTE: "<=",
@@ -1900,7 +1975,7 @@ impl NaIRGenPass._infer_compr_elem_struct(compr: object) -> (str | None) {
         full = f"{check}.{method_name}";
         if full in self.method_ast_sigs {
             sig = self.method_ast_sigs[full];
-            ret_type = getattr(sig, 'return_type', None);
+            ret_type = sig?.return_type;
             if ret_type is not None {
                 (inner, _, _) = self._peel_list_type(ret_type);
                 if inner is not None {

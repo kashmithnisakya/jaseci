@@ -6,6 +6,14 @@ import from jac_mcp.resources { ResourceProvider }
 import from jac_mcp.tools { ToolProvider }
 import from jac_mcp.prompts { PromptProvider }
 import from jac_mcp.compiler_bridge { CompilerBridge }
+import from jac_mcp.mode {
+    get_mcp_mode,
+    set_mcp_mode,
+    disabled_tools_for_mode,
+    disabled_prompts_for_mode,
+    VALID_MODES,
+    DEFAULT_MODE
+}
 
 # ── Server Tests ──
 test "server creation with defaults" {
@@ -113,6 +121,9 @@ test "get config schema" {
     assert "host" in options;
     assert "expose_grammar" in options;
     assert "enable_validate" in options;
+    assert "mode" in options;
+    mode_opt = options["mode"];
+    assert mode_opt["default"] == "full";
 }
 
 # ── Resource Provider Tests ──
@@ -176,7 +187,7 @@ test "examples index content" {
     rp.index_resources();
     content = rp.read_resource("jac://examples/index");
     assert content;
-    assert "data_spatial" in content;
+    assert "littleX" in content;
 }
 
 test "invalid uri returns error" {
@@ -206,7 +217,7 @@ test "all doc resources readable" {
 test "example category readable" {
     rp = ResourceProvider();
     rp.index_resources();
-    content = rp.read_resource("jac://examples/data_spatial");
+    content = rp.read_resource("jac://examples/littleX");
     if not content.startswith("Error:") {
         assert ".jac" in content.lower() or "---" in content;
     }
@@ -247,9 +258,11 @@ test "tool names" {
     assert "jac_to_js" in names;
     assert "run_jac" in names;
     assert "graph_visualize" in names;
-    assert "list_templates" in names;
-    assert "create_project" in names;
-    assert "start_server" in names;
+    assert "list_commands" in names;
+    assert "get_command" in names;
+    assert "execute_command" in names;
+    assert "understand_jac_and_jaseci" in names;
+    assert "get_resource" in names;
 }
 
 test "explain error unexpected token" {
@@ -285,18 +298,26 @@ test "list examples returns results" {
 }
 
 test "list examples returns results when repo root is None (PyPI install)" {
-    import from unittest.mock { patch, MagicMock }
+    import from unittest.mock { patch }
 
-    # Mock find_repo_root to return None, simulating a PyPI (non-editable) install
+    # Mock find_repo_root to return None, simulating a PyPI (non-editable) install,
+    # and stub the GitHub API fetch so the test does not depend on live network
+    # access (which is rate-limited and flaky in CI).
+    fake_categories = ["chess", "manual_code", "littleX"];
     with patch("jac_mcp.resources.find_repo_root", return_value=None) {
-        tp = ToolProvider();
-        result = tp.call_tool("list_examples", {});
+        with patch(
+            "jac_mcp.resources.ResourceProvider._fetch_github_categories",
+            return_value=fake_categories
+        ) {
+            tp = ToolProvider();
+            result = tp.call_tool("list_examples", {});
+        }
     }
     assert "examples" in result;
     examples = result["examples"];
     assert len(examples) > 0 , "list_examples should return results via GitHub fallback when repo root is None";
     names = [e["name"] for e in examples];
-    assert "data_spatial" in names , "Expected 'data_spatial' in GitHub-fetched examples";
+    assert "littleX" in names , "Expected 'littleX' in GitHub-fetched examples";
     for ex in examples {
         assert "name" in ex;
         assert "uri" in ex;
@@ -922,7 +943,9 @@ test "jac to js via tool" {
 
 test "run jac prints output" {
     tp = ToolProvider();
-    result = tp.call_tool("run_jac", {"code": "with entry { print(\"hello world\"); }"});
+    result = tp.call_tool(
+        "run_jac", {"code": "with entry { print(\"hello world\"); }"}
+    );
     assert "stdout" in result;
     assert "exit_code" in result;
     assert result["exit_code"] == 0;
@@ -954,28 +977,104 @@ test "graph visualize missing code returns error" {
     assert "error" in result;
 }
 
-test "list templates via tool" {
+test "get command returns full args" {
     tp = ToolProvider();
-    result = tp.call_tool("list_templates", {});
-    assert "templates" in result;
-    assert isinstance(result["templates"], list);
-    assert len(result["templates"]) > 0;
+    result = tp.call_tool("get_command", {"name": "run"});
+    assert "name" in result;
+    assert result["name"] == "run";
+    assert "args" in result;
+    assert isinstance(result["args"], list);
+    assert len(result["args"]) > 0;
 }
 
-test "create project missing name via tool" {
+test "get command unknown returns error" {
     tp = ToolProvider();
-    result = tp.call_tool("create_project", {});
+    result = tp.call_tool("get_command", {"name": "nonexistent_cmd"});
     assert "error" in result;
 }
 
-test "start server missing filename via tool" {
+test "get command missing name returns error" {
     tp = ToolProvider();
-    result = tp.call_tool("start_server", {});
+    result = tp.call_tool("get_command", {});
     assert "error" in result;
 }
 
-test "start server nonexistent file via tool" {
+test "understand returns knowledge map with key sections and size hints" {
     tp = ToolProvider();
-    result = tp.call_tool("start_server", {"filename": "/nonexistent/app.jac"});
-    assert "error" in result;
+    result = tp.call_tool("understand_jac_and_jaseci", {});
+    assert "knowledge_map" in result;
+    km = result["knowledge_map"];
+    assert "Language Syntax" in km
+    and "Object-Spatial Programming" in km
+    and "Full-Stack Development" in km;
+    assert "jac://guide/pitfalls" in km and "jac://docs/osp" in km;
+    assert "[S]" in km and "[M]" in km and "[L]" in km;
+}
+
+test "get resource fetches valid URIs and rejects invalid ones" {
+    tp = ToolProvider();
+    pitfalls = tp.call_tool("get_resource", {"uri": "jac://guide/pitfalls"});
+    assert "content" in pitfalls and "WRONG" in pitfalls["content"];
+    osp = tp.call_tool("get_resource", {"uri": "jac://docs/osp"});
+    assert "content" in osp and osp["uri"] == "jac://docs/osp";
+    bad = tp.call_tool("get_resource", {"uri": "jac://nonexistent/fake"});
+    assert "error" in bad;
+    empty = tp.call_tool("get_resource", {});
+    assert "error" in empty;
+}
+
+# ── Mode Tests ──
+test "valid modes and default" {
+    assert VALID_MODES == ["lite", "standard", "full"];
+    assert DEFAULT_MODE == "full";
+}
+
+test "get_mcp_mode defaults to full when unset" {
+    set_mcp_mode("");
+    assert get_mcp_mode() == "full";
+}
+
+test "set_mcp_mode writes into the plugin config" {
+    for m in ["lite", "standard", "full"] {
+        set_mcp_mode(m);
+        assert get_mcp_mode() == m;
+    }
+    set_mcp_mode("");
+}
+
+test "get_mcp_mode falls back on invalid value" {
+    set_mcp_mode("bogus");
+    assert get_mcp_mode() == DEFAULT_MODE;
+    set_mcp_mode("");
+}
+
+test "disabled sets are empty for every mode (placeholder)" {
+    for m in VALID_MODES {
+        assert disabled_tools_for_mode(m) == set();
+        assert disabled_prompts_for_mode(m) == set();
+    }
+}
+
+test "list_tools returns same surface in every mode" {
+    set_mcp_mode("");
+    tp = ToolProvider();
+    baseline = [t["name"] for t in tp.list_tools()];
+    for m in VALID_MODES {
+        set_mcp_mode(m);
+        mode_tools = [t["name"] for t in tp.list_tools()];
+        assert mode_tools == baseline , f"mode `{m}` surface diverged from baseline";
+    }
+    set_mcp_mode("");
+}
+
+test "list_prompts returns same surface in every mode" {
+    set_mcp_mode("");
+    pp = PromptProvider();
+    baseline = [p["name"] for p in pp.list_prompts()];
+    for m in VALID_MODES {
+        set_mcp_mode(m);
+        mode_prompts = [p["name"] for p in pp.list_prompts()];
+        assert mode_prompts == baseline , f"mode `{m}` prompt surface diverged from baseline";
+    }
+    set_mcp_mode("");
 }

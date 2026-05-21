@@ -8,7 +8,7 @@
 - [Walkers](#walkers) - Walker declaration, visit, report, disengage
 - [Graph Construction](#graph-construction) - Creating and connecting nodes
 - [Graph Traversal](#graph-traversal) - Filtered traversal, entry/exit events
-- [Data Spatial Queries](#data-spatial-queries) - Edge references, attribute filtering
+- [Object Spatial Queries](#object-spatial-queries) - Edge references, attribute filtering
 - [Typed Context Blocks](#typed-context-blocks) - Type-based dispatch
 
 ---
@@ -161,7 +161,6 @@ node SecureRoom {
 
 ```jac
 node Entity {
-    has id: str;
     has created_at: str;
 }
 
@@ -409,6 +408,22 @@ with entry {
 }
 ```
 
+You can declare `has reports` with a type to get compile-time checking on `report` statements:
+
+```jac
+walker DataCollector {
+    has reports: list[int];
+
+    can start with Root entry { visit [-->]; }
+    can collect with DataNode entry {
+        report here.value;  # checked against int
+        visit [-->];
+    }
+}
+```
+
+If omitted, `reports` defaults to `list[any]`. See [Walker Response Patterns](walker-responses.md#typing-your-reports) for details.
+
 ### 5 The `disengage` Statement
 
 The `disengage` statement immediately terminates a walker's traversal. Use it when the walker has found what it was looking for (like a search hitting its target) or when a condition means further traversal would be pointless. It's the walker equivalent of `return` from a recursive function.
@@ -504,9 +519,12 @@ walker list_todos {
 }
 ```
 
+!!! note
+    `main.jac` is the default entry point. If your file has a different name (e.g., `app.jac`), pass it explicitly: `jac start app.jac`.
+
 ```bash
 # Run as API server
-jac start app.jac
+jac start
 
 # Call via HTTP
 curl -X POST http://localhost:8000/walker/add_todo \
@@ -619,7 +637,7 @@ with entry {
 
     <!-- jac-skip: fragment shown in context of a walker ability -->
     ```jac
-    new_node = here ++> Todo(id="123", title="Buy groceries");
+    new_node = here ++> Todo(title="Buy groceries");
     created_todo = new_node[0];  # Access the actual node
     report created_todo;
     ```
@@ -690,7 +708,7 @@ with entry {
 walker Cleanup {
     can check with Todo entry {
         if here.completed {
-            node_id = here.id;
+            node_id = jid(here);
             del here;
             report {"deleted": node_id};
         }
@@ -712,7 +730,7 @@ walker:priv DeleteWithChildren {
 
     can delete with Todo entry {
         # Delete if this is the target or a child of the target
-        if here.id == self.parent_id or here.parent_id == self.parent_id {
+        if jid(here) == self.parent_id or here.parent_id == self.parent_id {
             del here;
         }
     }
@@ -731,6 +749,8 @@ walker:priv DeleteWithChildren {
 | `save(node)` | Persist node to storage |
 | `commit()` | Commit pending changes |
 | `printgraph(root)` | Print graph structure to stdout (output depends on graph size; may require logging configuration to see results) |
+
+> See [Persistence & Schema Migration](../persistence.md) for how persisted graph data tolerates schema changes across runs (added/removed fields, type changes, class renames) and how to inspect or rescue data with [`jac db`](../cli/index.md#database-operations).
 
 ```jac
 node Person { has name: str; }
@@ -844,7 +864,7 @@ node Room {
 
 ---
 
-## Data Spatial Queries
+## Object Spatial Queries
 
 ### 1 Edge Reference Syntax
 
@@ -935,16 +955,17 @@ Typed context blocks let you conditionally execute code based on the runtime typ
 The syntax uses `->Type{code}` with no space between the arrow and type name:
 
 ```jac
+node Animal { has name: str = ""; }
+node Dog(Animal) {}
+node Cat(Animal) {}
+
 walker AnimalVisitor {
     can visit with Animal entry {
         # Typed context block for Dog (subtype of Animal)
-        ->Dog{print(f"{here.name} is a {here.breed} dog");}
+        ->Dog{print(f"{here.name} is a dog");}
 
         # Typed context block for Cat (subtype of Animal)
         ->Cat{print(f"{here.name} says meow");}
-
-        # Default case (any other Animal type)
-        ->_{print(f"{here.name} is some animal");}
     }
 }
 ```
@@ -954,36 +975,38 @@ walker AnimalVisitor {
 - No space between `->` and the type name: `->Dog{` not `-> Dog {`
 - Opening brace immediately follows the type
 - Code typically on same line with closing brace
-- Use `->_` for default/catch-all case
+- For a default/catch-all branch, add a final ability triggered on the base type (e.g. `can default with Animal entry { ... }`) or use an `else` branch on an `if isinstance(...)` chain. The `->_{}` wildcard form is not supported.
 
-!!! warning "Known Limitation"
-    The `->_{}` wildcard/default case is not currently supported at runtime and will produce a `name '_' is not defined` error. Use an explicit base type or `else` branch instead.
+### 2 Union-Based Dispatch
 
-### 2 Tuple-Based Dispatch
+A single ability can fire on multiple node types using the `|` union syntax:
 
 ```jac
+node Node1 { has v: int = 0; }
+node Node2 { has v: int = 0; }
+
 walker Processor {
-    can process with (Node1, Node2) entry {
-        # Handle when visiting involves both types
+    can process with Node1 | Node2 entry {
+        # Handles either node type; here is typed as Node1 | Node2
+        print(here.v);
     }
 }
 ```
 
 ### 3 Context Blocks in Nodes
 
-Nodes reacting to different walker types:
+Nodes can react to a specific walker by naming the walker type as the trigger. To handle *any* walker, use the anonymous form (`can handle with entry { ... }`) -- there is no built-in `Walker` catch-all type.
 
 ```jac
+walker Reader {}
+walker Writer { has new_value: int = 0; }
+
 node DataNode {
-    has value: int;
+    has value: int = 0;
 
-    can handle with Walker entry {
-        ->Reader{print(f"Read value: {self.value}");}
-
-        ->Writer{
-            self.value = visitor.new_value;
-            print(f"Updated to: {self.value}");
-        }
+    # Anonymous ability fires for every walker that visits this node
+    can handle with entry {
+        print(f"Visited by {type(visitor).__name__}, value={self.value}");
     }
 }
 ```
@@ -1038,7 +1061,7 @@ walker:priv UpdateItem {
     has new_name: str;
     can find with Root entry { visit [-->]; }
     can update with Item entry {
-        if here.id == self.item_id {
+        if jid(here) == self.item_id {
             here.name = self.new_name;
             report here;
         }
@@ -1050,7 +1073,7 @@ walker:priv DeleteItem {
     has item_id: str;
     can find with Root entry { visit [-->]; }
     can remove with Item entry {
-        if here.id == self.item_id {
+        if jid(here) == self.item_id {
             del here;
             report {"deleted": self.item_id};
         }
@@ -1062,7 +1085,6 @@ walker:priv DeleteItem {
 
 ```jac
 node Item {
-    has id: str;
     has name: str;
 }
 
@@ -1081,7 +1103,7 @@ walker:priv SearchItems {
     can check with Item entry {
         if self.query.lower() in here.name.lower() {
             self.matches.append({
-                "id": here.id,
+                "id": jid(here),
                 "name": here.name,
                 "score": calculate_relevance(here, self.query)
             });
@@ -1109,7 +1131,7 @@ walker:priv GetTree {
             children.append(self.build_tree(child));
         }
         return {
-            "id": node.id,
+            "id": jid(node),
             "name": node.name,
             "children": children
         };

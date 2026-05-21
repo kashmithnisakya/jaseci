@@ -5,6 +5,7 @@ Direct implementations - no delegation.
 
 import from pathlib { Path }
 import from jaclang.cli.console { console }
+import from jaclang.jac0core.helpers { read_toml_with_encoding }
 
 # Configuration groups available in jac.toml
 glob CONFIG_GROUPS = [
@@ -124,7 +125,9 @@ impl plugins(action: str = 'list', names: list = [], verbose: bool = False) -> i
             # Case 0: Wildcard - disable all external plugins
             if target == '*' {
                 if '*' not in config.plugins_config.disabled {
-                    config.plugins_config.disabled = ['*'];  # Replace with just wildcard
+                    config.plugins_config.disabled = [
+                        '*'
+                    ];  # Replace with just wildcard
                     console.success("Disabled: * (all external plugins)", emoji=False);
                 } else {
                     console.warning(
@@ -364,7 +367,12 @@ impl plugins(action: str = 'list', names: list = [], verbose: bool = False) -> i
             pkg_name = pkg_name.replace(" (built-in)", "");
         }
 
-        for (short_name, qualified_name, plugin, plugin_class_name) in plugins_in_dist {
+        for (
+            short_name,
+            qualified_name,
+            plugin,
+            plugin_class_name
+        ) in plugins_in_dist {
             # Check disabled status using qualified name
             if qualified_name in disabled_plugins {
                 console.print(
@@ -505,7 +513,7 @@ def _config_file_label(path: Path, active_profile: str) -> str {
 }
 
 """Show the path to the active configuration files."""
-def _config_path -> None {
+def _config_path {
     import from jaclang.project.config { get_config, find_project_root }
 
     config = get_config();
@@ -539,7 +547,7 @@ def _config_path -> None {
 }
 
 """List available configuration groups."""
-def _config_groups -> None {
+def _config_groups {
     console.print("\nAvailable configuration groups:\n", style="info");
     group_descriptions = {
         "project": "Project metadata (name, version, description, authors)",
@@ -792,7 +800,7 @@ def _output_table(settings: dict, show_all: bool) -> None {
 }
 
 """Output settings as JSON."""
-def _output_json(settings: dict) -> None {
+def _output_json(settings: dict) {
     import json;
 
     # Convert to simpler structure for JSON output
@@ -811,7 +819,8 @@ def _output_json(settings: dict) -> None {
 }
 
 """Output settings as TOML (only explicitly set values)."""
-def _output_toml(settings: dict, show_all: bool) -> None {
+def _output_toml(settings: dict, show_all: bool) {
+    import from jaclang.project.config { toml_value }
     lines: list[str] = [];
 
     for grp in sorted(settings.keys()) {
@@ -823,8 +832,8 @@ def _output_toml(settings: dict, show_all: bool) -> None {
             # For TOML output, only show set values (or all if show_all)
             if show_all or data["is_set"] {
                 value = data["value"];
-                toml_value = _to_toml_value(value);
-                group_lines.append(f"{key} = {toml_value}");
+                rendered = toml_value(value);
+                group_lines.append(f"{key} = {rendered}");
             }
         }
 
@@ -865,32 +874,6 @@ def _format_value(value: object) -> str {
         return f"{{{len(value)} keys}}";
     } else {
         return str(value);
-    }
-}
-
-"""Convert a Python value to TOML representation."""
-def _to_toml_value(value: object) -> str {
-    if value is None {
-        return '""';  # TOML doesn't have null, use empty string
-
-    } elif isinstance(value, bool) {
-        return "true" if value else "false";
-    } elif isinstance(value, int) {
-        return str(value);
-    } elif isinstance(value, float) {
-        return str(value);
-    } elif isinstance(value, str) {
-        escaped = value.replace("\\", "\\\\").replace('"', '\\"');
-        return f'"{escaped}"';
-    } elif isinstance(value, list) {
-        items = [_to_toml_value(item) for item in value];
-        return f"[{', '.join(items)}]";
-    } elif isinstance(value, dict) {
-        # For inline tables
-        pairs = [f"{k} = {_to_toml_value(v)}" for (k, v) in value.items()];
-        return f"{{ {', '.join(pairs)} }}";
-    } else {
-        return f'"{value}"';
     }
 }
 
@@ -1170,8 +1153,6 @@ def _parse_value(value: str, target_type: type) -> object {
 def _save_config_with_setting(
     config: object, group_name: str, setting_name: str, value: object
 ) -> None {
-    import tomllib;
-
     if config.toml_path is None {
         console.error("No toml_path set, cannot save configuration.");
         return;
@@ -1179,9 +1160,7 @@ def _save_config_with_setting(
 
     # Load existing file content
     if config.toml_path.exists() {
-        with open(config.toml_path, "rb") as f {
-            doc = tomllib.load(f);
-        }
+        doc = read_toml_with_encoding(str(config.toml_path));
     } else {
         doc = {};
     }
@@ -1197,16 +1176,14 @@ def _save_config_with_setting(
     # Set the value
     doc[toml_section][setting_name] = value;
 
-    # Write back
-    _write_toml(config.toml_path, doc);
+    # Write back through the shared chokepoint (canonical serializer + guard).
+    config.persist_doc(doc);
 }
 
 """Save config without a specific setting (remove it)."""
 def _save_config_without_setting(
     config: object, group_name: str, setting_name: str
 ) -> None {
-    import tomllib;
-
     if config.toml_path is None {
         console.error("No toml_path set, cannot save configuration.");
         return;
@@ -1214,13 +1191,10 @@ def _save_config_without_setting(
 
     if not config.toml_path.exists() {
         return;  # Nothing to remove
-
     }
 
     # Load existing file content
-    with open(config.toml_path, "rb") as f {
-        doc = tomllib.load(f);
-    }
+    doc = read_toml_with_encoding(str(config.toml_path));
 
     # Map group name to TOML section
     toml_section = group_name;  # Group names match TOML section names
@@ -1234,80 +1208,6 @@ def _save_config_without_setting(
         }
     }
 
-    # Write back
-    _write_toml(config.toml_path, doc);
-}
-
-"""Write a dictionary to a TOML file."""
-def _write_toml(path: object, data: dict) -> None {
-    lines: list[str] = [];
-    tables: list[tuple[str, dict]] = [];
-
-    # First pass: write top-level key-value pairs
-    for (key, value) in data.items() {
-        if isinstance(value, dict) {
-            tables.append((key, value));
-        } else {
-            lines.append(f"{_quote_toml_key(key)} = {_to_toml_value(value)}");
-        }
-    }
-
-    # Add blank line before tables if we had values
-    if lines and tables {
-        lines.append("");
-    }
-
-    # Second pass: write tables
-    for (table_name, table_data) in tables {
-        if not table_data {
-            continue;  # Skip empty tables
-        }
-
-        # Check for nested tables
-        simple_values: list[tuple[str, object]] = [];
-        nested_tables: list[tuple[str, dict]] = [];
-
-        for (k, v) in table_data.items() {
-            if isinstance(v, dict) {
-                nested_tables.append((k, v));
-            } else {
-                simple_values.append((k, v));
-            }
-        }
-
-        # Write simple values under table header
-        if simple_values {
-            lines.append(f"[{table_name}]");
-            for (k, v) in simple_values {
-                lines.append(f"{_quote_toml_key(k)} = {_to_toml_value(v)}");
-            }
-            lines.append("");
-        }
-
-        # Write nested tables
-        for (nested_name, nested_data) in nested_tables {
-            lines.append(f"[{table_name}.{nested_name}]");
-            for (k, v) in nested_data.items() {
-                if not isinstance(v, dict) {
-                    lines.append(f"{_quote_toml_key(k)} = {_to_toml_value(v)}");
-                }
-            }
-            lines.append("");
-        }
-    }
-
-    with open(path, "w") as f {
-        f.write("\n".join(lines));
-    }
-}
-
-"""Quote a TOML key if necessary."""
-def _quote_toml_key(key: str) -> str {
-    import re;
-    # Bare keys can only contain A-Za-z0-9_-
-    if re.match(r'^[A-Za-z0-9_-]+$', key) {
-        return key;
-    }
-    escaped = key.replace("\\", "\\\\").replace('"', '\\"');
-    return f'"{escaped}"';
+    # Write back through the shared chokepoint (canonical serializer + guard).
+    config.persist_doc(doc);
 }

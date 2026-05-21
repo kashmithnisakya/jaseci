@@ -11,15 +11,20 @@ impl DependencyInstaller.postinit -> None {
         self.config = get_config();
     }
     if self.config is None {
-        raise ValueError("No jac.toml found. Run 'jac init' to create a project.");
+        raise ValueError(
+            "No jac.toml found. Run 'jac create <name>' to create a project."
+        );
     }
     self.venv_dir = self.config.get_venv_dir();
+    if self.install_flags is None {
+        self.install_flags = [];
+    }
 }
 
 impl DependencyInstaller.ensure_venv -> None {
     import venv;
     import sys;
-    def _create_venv(target: Path) -> None {
+    def _create_venv(target: Path) {
         builder = venv.EnvBuilder(with_pip=True, symlinks=(sys.platform != "win32"));
         try {
             builder.create(str(target));
@@ -114,9 +119,50 @@ impl DependencyInstaller.get_git_package_specs -> list[str] {
     return specs;
 }
 
+impl DependencyInstaller.get_extra_package_specs(groups: list[str]) -> list[str] {
+    if self.config is None {
+        return [];
+    }
+    opt_deps = self.config.optional_dependencies;
+    unknown: list[str] = [
+        g
+        for g in groups
+        if g not in opt_deps
+    ];
+    if unknown {
+        available: str = ", ".join(sorted(opt_deps.keys())) if opt_deps else "none";
+        raise ValueError(
+            f"Unknown extras: {', '.join(unknown)}. Available: {available}"
+        );
+    }
+    pkg_key: str = self.config.project.name.lower().replace("_", "-");
+    resolved: dict[str, str] = {};
+    seen: set[str] = set();
+    queue: list[str] = list(groups);
+    while queue {
+        group: str = queue.pop(0);
+        if group in seen or group not in opt_deps {
+            continue;
+        }
+        seen.add(group);
+        for (name, ver) in opt_deps[group].items() {
+            if "[" in name and name.endswith("]") {
+                bracket: int = name.index("[");
+                dep_pkg: str = name[:bracket].lower().replace("_", "-").strip();
+                if dep_pkg == pkg_key {
+                    queue.extend([g.strip() for g in name[bracket + 1:-1].split(",")]);
+                    continue;
+                }
+            }
+            resolved[name] = ver;
+        }
+    }
+    return [self._make_pip_spec(name, ver) for (name, ver) in resolved.items()];
+}
+
 """Create pip spec from package name and version."""
 impl DependencyInstaller._make_pip_spec(name: str, version: str) -> str {
-    if not version {
+    if not version or version in ("*", "latest") {
         return name;
     }
     if version.startswith(("=", ">", "<", "~", "!")) {
@@ -141,12 +187,19 @@ impl DependencyInstaller.install_package(specs: list[str]) -> bool {
     }
     self.ensure_venv();
     import re;
-    (returncode, stdout, stderr) = self._run_pip(["install", "--upgrade"] + specs);
+    (returncode, stdout, stderr) = self._run_pip(
+        ["install", "--upgrade"] + self.install_flags + specs
+    );
     if returncode == 0 {
+        if "--dry-run" in self.install_flags {
+            if stdout {
+                console.print(stdout, style="dim");
+            }
+            return True;
+        }
         # Parse and display what was actually installed
         if "Successfully installed" in stdout {
             console.print("✔ Installation complete:", style="success");
-            # Extract installed packages from pip output
             installed = re.search(r"Successfully installed (.+)", stdout);
             if installed {
                 packages = installed.group(1).split();
@@ -321,6 +374,7 @@ impl get_venv_site_packages(venv_dir: Path) -> Path {
 # Venv Path Management Implementation
 # ===============================================================================
 impl add_venv_to_path(config: JacConfig | None = None) -> None {
+    import os;
     import sys;
     import from jaclang.project.config { get_config }
     if config is None {
@@ -329,14 +383,36 @@ impl add_venv_to_path(config: JacConfig | None = None) -> None {
     if config is None {
         return;
     }
-    site_packages = get_venv_site_packages(config.get_venv_dir());
+    venv_dir = config.get_venv_dir();
+    site_packages = get_venv_site_packages(venv_dir);
     site_str = str(site_packages);
     if site_packages.exists() and site_str not in sys.path {
         sys.path.insert(0, site_str);
     }
+    # Also add venv bin directory to PATH for subprocess calls (e.g., jac mcp)
+    if sys.platform == "win32" {
+        bin_dir = venv_dir / "Scripts";
+    } else {
+        bin_dir = venv_dir / "bin";
+    }
+    if bin_dir.exists() {
+        # Resolve and normalize path to handle symlinks consistently
+        bin_str = os.path.normpath(str(bin_dir.resolve()));
+        current_path = os.environ.get("PATH", "");
+        # Normalize existing paths for comparison
+        path_parts = [
+            os.path.normpath(p)
+            for p in current_path.split(os.pathsep)
+            if p
+        ];
+        if bin_str not in path_parts {
+            os.environ["PATH"] = bin_str + os.pathsep + current_path;
+        }
+    }
 }
 
 impl remove_venv_from_path(config: JacConfig | None = None) -> None {
+    import os;
     import sys;
     import from jaclang.project.config { get_config }
     if config is None {
@@ -345,10 +421,32 @@ impl remove_venv_from_path(config: JacConfig | None = None) -> None {
     if config is None {
         return;
     }
-    site_packages = get_venv_site_packages(config.get_venv_dir());
+    venv_dir = config.get_venv_dir();
+    site_packages = get_venv_site_packages(venv_dir);
     site_str = str(site_packages);
     if site_str in sys.path {
         sys.path.remove(site_str);
+    }
+    # Also remove venv bin directory from PATH
+    if sys.platform == "win32" {
+        bin_dir = venv_dir / "Scripts";
+    } else {
+        bin_dir = venv_dir / "bin";
+    }
+    # Resolve and normalize path to match how it was added
+    bin_str = os.path.normpath(str(bin_dir.resolve()))
+        if bin_dir.exists()
+        else str(bin_dir);
+    current_path = os.environ.get("PATH", "");
+    path_parts = current_path.split(os.pathsep);
+    # Filter out the bin path (comparing normalized versions)
+    new_parts = [
+        p
+        for p in path_parts
+        if os.path.normpath(p) != bin_str
+    ];
+    if len(new_parts) != len(path_parts) {
+        os.environ["PATH"] = os.pathsep.join(new_parts);
     }
 }
 

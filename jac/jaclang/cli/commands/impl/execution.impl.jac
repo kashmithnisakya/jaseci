@@ -7,12 +7,8 @@ import marshal;
 import os;
 import sys;
 import types;
-import from typing { Any }
 import from jaclang.cli.console { console }
-import from jaclang.cli.commands.cli_helpers {
-    ensure_jac_runtime as _ensure_jac_runtime,
-    proc_file as _proc_file
-}
+import from jaclang.cli.commands.cli_helpers { proc_file as _proc_file }
 
 """Discover jac.toml from the file's directory when an absolute/relative path is given.
 
@@ -28,8 +24,8 @@ def _discover_config_from_file(filename: str) -> None {
     import from jaclang.jac0core.runtime { JacRuntime as Jac }
 
     file_path = Path(filename).resolve();
-    # Store entry file path for runtime utilities (called before _proc_file)
-    Jac.full_target_path = str(file_path);
+    # Seed the bootstrap target so new contexts get the right L3 identity.
+    Jac.set_full_target_path(str(file_path));
     file_dir = file_path.parent;
 
     # Preserve the active profile from any previously loaded config so that
@@ -90,13 +86,30 @@ impl run(
     main: bool = True,
     cache: bool = True,
     autonative: bool = False,
-    show_errors: bool = False,
+    diagnostics: str = "",
     args: list = []
 ) -> int {
-    _ensure_jac_runtime();
     import from jaclang.jac0core.runtime { JacRuntime as Jac }
+    import from jaclang.project.config { get_config }
     # Re-discover config from the file's directory (handles absolute paths)
     _discover_config_from_file(filename);
+    # --no-cache: wipe all .jac_ir/ cache directories under the file's source tree.
+    if not cache {
+        import glob as _glob;
+        import shutil;
+        _src_root = os.path.dirname(os.path.abspath(filename)) or ".";
+        cache_dirs = _glob.glob(
+            os.path.join(_src_root, "**", ".jac_ir"), recursive=True
+        );
+        for cache_dir in cache_dirs {
+            shutil.rmtree(cache_dir, ignore_errors=True);
+        }
+    }
+    # Resolve diagnostics level: CLI flag > jac.toml > default ("error")
+    if not diagnostics {
+        cfg = get_config();
+        diagnostics = cfg.run.diagnostics if cfg else "error";
+    }
     # Set sys.argv so the script can access arguments via sys.argv[1:]
     original_argv = sys.argv;
     sys.argv = [filename] + list(args);
@@ -110,6 +123,13 @@ impl run(
             full_path = os.path.abspath(filename);
             program = Jac.get_program();
             ir_mod = program.compile(file_path=full_path);
+            if program.errors_had {
+                for _err in program.errors_had {
+                    console.error(_err.pretty_print());
+                }
+                mach.close();
+                return 1;
+            }
             if ir_mod and ir_mod.gen.native_engine {
                 engine = ir_mod.gen.native_engine;
                 _populate_native_argv(engine, sys.argv);
@@ -137,9 +157,7 @@ impl run(
                     na_program._auto_promote_target = full_path;
                     ir_mod = na_program.compile(file_path=full_path);
                     if (
-                        ir_mod
-                        and ir_mod.gen.native_compat
-                        and ir_mod.gen.native_engine
+                        ir_mod and ir_mod.gen.native_compat and ir_mod.gen.native_engine
                     ) {
                         # Auto-promoted native module: execute via JIT
                         import ctypes;
@@ -182,38 +200,37 @@ impl run(
             );
         }
     } except Exception as e {
-        if Jac.program.errors_had {
-            for error in Jac.program.errors_had {
-                console.error(error.pretty_print());
+        if diagnostics != "none" {
+            if Jac.program.errors_had {
+                for error in Jac.program.errors_had {
+                    console.error(error.pretty_print());
+                }
+            } else {
+                import from jaclang.jac0core.helpers { dump_traceback }
+                console.error(dump_traceback(e));
             }
-        } else {
-            import from jaclang.jac0core.helpers { dump_traceback }
-            console.error(dump_traceback(e));
         }
         sys.argv = original_argv;
         mach.close();
-        return 1;
+        return 1 if diagnostics != "none" else 0;
     }
     n_errors = len(Jac.program.errors_had);
     n_warnings = len(Jac.program.warnings_had);
-    if show_errors {
-        for error in Jac.program.errors_had {
-            console.error(error.pretty_print());
+    if diagnostics != "none" {
+        if n_errors {
+            for error in Jac.program.errors_had {
+                console.error(error.pretty_print());
+            }
         }
-        for warning in Jac.program.warnings_had {
-            console.warning(f"{warning}");
+        if diagnostics == "all" and n_warnings {
+            for warning in Jac.program.warnings_had {
+                console.warning(f"{warning}");
+            }
         }
-    }
-    if n_errors or n_warnings {
-        console.print(
-            f"\n{n_errors} error(s), {n_warnings} warning(s) "
-            f"[diagnostics from first compile, cached for subsequent runs]",
-            style="dim"
-        );
     }
     sys.argv = original_argv;
     mach.close();
-    return 0;
+    return 1 if (n_errors and diagnostics != "none") else 0;
 }
 
 """Run the specified entrypoint function in the given .jac file."""
@@ -222,18 +239,17 @@ impl enter(
     entrypoint: str,
     args: list = [],
     main: bool = True,
-    root: str = '',
+    `root: str = '',
     nd: str = ''
 ) -> int {
-    _ensure_jac_runtime();
     import from jaclang.jac0core.runtime { JacRuntime as Jac }
     import from jaclang.jac0core.constructs { WalkerArchetype }
     # Re-discover config from the file's directory (handles absolute paths)
     _discover_config_from_file(filename);
     (base, mod, mach) = _proc_file(filename);
     # Set user root if provided (for permission boundary)
-    if root {
-        mach.set_user_root(root);
+    if `root {
+        mach.set_user_root(`root);
     }
     if filename.endswith('.jac') {
         ret_module = Jac.jac_import(
@@ -275,12 +291,13 @@ impl start(
     api_port: int = 0,
     no_client: bool = False
 ) -> int {
-    _ensure_jac_runtime();
     import from jaclang.jac0core.runtime { JacRuntime as Jac }
     import from pathlib { Path }
     if not Path(filename).exists() {
         if filename == "main.jac" {
-            console.error(f"Error: File 'main.jac' not found in the current directory.");
+            console.error(
+                f"Error: File 'main.jac' not found in the current directory."
+            );
             console.error(f"  Current directory: {os.getcwd()}");
             console.error(
                 "  Please specify a file: jac start <filename.jac> or make sure main.jac exists in the current directory"
@@ -363,7 +380,9 @@ impl start(
             import from jaclang.runtimelib.watcher { JacFileWatcher }
 
             watcher = JacFileWatcher(watch_paths=[base]);
-            hot_reloader = HotReloader(base_path=base, module_name=mod, watcher=watcher);
+            hot_reloader = HotReloader(
+                base_path=base, module_name=mod, watcher=watcher
+            );
             hot_reloader.start();
             # Connect the hot reloader to the server for HMR support
             if server?.enable_hmr {
@@ -403,9 +422,7 @@ impl start(
                 _print_startup_message(
                     dev,
                     no_client,
-                    vite_port
-                        if (dev and not no_client)
-                        else actual_port,
+                    vite_port if (dev and not no_client) else actual_port,
                     actual_port,
                     base
                 )
@@ -503,7 +520,7 @@ def _count_jac_files(directory: str) -> int {
 """Print startup message based on mode."""
 def _print_startup_message(
     dev: bool, no_client: bool, port: int, api_port: int, base_path: str = '.'
-) -> None {
+) {
     import from importlib.metadata { version as pkg_version }
 
     # Print header
@@ -563,7 +580,7 @@ def _print_startup_message(
 }
 
 """Start Vite dev server for HMR mode."""
-def _start_vite_dev_server(base_path: str, vite_port: int, api_port: int) -> Any {
+def _start_vite_dev_server(base_path: str, vite_port: int, api_port: int) -> any {
     import from pathlib { Path }
 
     try {

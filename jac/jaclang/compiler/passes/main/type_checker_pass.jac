@@ -15,6 +15,7 @@ import from jaclang.jac0core.diagnostics {
     E1002,
     E1003,
     E1004,
+    E1005,
     E1010,
     E1011,
     E1020,
@@ -28,6 +29,13 @@ import from jaclang.jac0core.diagnostics {
     E1093,
     E1094,
     E1095,
+    E1112,
+    E1113,
+    E1116,
+    E1117,
+    W1036,
+    W1037,
+    W1052,
     W2014,
     E2015
 }
@@ -45,21 +53,14 @@ class TypeCheckPass(UniPass) {
     def exit_assignment(self: TypeCheckPass, nd: uni.Assignment) -> None;
     def exit_atom_trailer(self: TypeCheckPass, nd: uni.AtomTrailer) -> None;
     def exit_binary_expr(self: TypeCheckPass, nd: uni.BinaryExpr) -> None;
-    def enter_bool_expr(self: TypeCheckPass, nd: uni.BoolExpr) -> None;
-    def exit_bool_expr(self: TypeCheckPass, nd: uni.BoolExpr) -> None;
     def exit_func_call(self: TypeCheckPass, nd: uni.FuncCall) -> None;
+    def exit_jsx_element(self: TypeCheckPass, nd: uni.JsxElement) -> None;
     def exit_filter_compr(self: TypeCheckPass, nd: uni.FilterCompr) -> None;
     def exit_return_stmt(self: TypeCheckPass, nd: uni.ReturnStmt) -> None;
     def exit_formatted_value(self: TypeCheckPass, nd: uni.FormattedValue) -> None;
     def exit_edge_ref_trailer(self: TypeCheckPass, nd: uni.EdgeRefTrailer) -> None;
     def exit_special_var_ref(self: TypeCheckPass, nd: uni.SpecialVarRef) -> None;
     def exit_name(self: TypeCheckPass, nd: uni.Name) -> None;
-    def enter_if_else_expr(self: TypeCheckPass, nd: uni.IfElseExpr) -> None;
-    def enter_if_stmt(self: TypeCheckPass, nd: uni.IfStmt) -> None;
-    def exit_if_stmt(self: TypeCheckPass, nd: uni.IfStmt) -> None;
-    def _if_body_always_terminates(self: TypeCheckPass, nd: uni.IfStmt) -> bool;
-    def enter_match_case(self: TypeCheckPass, nd: uni.MatchCase) -> None;
-    def exit_match_case(self: TypeCheckPass, nd: uni.MatchCase) -> None;
     def exit_param_var(self: TypeCheckPass, nd: uni.ParamVar) -> None;
     def exit_has_var(self: TypeCheckPass, nd: uni.HasVar) -> None;
     def exit_in_for_stmt(self: TypeCheckPass, nd: uni.InForStmt) -> None;
@@ -78,4 +79,19 @@ class TypeCheckPass(UniPass) {
     def _body_always_returns(
         self: TypeCheckPass, body: list[uni.CodeBlockStmt]
     ) -> bool;
+
+    def _check_bare_generic(
+        self: TypeCheckPass, ann_node: uni.UniNode, ty: object
+    ) -> None;
+
+    def _check_explicit_any(self: TypeCheckPass, ann_node: uni.UniNode) -> None;
+    def _check_walker_reports_shape(
+        self: TypeCheckPass, nd: uni.HasVar, declared_type: object
+    ) -> None;
+
+    def _enclosing_walker_report_elem_type(
+        self: TypeCheckPass, nd: uni.UniNode
+    ) -> object;
+
+    def _check_event_trigger_archetype(self: TypeCheckPass, nd: uni.Ability) -> None;
 }

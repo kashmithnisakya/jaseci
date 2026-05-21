@@ -1,6 +1,5 @@
 """Implementation of resource providers."""
 
-import from typing { Any }
 import from pathlib { Path }
 import json;
 import from urllib.request { urlopen, Request }
@@ -197,6 +196,16 @@ glob DOC_MAPPINGS: dict[str, tuple] = {
              "fullstack-routing.md",
              "Routing - Full-stack routing tutorial"
          ),
+         "jac://docs/tutorial-fullstack-npm": (
+             "tutorials/fullstack/npm-and-libraries.md",
+             "fullstack-npm-and-libraries.md",
+             "NPM & Libraries - Using npm packages, UI libraries, and JS interop"
+         ),
+         "jac://docs/tutorial-fullstack-advanced": (
+             "tutorials/fullstack/advanced-patterns.md",
+             "fullstack-advanced-patterns.md",
+             "Advanced Patterns - Advanced full-stack patterns"
+         ),
          # --- Deployment & Scaling ---
          "jac://docs/jac-scale": (
              "reference/plugins/jac-scale.md",
@@ -230,7 +239,7 @@ glob DOC_MAPPINGS: dict[str, tuple] = {
              "Code Organization - Project structure guide"
          ),
          "jac://docs/mcp": (
-             "quick-guide/mcp.md",
+             "reference/mcp.md",
              "mcp.md",
              "MCP Server - Model Context Protocol reference"
          ),
@@ -243,6 +252,11 @@ glob DOC_MAPPINGS: dict[str, tuple] = {
              "tutorials/language/debugging.md",
              "debugging.md",
              "Debugging - Debugging techniques tutorial"
+         ),
+         "jac://docs/diagnostics": (
+             "reference/diagnostics.md",
+             "diagnostics.md",
+             "Diagnostics - Compiler diagnostics and error reference"
          ),
          # --- Python Integration ---
          "jac://docs/python-integration": (
@@ -277,6 +291,7 @@ impl ResourceProvider.index_resources -> None {
     if self._repo_root is None {
         # PyPI install — bundled content + bundled docs
         self._index_bundled();
+        self._index_shared_guides();
         self._index_bundled_docs();
         # Examples fetched lazily from GitHub on first access
         self._resources["jac://examples/index"] = {
@@ -327,6 +342,7 @@ impl ResourceProvider.index_resources -> None {
     }
     # Bundled content (always available)
     self._index_bundled();
+    self._index_shared_guides();
     # Examples — prefer local repo, fall back to lazy GitHub
     examples_dir = repo_root / "jac" / "examples";
     if examples_dir.exists() {
@@ -364,6 +380,40 @@ impl ResourceProvider._index_bundled -> None {
             "description": "Idiomatic Jac code patterns with complete examples",
             "mimeType": "text/markdown",
             "path": str(patterns_path)
+        };
+    }
+    understand_path = content_dir / "understand.md";
+    if understand_path.exists() {
+        self._resources["jac://guide/understand"] = {
+            "uri": "jac://guide/understand",
+            "name": "Jac & Jaseci Knowledge Map",
+            "description": "Orientation map: what Jac and Jaseci are, the 3 core paradigms, and which resource URI to fetch for any task",
+            "mimeType": "text/markdown",
+            "path": str(understand_path)
+        };
+    }
+}
+
+"""Index the curated guides from the jaclang compiler's shared guide store.
+
+These are the same Agent Skill guides served by the `jac guide` CLI command;
+reading them through `jaclang.cli.guide_store` keeps a single source of truth
+instead of vendoring a second copy into jac-mcp.
+"""
+impl ResourceProvider._index_shared_guides -> None {
+    try {
+        import from jaclang.cli.guide_store { list_guides }
+    } except ImportError {
+        return;  # Older jaclang without the shared guide store
+    }
+    for g in list_guides() {
+        uri = f"jac://guide/{g.name}";
+        self._resources[uri] = {
+            "uri": uri,
+            "name": g.name,
+            "description": g.description,
+            "mimeType": "text/markdown",
+            "path": g.path
         };
     }
 }
@@ -507,7 +557,7 @@ def _read_example_dir(dir_path: str) -> str {
 }
 
 """Fetch JSON from a URL, returns parsed dict/list or None on failure."""
-def _github_api_get(url: str) -> Any {
+def _github_api_get(url: str) -> any {
     try {
         req = Request(
             url,
@@ -529,15 +579,8 @@ impl ResourceProvider._index_examples_local(examples_dir: Path) -> None {
     # Rich descriptions so AI can quickly identify the right example
     EXAMPLE_DESCRIPTIONS: dict[str, str] = {
         "chess": "Native chess engine, backend-only, no graph traversal. Demonstrates declaration/impl separation, enums, obj inheritance, and the Jac type system.",
-        "data_spatial": "Core OSP patterns: nodes, edges, walkers, entry/exit abilities, edge filtering. The canonical reference for graph-based programming in Jac.",
-        "guess_game": "Progressive 6-version guessing game, evolves from plain obj to walker-based OSP, then adds LLM hints. Best for learning Jac step by step.",
-        "littleX": "Full-stack social app (Twitter-like), OSP graph with user profiles and NLP-based search (sklearn/TF-IDF). Real-world data-spatial design.",
-        "manual_code": "Circle class showcasing declaration/impl separation and unit tests. Clean OOP reference, no graph traversal.",
-        "medical": "Graph-based medical domain, Person nodes with typed role edges. OSP design for healthcare data modelling.",
-        "micro": "Micro-snippets for individual language features: access modifiers, comprehensions, statements, class patterns. Quick syntax reference.",
-        "plugins": "Plugin development, CLI command extension and walker REST API via jac-scale. Shows how to extend Jac's toolchain.",
-        "rpg_game": "2D RPG game using library mode, Python interop with pygame for sprites and maps. Native/lib mode integration example.",
-        "shopping_cart": "E-commerce shopping cart, obj-based domain model with metadata and datetime. OOP-style Jac without graph traversal."
+        "littleX": "Full-stack social app (Twitter-like), OSP graph with user profiles and NLP-based search (sklearn/TF-IDF). Real-world object-spatial design.",
+        "manual_code": "Circle class showcasing declaration/impl separation and unit tests. Clean OOP reference, no graph traversal."
     };
     categories: list[str] = [];
     for entry in sorted(examples_dir.iterdir()) {

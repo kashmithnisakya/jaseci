@@ -22,29 +22,21 @@ cl {
         return
             <nav style={{"display": "flex", "gap": "10px", "marginBottom": "20px"}}>
                 <button>
-                    <Link to="/">
-                        Home
-                    </Link>
+                    <Link to="/">Home</Link>
                 </button>
                 <button>
-                    <Link to="/login">
-                        Login
-                    </Link>
+                    <Link to="/login">Login</Link>
                 </button>
                 <button>
-                    <Link to="/dashboard">
-                        Dashboard
-                    </Link>
+                    <Link to="/dashboard">Dashboard</Link>
                 </button>
                 <button>
-                    <Link to="/sample">
-                        Sample
-                    </Link>
+                    <Link to="/sample">Sample</Link>
                 </button>
             </nav>;
     }
 
-    def:pub app -> Any {
+    def:pub app -> any {
         return
             <AuthProvider>
                 <Router>

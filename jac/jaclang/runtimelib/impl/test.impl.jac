@@ -93,7 +93,7 @@ impl JacTextTestRunner._makeResult -> JacTestResult {
 }
 
 """Initialize JacTextTestRunner object."""
-impl JacTextTestRunner.init(max_failures: (int | None) = None, **kwargs: Any) -> None {
+impl JacTextTestRunner.init(max_failures: (int | None) = None, **kwargs: any) -> None {
     self.max_failures = max_failures;
     super.init(**kwargs);
 }
@@ -104,10 +104,12 @@ impl JacTestResult.stop -> None {
 }
 
 """Count failures and stop."""
-impl JacTestResult.addFailure(`test: Any, err: Any) -> None {
+impl JacTestResult.addFailure(`test: any, err: any) -> None {
     super.addFailure(`test, err);
     self.failures_count += 1;
-    if ((self.max_failures is not None) and (self.failures_count >= self.max_failures)) {
+    if (
+        (self.max_failures is not None) and (self.failures_count >= self.max_failures)
+    ) {
         self.stop();
     }
 }
@@ -131,8 +133,8 @@ impl parametrize(
         param_id = id_fn(param) if id_fn else str(param);
         display = f"{base_name} [{param_id}]";
         func_name = f"{base_name}_{param_id}";
-        def make_fn(p: Any) -> Callable {
-            def fn -> None {
+        def make_fn(p: any) -> Callable {
+            def fn {
                 test_func(p);
             }
             return fn;

@@ -8,13 +8,11 @@ cl {
     glob:pub BudgetContext = createContext(None);
 
     # Provider component - wraps app and provides budget state
-    def:pub BudgetProvider(children: Any) -> JsxElement {
+    def:pub BudgetProvider(children: any) -> JsxElement {
         budget = useBudget();
 
         return
-            <BudgetContext.Provider value={budget}>
-                {children}
-            </BudgetContext.Provider>;
+            <BudgetContext.Provider value={budget}>{children}</BudgetContext.Provider>;
     }
 
     # Custom hook to access budget context

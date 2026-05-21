@@ -16,7 +16,7 @@ import from subprocess { PIPE, STDOUT, Popen, run }
 import from urllib.error { HTTPError, URLError }
 import from urllib.request { Request, urlopen }
 
-import from .test_helpers {
+import from test_helpers {
     get_env_with_npm,
     get_free_port,
     get_jac_command,
@@ -41,8 +41,11 @@ def _wait_for_endpoint(
 
     while time.time() < deadline {
         try {
-            with urlopen(url, timeout=request_timeout) as resp {
+            resp = urlopen(url, timeout=request_timeout);
+            try {
                 return resp.read();
+            } finally {
+                resp.close();
             }
         } except HTTPError as exc {
             if exc.code == 503 {
@@ -63,6 +66,10 @@ def _wait_for_endpoint(
         } except RemoteDisconnected as exc {
             last_err = exc;
             print(f"[DEBUG] Endpoint {url} remote disconnected: {exc}, retrying...");
+            time.sleep(poll_interval);
+        } except TimeoutError as exc {
+            last_err = exc;
+            print(f"[DEBUG] Endpoint {url} request timed out: {exc}, retrying...");
             time.sleep(poll_interval);
         }
     }
@@ -245,7 +252,9 @@ test "all in one app endpoints" {
 
                 # "/" - server up
                 try {
-                    print("[DEBUG] Sending GET request to root endpoint / (with retry)");
+                    print(
+                        "[DEBUG] Sending GET request to root endpoint / (with retry)"
+                    );
                     root_bytes = _wait_for_endpoint(
                         f"http://127.0.0.1:{server_port}",
                         timeout=120.0,
@@ -363,8 +372,7 @@ test "all in one app endpoints" {
                         "Worker JS should not be empty"
                     );
                     assert (
-                        "postMessage" in worker_js_body
-                        or "onmessage" in worker_js_body
+                        "postMessage" in worker_js_body or "onmessage" in worker_js_body
                     ) , "Worker JS should contain a message handler";
                 } except (
                     URLError,
@@ -443,8 +451,8 @@ test "all in one app endpoints" {
                 try {
                     print("[DEBUG] Sending POST request to /user/register endpoint");
                     register_payload = {
-                        "username": test_username,
-                        "password": test_password,
+                        "identities": [{"type": "username", "value": test_username}],
+                        "credential": {"type": "password", "password": test_password},
 
                     };
                     req_register = Request(
@@ -464,7 +472,9 @@ test "all in one app endpoints" {
                         );
                         assert resp_register.status == 201;
                         register_response = json.loads(register_body);
-                        register_data = register_response.get("data", register_response);
+                        register_data = register_response.get(
+                            "data", register_response
+                        );
                         assert "username" in register_data;
                         assert "token" in register_data;
                         assert "root_id" in register_data;
@@ -486,8 +496,8 @@ test "all in one app endpoints" {
                 try {
                     print("[DEBUG] Sending POST request to /user/login endpoint");
                     login_payload = {
-                        "username": test_username,
-                        "password": test_password,
+                        "identity": {"type": "username", "value": test_username},
+                        "credential": {"type": "password", "password": test_password},
 
                     };
                     req_login = Request(
@@ -524,8 +534,11 @@ test "all in one app endpoints" {
                         "[DEBUG] Sending POST request to /user/login with invalid credentials"
                     );
                     invalid_login_payload = {
-                        "username": "nonexistent_user",
-                        "password": "wrong_password",
+                        "identity": {"type": "username", "value": "nonexistent_user"},
+                        "credential": {
+                            "type": "password",
+                            "password": "wrong_password"
+                        },
 
                     };
                     req_invalid_login = Request(
@@ -584,7 +597,9 @@ test "all in one app endpoints" {
                         "__jac_init__ script tag should be present in served HTML"
                     );
                     init_data = json.loads(init_match.group(1));
-                    print(f"[DEBUG] Parsed __jac_init__ keys: {list(init_data.keys())}");
+                    print(
+                        f"[DEBUG] Parsed __jac_init__ keys: {list(init_data.keys())}"
+                    );
 
                     # 1. Verify endpointEffects is present
                     assert "endpointEffects" in init_data , (
@@ -914,7 +929,9 @@ test "default client app renders" {
                             ) , "JS bundle should contain React createElement or jsx";
                             print(
                                 f"[DEBUG] JS bundle fetched successfully "
-                                f"({len(js_body)} bytes), contains expected runtime code"
+                                f"({len(
+                                    js_body
+                                )} bytes), contains expected runtime code"
                             );
                         }
                     } else {
@@ -2022,14 +2039,14 @@ test "diagnostics syntax error in console" {
 # ===========================================================================
 # Config Loader Dependency Management Tests
 # ===========================================================================
-"""Test JacClientConfig auto-injects missing deps and detects version mismatch."""
+"""Test JacClientConfig auto-injects individual deps and migrates legacy meta-packages."""
 test "config_loader_dependency_management" {
     import from jac_client.plugin.src.config_loader { JacClientConfig }
 
     with tempfile.TemporaryDirectory() as temp_dir {
         project_dir = Path(temp_dir);
         jac_toml = project_dir / "jac.toml";
-        # Scenario 1: Missing dependencies - should auto-inject
+        # Scenario 1: Missing dependencies - should auto-inject individual packages
         jac_toml.write_text(
             """[project]
 name = "test-project"
@@ -2043,21 +2060,26 @@ base_route_app = "app"
         (project_dir / "main.jac").write_text('with entry { print("test"); }');
         config = JacClientConfig(project_dir=project_dir);
         loaded = config.load();
-        # Verify auto-injection happened
+        # Verify individual deps were auto-injected (not meta-packages)
         package = loaded.get("package", {});
         deps = package.get("dependencies", {});
         dev_deps = package.get("devDependencies", {});
-        assert "jac-client-node" in deps , "jac-client-node should be auto-injected";
-        assert "@jac-client/dev-deps" in dev_deps , "@jac-client/dev-deps should be auto-injected";
+        assert "react" in deps , "react should be auto-injected";
+        assert "react-dom" in deps , "react-dom should be auto-injected";
+        assert "react-router-dom" in deps , "react-router-dom should be auto-injected";
+        assert "vite" in dev_deps , "vite should be auto-injected";
+        assert "typescript" in dev_deps , "typescript should be auto-injected";
+        assert "jac-client-node" not in deps , "legacy meta-package should not be injected";
+        assert "@jac-client/dev-deps" not in dev_deps , "legacy meta-package should not be injected";
         # Verify saved to jac.toml
         with open(jac_toml, "rb") as f {
             saved = tomllib.load(f);
         }
-        assert "jac-client-node" in saved.get("dependencies", {}).get("npm", {});
-        # Scenario 2: Correct version present - check_runtime_version returns compatible
+        assert "react" in saved.get("dependencies", {}).get("npm", {});
+        # Scenario 2: All core deps present - check_runtime_version returns compatible
         (is_compat, user_ver, required_ver) = config.check_runtime_version();
-        assert is_compat == True , "Exact version match should be compatible";
-        # Scenario 3: Version mismatch - modify and check
+        assert is_compat == True , "All core deps present should be compatible";
+        # Scenario 3: Legacy meta-package migration
         config.invalidate();
         jac_toml.write_text(
             """[project]
@@ -2065,12 +2087,112 @@ name = "test-project"
 version = "1.0.0"
 
 [dependencies.npm]
-jac-client-node = "1.0.0"
+jac-client-node = "1.0.7"
+
+[dependencies.npm.dev]
+"@jac-client/dev-deps" = "2.0.0"
 """
         );
         config2 = JacClientConfig(project_dir=project_dir);
-        (is_compat2, user_ver2, required_ver2) = config2.check_runtime_version();
-        assert is_compat2 == False , "Version mismatch should be incompatible";
-        assert user_ver2 == "1.0.0";
+        loaded2 = config2.load();
+        package2 = loaded2.get("package", {});
+        deps2 = package2.get("dependencies", {});
+        # Meta-package should be migrated to individual deps
+        assert "jac-client-node" not in deps2 , "legacy meta-package should be removed after migration";
+        assert "react" in deps2 , "react should be present after migration";
+        assert "react-dom" in deps2 , "react-dom should be present after migration";
+    }
+}
+
+# ===========================================================================
+# Multi-Segment Route Asset Resolution Tests
+# ===========================================================================
+"""Verify that assets are resolved correctly on multi-segment SPA routes."""
+test "multi_segment_route_asset_resolution" {
+    print("[DEBUG] Starting multi_segment_route_asset_resolution test");
+
+    # Resolve paths
+    tests_dir = os.path.dirname(__file__);
+    fixture_path = os.path.join(tests_dir, "fixtures", "multi_segment_app");
+    assert os.path.isdir(fixture_path) , f"Fixture directory missing at {fixture_path}";
+
+    original_cwd = os.getcwd();
+    try {
+        os.chdir(fixture_path);
+
+        # 1. Build the project
+        print("[DEBUG] Running 'jac build --client web'");
+        run(
+            get_jac_command() + ["build", "--client", "web"],
+            check=True,
+            capture_output=True,
+            text=True
+        );
+
+        # 2. Assert build artifacts in .jac/client/dist/index.html
+        dist_dir = os.path.join(fixture_path, ".jac", "client", "dist");
+        index_html_path = os.path.join(dist_dir, "index.html");
+        assert os.path.exists(index_html_path) , "index.html was not generated";
+
+        with open(index_html_path, "r") as f {
+            html_content = f.read();
+        }
+
+        # Verify leading slash for JS bundle
+        assert 'src="/client.' in html_content , "JS bundle path missing leading slash in index.html";
+
+        # 3. Integration Check: Start server and verify assets are accessible
+        port = get_free_port();
+        server = None;
+        try {
+            print(f"[DEBUG] Starting server on port {port}");
+            server = Popen(
+                get_jac_command() + ["start", "main.jac", "--port", str(port)],
+                stdout=None,
+                stderr=None,
+                text=True,
+                env=get_env_with_npm()
+            );
+
+            base_url = f"http://localhost:{port}";
+            # Wait for port first (TCP check)
+            print(f"[DEBUG] Waiting for port {port} to open...");
+            wait_for_port("127.0.0.1", port, timeout=60.0);
+
+            # Wait for dynamic index (HTTP check)
+            print(f"[DEBUG] Waiting for HTTP endpoint {base_url}...");
+            _wait_for_endpoint(base_url, timeout=120.0);
+
+            # Request a multi-segment route
+            nested_url = f"{base_url}/dashboard/settings";
+            print(f"[DEBUG] Requesting nested route {nested_url}...");
+            nested_html = _wait_for_endpoint(nested_url, timeout=60.0).decode("utf-8");
+
+            # Find the client JS path from the HTML
+            # Using regex to find src="/client.<hash>.js" or dev mode /static/client.js
+            matched = re.search(r'src="(/client\.[a-zA-Z0-9_-]+\.js)"', nested_html);
+            if not matched {
+                matched = re.search(
+                    r'src="(/static/client\.js\?hash=[a-f0-9]+)"', nested_html
+                );
+            }
+
+            assert matched , f"Could not find client JS script tag in response from {nested_url}. HTML: {nested_html}";
+            asset_path = matched.group(1);
+            asset_url = f"{base_url}{asset_path}";
+
+            print(f"[DEBUG] Verifying asset access at {asset_url}");
+            asset_resp = _wait_for_endpoint(asset_url);
+            assert len(asset_resp) > 0 , f"Asset at {asset_url} returned empty response";
+
+            print("[DEBUG] Multi-segment route asset resolution test passed!");
+        } finally {
+            if server {
+                server.terminate();
+                server.wait(timeout=5);
+            }
+        }
+    } finally {
+        os.chdir(original_cwd);
     }
 }

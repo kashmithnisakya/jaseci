@@ -18,11 +18,12 @@ jac-scale extends this to override L2 (Redis) and L3 (database).
 
 import logging;
 import sqlite3;
+import threading;
 import from collections.abc { Callable, Generator, Iterable }
-import from pickle { dumps, loads }
 import from uuid { UUID }
 
 import from jaclang.jac0core.archetype { Anchor, NodeAnchor, Root }
+import from jaclang.runtimelib.query_plan { QueryPlan }
 
 glob logger = logging.getLogger(__name__),
      __all__ = [
@@ -56,16 +57,48 @@ obj Memory {
 
     def get_roots -> Generator[Root, None, None] abs;
     def find(
-        ids: (UUID | Iterable[UUID]),
-        filter: (Callable[[Anchor], Anchor] | None) = None
+        ids: (UUID | Iterable[UUID]), filter: (Callable[[Anchor], Anchor] | None) = None
     ) -> Generator[Anchor, None, None] abs;
 
     def find_one(
-        ids: (UUID | Iterable[UUID]),
-        filter: (Callable[[Anchor], Anchor] | None) = None
+        ids: (UUID | Iterable[UUID]), filter: (Callable[[Anchor], Anchor] | None) = None
     ) -> (Anchor | None) abs;
 
     def commit(anchor: (Anchor | None) = None) -> None abs;
+    def get_gc -> list[Anchor] abs;
+    def remove_from_gc(anchor: Anchor) -> None abs;
+    def get_mem -> dict[UUID, Anchor] abs;
+    # ---- Pushdown protocol ----
+    # Backends opt into native query pushdown by declaring `capabilities()` and
+    # implementing `execute_plan()`. The runtime planner consults
+    # `capabilities()` against a `QueryPlan.needs()` set and routes accordingly:
+    #   - all needs covered → backend's `execute_plan` is authoritative
+    #   - partial coverage → planner narrows via topology_index, hands a
+    #     reduced plan (typically with `id_in` populated) to the backend
+    #   - no coverage      → universal floor (topology_index → batch_get)
+    # See `jaclang.runtimelib.query_plan` for the capability vocabulary and
+    # `jaclang.runtimelib.planner` for the strategy chooser. Defaults below
+    # mean a backend that does nothing extra still gets the floor for free.
+    def capabilities -> set[str];
+    def execute_plan(plan: QueryPlan) -> Generator[Anchor, None, None];
+    # Convenience surface that delegates to execute_plan. Lifted here from
+    # the Mongo-only API so every backend with `type_pushdown` capability
+    # gets ergonomic type+field queries for free; backends without it return
+    # an empty result (callers should fall back to `query()` + Python filter).
+    def query_by_type(
+        arch_type_name: str, field_filter: (dict | None) = None
+    ) -> Generator[Anchor, None, None];
+    # ---- Async hot-path mirrors ----
+    # Non-abstract: default implementations delegate to the sync variant via
+    # asyncio.to_thread so every existing backend (SQLite, Volatile, Tiered)
+    # gets non-blocking behavior under an event loop without a rewrite. Native
+    # async backends (aiosqlite, asyncpg, motor) can override these to drop
+    # the thread hop entirely.
+    async def aget(id: UUID) -> (Anchor | None);
+    async def aput(anchor: Anchor) -> None;
+    async def adelete(id: UUID) -> None;
+    async def ahas(id: UUID) -> bool;
+    async def acommit(anchor: (Anchor | None) = None) -> None;
 }
 
 """Cache Memory Interface.
@@ -84,10 +117,75 @@ obj CacheMemory(Memory) {
 
 Extends Memory with operations specific to durable storage.
 Implementations must guarantee data durability after sync().
+
+The second block of abstract methods (`inspect_summary` onward) is the
+backend-agnostic surface that the `jac db` CLI calls into. Any backend
+plugin that implements PersistentMemory automatically gets the full
+Layer 1+2+3 feature set — schema fingerprints, quarantine-on-failure,
+alias-based class rename resolution, operator rescue — exposed via a
+uniform CLI, regardless of whether the underlying store is SQLite,
+MongoDB, Postgres, or anything else.
 """
 obj PersistentMemory(Memory) {
     def sync -> None abs;
     def bulk_put(anchors: Iterable[Anchor]) -> None abs;
+    # ---- Layer 1+2+3 operator/inspection surface ----
+    """Summary for `jac db inspect`: format version, live row count,
+    quarantine count, alias count, and per-archetype breakdowns.
+
+    Expected shape:
+        {
+            'format_version': str,
+            'anchors_total': int,
+            'anchors_by_type': list[(str, int)],
+            'quarantine_total': int,
+            'quarantine_by_type': list[(str, int)],
+            'aliases_total': int,
+            'location': str,  # path / URI / collection name — for display
+        }
+    """
+    def inspect_summary -> dict abs;
+
+    """List the N most recent quarantined anchors.
+
+    Each entry: {'id', 'arch', 'fingerprint', 'error', 'quarantined_at'}.
+    Sorted newest-first. `limit` bounds the result size.
+    """
+    def list_quarantined(limit: int = 50) -> list abs;
+
+    """Full detail for one quarantined anchor by id (or unique prefix).
+
+    Returns None if no row matches, a multi-hit sentinel {'error': ...}
+    if a prefix is ambiguous, else {'id', 'type', 'arch_module',
+    'arch_type', 'fingerprint', 'error', 'quarantined_at',
+    'from_format_version', 'data': <parsed-json>}.
+    """
+    def show_quarantined(id_prefix: str) -> (dict | None) abs;
+
+    """Attempt to re-deserialize one quarantined row and move it back.
+
+    On success, re-stamps the row with the live class's identity +
+    fingerprint so subsequent reads hit the registry directly.
+    Returns (True, 'recovered') on success; (False, reason) on failure.
+    """
+    def recover_one(id_prefix: str) -> tuple abs;
+
+    """Batch variant: attempts every quarantined row.
+
+    Returns (n_recovered: int, still_stuck: list[(id, reason)]).
+    """
+    def recover_all -> tuple abs;
+
+    """Return all persistent aliases: list of {'old_name', 'new_name',
+    'created_at'}."""
+    def list_aliases -> list abs;
+
+    """Persist an alias mapping `old_name` -> `new_name` and merge into the
+    in-process Serializer registry. Idempotent (INSERT OR REPLACE-style)."""
+    def add_alias(old_name: str, new_name: str) -> None abs;
+
+    """Remove an alias. Returns True if an entry was removed, False otherwise."""
+    def remove_alias(old_name: str) -> bool abs;
 }
 
 # =============================================================================
@@ -115,17 +213,14 @@ obj VolatileMemory(Memory) {
 
     def get_roots -> Generator[Root, None, None];
     def find(
-        ids: (UUID | Iterable[UUID]),
-        filter: (Callable[[Anchor], Anchor] | None) = None
+        ids: (UUID | Iterable[UUID]), filter: (Callable[[Anchor], Anchor] | None) = None
     ) -> Generator[Anchor, None, None];
 
     def find_one(
-        ids: (UUID | Iterable[UUID]),
-        filter: (Callable[[Anchor], Anchor] | None) = None
+        ids: (UUID | Iterable[UUID]), filter: (Callable[[Anchor], Anchor] | None) = None
     ) -> (Anchor | None);
 
     def commit(anchor: (Anchor | None) = None) -> None;
-    # Additional methods for garbage collection tracking
     def get_gc -> list[Anchor];
     def remove_from_gc(anchor: Anchor) -> None;
     def get_mem -> dict[UUID, Anchor];
@@ -153,6 +248,7 @@ obj SqliteMemory(PersistentMemory) {
         __mem__: dict[UUID, Anchor] by postinit,
         __gc__: set[Anchor] by postinit,
         __conn__: (sqlite3.Connection | None) by postinit,
+        __lock__: threading.RLock by postinit,
         l3_fetch_count: int by postinit;
 
     def postinit -> None;
@@ -171,20 +267,25 @@ obj SqliteMemory(PersistentMemory) {
 
     def get_roots -> Generator[Root, None, None];
     def find(
-        ids: (UUID | Iterable[UUID]),
-        filter: (Callable[[Anchor], Anchor] | None) = None
+        ids: (UUID | Iterable[UUID]), filter: (Callable[[Anchor], Anchor] | None) = None
     ) -> Generator[Anchor, None, None];
 
     def find_one(
-        ids: (UUID | Iterable[UUID]),
-        filter: (Callable[[Anchor], Anchor] | None) = None
+        ids: (UUID | Iterable[UUID]), filter: (Callable[[Anchor], Anchor] | None) = None
     ) -> (Anchor | None);
 
     def commit(anchor: (Anchor | None) = None) -> None;
     # PersistentMemory interface
     def sync -> None;
     def bulk_put(anchors: Iterable[Anchor]) -> None;
-    # Additional methods
+    def inspect_summary -> dict;
+    def list_quarantined(limit: int = 50) -> list;
+    def show_quarantined(id_prefix: str) -> (dict | None);
+    def recover_one(id_prefix: str) -> tuple;
+    def recover_all -> tuple;
+    def list_aliases -> list;
+    def add_alias(old_name: str, new_name: str) -> None;
+    def remove_alias(old_name: str) -> bool;
     def get_gc -> list[Anchor];
     def remove_from_gc(anchor: Anchor) -> None;
     def get_mem -> dict[UUID, Anchor];
@@ -203,6 +304,13 @@ jac-scale extends this by providing Redis-based L2 and database L3.
 """
 obj TieredMemory(VolatileMemory) {
     has base_path: (str | None) = None,
+        # App identity used to derive the L3 SQLite filename. When None,
+        # `get_db_path` falls back to `Jac.get_full_target_path()` (the
+        # bootstrap seed) for compatibility with CLI flows. The
+        # ExecutionContext that owns this memory passes its own captured
+        # `full_target_path` here so the filename is decided at this
+        # memory's construction time, not by later seed mutations.
+        target_path: (str | None) = None,
         l2: (CacheMemory | None) by postinit,
         l3: (PersistentMemory | None) by postinit,
         use_cache: bool = False;
@@ -213,8 +321,13 @@ obj TieredMemory(VolatileMemory) {
     # Override only methods that need tiering logic
     def get(id: UUID) -> (Anchor | None);
     def put(anchor: Anchor) -> None;
+    def get_roots -> Generator[Root, None, None];
     def delete(id: UUID) -> None;
     def close -> None;
     def `has(id: UUID) -> bool;
     def commit(anchor: (Anchor | None) = None) -> None;
+    def batch_get(ids: list[UUID]) -> dict[UUID, Anchor];
+    # Pushdown protocol — delegate to L3 (the only tier that can push down).
+    def capabilities -> set[str];
+    def execute_plan(plan: QueryPlan) -> Generator[Anchor, None, None];
 }

@@ -13,8 +13,8 @@ cl {
         txType: str,
         date: str,
         isBusiness: bool,
-        clientName: Any,
-        onDelete: Any
+        clientName: any,
+        onDelete: any
     ) -> JsxElement {
         isIncome = txType == "income";
         color = CATEGORY_COLORS[category];
@@ -29,13 +29,9 @@ cl {
                     <div className="tx-details">
                         <span className="tx-description">
                             {description}{(clientName != None and isIncome)
-                            and <span className="tx-client">
-                                •{clientName}
-                            </span>}
+                            and <span className="tx-client">•{clientName}</span>}
                         </span>
-                        <span className="tx-date">
-                            {formatDate(date)}
-                        </span>
+                        <span className="tx-date">{formatDate(date)}</span>
                     </div>
                 </div>
                 <div className="tx-right">

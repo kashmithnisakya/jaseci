@@ -97,7 +97,8 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
      E0012 = _err(
          "E0012",
          Category.SYNTAX,
-         "Use `Reflect.construct(target, argumentsList)` method to create new instances"
+         "Use the `new(target, ...args)` ambient builtin to create new instances",
+         help="`new` is a portable constructor: it lowers to `Cls(*args)` on the server and to `Reflect.construct(Cls, [args])` in cl blocks."
      ),
      E0013 = _err(
          "E0013",
@@ -117,15 +118,36 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          "E0022", Category.SYNTAX, "Expected ':' or '{{' after lambda parameters"
      ),
      E0023 = _err(
-         "E0023",
-         Category.SYNTAX,
-         "Expected augmented assignment in for...to...by step"
+         "E0023", Category.SYNTAX, "Expected augmented assignment in for...to...by step"
      ),
      E0024 = _err(
          "E0024",
          Category.SYNTAX,
          "Cannot assign to '{name}' -- it is a built-in reference, not a variable",
-         help="Use a different variable name, or use backtick escaping (e.g. `super) to create a local variable with the same name."
+         help="Use a different variable name, or use backtick escaping (e.g. `root) to create a local variable with the same name."
+     ),
+     E0025 = _err(
+         "E0025",
+         Category.SYNTAX,
+         "JavaScript arrow function syntax ('=>') is not supported in Jac",
+         help="Use Jac lambda syntax instead: 'lambda e: ChangeEvent { ... }' or 'lambda x: int : x + 1'."
+     ),
+     E0026 = _err(
+         "E0026",
+         Category.SYNTAX,
+         "Connect/disconnect operator requires a right operand",
+         help="Connect (`++>`, `+>:T:+>`) and disconnect (`del -->`, `del ->:T:->`) operators are binary -- supply the right-hand side, e.g. `a ++> b;` or `a del --> b;`."
+     ),
+     # Parser: connection operator errors
+     E0027 = _err(
+         "E0027",
+         Category.SYNTAX,
+         "Expected ':+>' to close forward typed connection -- did you mean '+>: <EdgeType> :+> <node>'?"
+     ),
+     E0028 = _err(
+         "E0028",
+         Category.SYNTAX,
+         "Expected ':<+' or ':+>' to close backward typed connection -- did you mean '<+: <EdgeType> :<+ <node>' (backward) or '<+: <EdgeType> :+> <node>' (bidirectional)?"
      ),
      # Parser: statement-level errors
      E0030 = _err("E0030", Category.SYNTAX, "Unexpected semicolon at module level"),
@@ -198,6 +220,23 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
      E0071 = _err("E0071", Category.SYNTAX, "Default 'except' clause must be last"),
      E0075 = _err("E0075", Category.SYNTAX, "Duplicate base class '{name}'"),
      E0076 = _err("E0076", Category.SYNTAX, "Duplicate method '{name}' in class body"),
+     E0077 = _err(
+         "E0077",
+         Category.SYNTAX,
+         "Duplicate declaration of '{name}' (already declared as {kind})",
+         help="Jac supports decl/impl separation, not decl/decl. Either inline the body into the first `obj/node/edge/walker/enum` block, or split into a body-less declaration plus an `impl` block."
+     ),
+     E0080 = _err(
+         "E0080",
+         Category.SYNTAX,
+         "Property declarations cannot have an initializer",
+         help="Declare backing storage as a separate `has` field (e.g. `has _x: T = value;`) and reference it from your accessors."
+     ),
+     E0081 = _err(
+         "E0081",
+         Category.SYNTAX,
+         "Property declaration must contain at least one of `getter`, `setter`, `deleter`"
+     ),
      # Parser: warnings
      W0060 = _warn(
          "W0060",
@@ -213,8 +252,14 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
      W0062 = _warn(
          "W0062",
          Category.SYNTAX,
-         "Bare 'root' is deprecated. Use 'root()' instead.",
-         "'root' is now a builtin function — call it explicitly as 'root()'"
+         "'root()' is deprecated. Use bare 'root' instead.",
+         "'root' is a reserved keyword that resolves to the graph anchor — drop the parentheses."
+     ),
+     W0063 = _warn(
+         "W0063",
+         Category.SYNTAX,
+         "JSX spread '{{...expr}}' is JS-idiomatic. Prefer '{{**expr}}' in Jac.",
+         "Jac uses ** for dict unpacking — use {**expr} instead of {...expr} in JSX attributes."
      ),
      # Lexer errors
      E0100 = _err("E0100", Category.SYNTAX, "Unterminated string literal"),
@@ -226,6 +271,13 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
      E0106 = _err("E0106", Category.SYNTAX, "Unexpected character in JSX tag: '{ch}'"),
      E0107 = _err(
          "E0107", Category.SYNTAX, "Lexer stuck at EOF in mode {mode} (pos={pos})"
+     ),
+     # Lexer: warnings
+     W0100 = _warn(
+         "W0100",
+         Category.SYNTAX,
+         "Invalid escape sequence '{esc}'",
+         "Double the backslash for a literal backslash, or prefix the string with r to make it raw."
      ),
      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
      # Type errors (E1xxx) — type checker and type evaluator
@@ -245,6 +297,11 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          "E1004",
          Category.TYPE,
          "Function '{name}' declared return type {ret_type} but may implicitly return None"
+     ),
+     E1005 = _err(
+         "E1005",
+         Category.TYPE,
+         "Cannot assign to read-only property '{name}' (no setter defined)"
      ),
      # Operator errors
      E1010 = _err(
@@ -284,6 +341,20 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
      ),
      E1035 = _err(
          "E1035", Category.TYPE, "Type \"{src}\" is not assignable to type \"{dest}\""
+     ),
+     # Bare generic warning
+     W1036 = _warn(
+         "W1036",
+         Category.TYPE,
+         "Generic type \"{type}\" used without type arguments, defaulting to"
+         " \"{type}[Any]\"; consider adding explicit type arguments"
+     ),
+     # Explicit `any` annotation warning
+     W1037 = _warn(
+         "W1037",
+         Category.TYPE,
+         "Explicit 'any' type annotation disables type checking here;"
+         " consider a more specific type"
      ),
      # Subscript / await
      E1040 = _err("E1040", Category.TYPE, "Type \"{type}\" is not subscriptable"),
@@ -394,7 +465,9 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
      ),
      E1093 = _err("E1093", Category.TYPE, "Cannot yield {actual}, expected {expected}"),
      E1094 = _err(
-         "E1094", Category.TYPE, "Visit target must be a node type, got {type}"
+         "E1094",
+         Category.TYPE,
+         "Visit target must be a node, edge, path, or collection thereof, got {type}"
      ),
      E1095 = _err(
          "E1095",
@@ -414,8 +487,112 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          Category.TYPE,
          "Cannot access attribute \"{attr}\" for type \"{type}\"; attribute is missing from {missing}"
      ),
+     # JSX type errors
+     E1100 = _err(
+         "E1100",
+         Category.TYPE,
+         "Cannot assign {actual} to JSX prop '{name}' of type {expected}"
+     ),
+     E1101 = _err(
+         "E1101", Category.TYPE, "Component '{component}' has no prop '{name}'"
+     ),
+     E1102 = _err(
+         "E1102", Category.TYPE, "Component '{component}' requires prop '{name}'"
+     ),
+     E1103 = _err(
+         "E1103",
+         Category.TYPE,
+         "Cannot assign {actual} to intrinsic prop '{name}' of type {expected}"
+     ),
+     E1104 = _err(
+         "E1104",
+         Category.TYPE,
+         "Cannot spread type {actual} into '{component}' (expected dict)"
+     ),
+     # Comparison operator errors
+     E1110 = _err(
+         "E1110",
+         Category.TYPE,
+         "Operator \"{op}\" not supported between types \"{left}\" and \"{right}\""
+     ),
+     E1111 = _err(
+         "E1111",
+         Category.TYPE,
+         "Right operand of \"{op}\" must support \"__contains__\"; \"{type}\" does not"
+     ),
+     # Walker reports declaration / usage
+     E1112 = _err(
+         "E1112",
+         Category.TYPE,
+         "Walker `reports` field must be a list type, got \"{type}\"",
+         "Declare it as `has reports: list[T] = [];` so that `report X` and `(spawn W).reports` are typed against `T`."
+     ),
+     E1113 = _err(
+         "E1113", Category.TYPE, "Cannot report \"{actual}\", expected \"{expected}\""
+     ),
+     # Spawn operator errors
+     E1114 = _err(
+         "E1114",
+         Category.TYPE,
+         "Spawn operator requires a walker instance on one side, got \"{left}\" spawn \"{right}\""
+     ),
+     E1115 = _err(
+         "E1115",
+         Category.TYPE,
+         "Spawn target must be a node, edge, or collection thereof, got \"{type}\""
+     ),
+     # Ability trigger archetype-kind errors
+     E1116 = _err(
+         "E1116",
+         Category.TYPE,
+         "Walker ability trigger must be a node, edge, or `Root`, got \"{type}\""
+     ),
+     E1117 = _err(
+         "E1117",
+         Category.TYPE,
+         "Node/edge ability trigger must be a walker, got \"{type}\""
+     ),
+     E1118 = _err(
+         "E1118",
+         Category.TYPE,
+         "Connection {side} operand has unparameterized collection type \"{type}\";"
+         " element types cannot be verified — use \"{type}[NodeType]\" or pass a"
+         " concrete list of nodes instead"
+     ),
+     W1050 = _warn("W1050", Category.TYPE, "Unknown intrinsic JSX element '<{tag}>'"),
+     W1051 = _warn(
+         "W1051",
+         Category.TYPE,
+         "Expression type could not be resolved (Unknown)",
+         "Often fixed by adding a more specific type annotation to the relevant declaration (e.g., 'list[Task]' instead of bare 'list', or annotating an unannotated parameter or attribute). Can also indicate an unresolved import, a forward reference the checker cannot bind, or fallout from an upstream error."
+     ),
+     W1052 = _warn(
+         "W1052",
+         Category.TYPE,
+         "JSX component '{component}' uses an untyped props bag ('props: any');"
+         " its JSX props cannot be type-checked",
+         "Declare explicit typed parameters (e.g. 'def MyComp(title: str, count: int) -> JsxElement'), or annotate 'props' with a typed object. An untyped 'props: any' parameter opts the component out of all prop name and type validation."
+     ),
      # Import warnings
      W1100 = _warn("W1100", Category.IMPORT, "Module not found"),
+     W1101 = _warn(
+         "W1101", Category.IMPORT, "Cannot import name '{name}' from module '{module}'"
+     ),
+     W1102 = _warn(
+         "W1102",
+         Category.IMPORT,
+         "Imported name '{name}' from foreign-source module '{module}' typed as Any"
+     ),
+     W1103 = _warn(
+         "W1103",
+         Category.IMPORT,
+         "'{name}' is ambient and does not need to be imported from '{module}'"
+     ),
+     W1104 = _warn(
+         "W1104",
+         Category.IMPORT,
+         "Use the lowercase 'any' keyword instead of importing 'Any' from typing"
+     ),
      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
      # Semantic errors/warnings (E2xxx/W2xxx)
      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -449,11 +626,6 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          "E2008", Category.SEMANTIC, "Invalid target for context update: {target}"
      ),
      # New semantic warnings
-     W2052 = _warn(
-         "W2052",
-         Category.SEMANTIC,
-         "Catching overly broad exception type '{type}' — catch a more specific exception"
-     ),
      W2058 = _warn(
          "W2058",
          Category.SEMANTIC,
@@ -475,15 +647,18 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          Category.SEMANTIC,
          "Redundant comparison to boolean literal — use the expression directly"
      ),
+     W2080 = _warn(
+         "W2080",
+         Category.SEMANTIC,
+         "Attribute '{attr}' assigned in '{method}' body should be declared as a 'has' field on {arch_type} '{name}'"
+     ),
      E2055 = _err(
          "E2055",
          Category.SEMANTIC,
          "'return' inside a 'finally' block silences exceptions"
      ),
      E2083 = _err(
-         "E2083",
-         Category.SEMANTIC,
-         "'disengage' is only valid inside a walker ability"
+         "E2083", Category.SEMANTIC, "'disengage' is only valid inside a walker ability"
      ),
      # Def-impl match errors
      E2009 = _err(
@@ -518,6 +693,62 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          "Explicit 'self' parameter is not allowed in {arch_type} method '{name}' — "
          "'self' is implicit in obj, node, edge, and walker methods."
      ),
+     E2016 = _err(
+         "E2016",
+         Category.SEMANTIC,
+         "Cannot provide implementation for a method that already has a body."
+     ),
+     E2017 = _err(
+         "E2017",
+         Category.SEMANTIC,
+         "Duplicate implementation — an earlier impl already provides the body for this method."
+     ),
+     E2018 = _err(
+         "E2018",
+         Category.SEMANTIC,
+         "Undefined name '{name}' in {position} — this position requires a defined type"
+     ),
+     E2019 = _err(
+         "E2019",
+         Category.SEMANTIC,
+         "A JSX slot renders template content and cannot 'return' a value. "
+         "Drop the value to use a bare 'return;' guard, or move the "
+         "value-producing expression outside the JSX slot."
+     ),
+     E2020 = _err(
+         "E2020",
+         Category.SEMANTIC,
+         "'return' is not allowed inside a '{loop}' loop in a JSX slot. "
+         "Use 'continue' to skip an iteration."
+     ),
+     E2021 = _err(
+         "E2021",
+         Category.SEMANTIC,
+         "'{kw}' is not allowed inside a '{loop}' loop in a JSX slot. "
+         "Use 'continue' to skip an iteration."
+     ),
+     W2019 = _warn(
+         "W2019",
+         Category.SEMANTIC,
+         "'while' loop in a JSX slot renders JSX without a 'key' attribute — "
+         "add 'key=' so siblings keep their identity across re-renders."
+     ),
+     E2022 = _err(
+         "E2022",
+         Category.SEMANTIC,
+         "'finally' is not allowed on a 'try' that has an 'awaiting' clause. "
+         "The dispatched-but-not-joined window and finalization semantics "
+         "are ambiguous together; move cleanup into an explicit "
+         "mount/unmount hook or drop one of the clauses."
+     ),
+     W2020 = _warn(
+         "W2020",
+         Category.SEMANTIC,
+         "'awaiting' is not yet implemented on the '{target}' target — "
+         "the 'awaiting' clause body will be ignored at runtime. Only the "
+         "'cl' (react/preact) target currently lowers 'awaiting' to a "
+         "Suspense fallback."
+     ),
      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
      # Lint warnings (W3xxx)
      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -545,9 +776,7 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          "Empty parentheses can be removed [remove-empty-parens]"
      ),
      W3006 = _warn(
-         "W3006",
-         Category.LINT,
-         "Unnecessary keyword escape on '{name}' [remove-kwesc]"
+         "W3006", Category.LINT, "Unnecessary keyword escape on '{name}' [remove-kwesc]"
      ),
      W3007 = _warn(
          "W3007",
@@ -621,6 +850,48 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          Category.LINT,
          "Mutable default argument '{type}' — use None and assign inside the function [mutable-default]"
      ),
+     W3037 = _warn(
+         "W3037",
+         Category.LINT,
+         "Unnecessary '-> None' return type annotation on '{name}'; "
+         "functions without a return statement implicitly return None "
+         "[unnecessary-none-return]"
+     ),
+     W3038 = _warn(
+         "W3038",
+         Category.LINT,
+         "useState hook for '{name}' can be replaced with "
+         "'has {name}: {type_name} = {init}' [usestate-to-has]"
+         "setter can be replaced with direct assignment to the field in the ability body"
+     ),
+     W3039 = _warn(
+         "W3039",
+         Category.LINT,
+         "getattr(obj, 'attr', None) should use null-safe access [getattr-to-null-ok]"
+     ),
+     W3040 = _warn(
+         "W3040",
+         Category.LINT,
+         "Filter comparison '{name} == {name}' is always true — "
+         "both sides resolve to the same node field [filter-compare-tautology]"
+     ),
+     W3041 = _warn(
+         "W3041",
+         Category.LINT,
+         "Reactive `has` field '{name}' is read after being assigned in the same "
+         "`can with entry` block; the read returns the closure-captured pre-update "
+         "value, not the just-assigned one [stale-has-read]",
+         help="The has-field assignment lowers to a React useState setter call, "
+         "which is scheduled for the next render. To branch on the new value "
+         "in the same block, capture it in a local first: "
+         "`local = expr; <field> = local; if local { ... }`."
+     ),
+     W3042 = _warn(
+         "W3042",
+         Category.LINT,
+         "'.map(lambda {name} -> any {{ return <jsx>; }})' can be replaced with "
+         "'[<jsx> for {name} in collection]' comprehension syntax [map-lambda-to-comprehension]"
+     ),
      # Old kebab-case name -> code mapping for jac.toml backward compat
      LINT_ALIASES: dict[str, str] = {
          "staticmethod-to-static": "W3001",
@@ -643,7 +914,13 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          "identical-branches": "W3025",
          "too-many-params": "W3030",
          "is-with-literal": "W3035",
-         "mutable-default": "W3036"
+         "usestate-to-has": "W3038",
+         "mutable-default": "W3036",
+         "unnecessary-none-return": "W3037",
+         "getattr-to-null-ok": "W3039",
+         "filter-compare-tautology": "W3040",
+         "stale-has-read": "W3041",
+         "map-lambda-to-comprehension": "W3042"
      },
      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
      # Codegen errors (E5xxx/W5xxx)
@@ -699,6 +976,12 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          Category.CODEGEN,
          "Walker spawn has more positional arguments than fields."
      ),
+     W5015 = _warn(
+         "W5015",
+         Category.CODEGEN,
+         "Component '{component}' takes a single 'props' bundle — JSX call sites are not type-checked per prop.",
+         help="Prefer direct named params (e.g. `def {component}(name: str, age: int)`); suppress with `# jac:ignore[W5015]` only when intentionally forwarding the bundle."
+     ),
      # Native compile
      E5020 = _err("E5020", Category.CODEGEN, "Native compilation failed: {error}"),
      W5021 = _warn("W5021", Category.CODEGEN, "C library not found: {path}"),
@@ -706,11 +989,24 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          "W5022", Category.CODEGEN, "Failed to load C library '{path}': {error}"
      ),
      W5023 = _warn("W5023", Category.CODEGEN, "Native module not found: {path}"),
-     W5024 = _warn(
-         "W5024", Category.CODEGEN, "Failed to compile native module {path}: {error}"
+     E5024 = _err(
+         "E5024",
+         Category.CODEGEN,
+         "Failed to compile native module {path}: {error}. "
+         "Fix the error in the imported module or nacompile will produce a broken binary."
      ),
-     W5025 = _warn(
-         "W5025", Category.CODEGEN, "Failed to link native module {path}: {error}"
+     E5025 = _err(
+         "E5025",
+         Category.CODEGEN,
+         "Failed to link native module {path}: {error}. "
+         "Fix the error in the imported module or nacompile will produce a broken binary."
+     ),
+     E5026 = _err(
+         "E5026",
+         Category.CODEGEN,
+         "Symbol collision during native link: '{symbol}' is defined in both "
+         "'{existing_module}' and '{new_module}'. "
+         "Mark one as :priv or rename to avoid a runtime crash."
      ),
      # Layout pass
      E5030 = _err(
@@ -750,6 +1046,12 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          Category.CODEGEN,
          "C library import declaration '{name}' must not have a body"
      ),
+     E5090 = _err(
+         "E5090",
+         Category.CODEGEN,
+         "Native pathway does not yet support {kind} '{name}'",
+         help="This Jac construct is supported on the @sv/Python pathway but is not implemented in the .na.jac native compiler yet. Move the code to a non-native context, or extend NaIRGenPass to handle this node type."
+     ),
      # Language server
      E5070 = _err("E5070", Category.CODEGEN, "Error during type check: {error}"),
      E5071 = _err("E5071", Category.CODEGEN, "Error during formatting: {error}"),
@@ -757,6 +1059,12 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          "W5072",
          Category.CODEGEN,
          "Attribute error when accessing node attributes: {error}"
+     ),
+     # JS / RPC codegen
+     E5080 = _err(
+         "E5080",
+         Category.CODEGEN,
+         "Argument '{name}' for server function '{func}' is given both positionally and by keyword"
      ),
      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
      # Portability warnings (W6xxx) — JS-idiomatic usage that breaks cross-codespace portability

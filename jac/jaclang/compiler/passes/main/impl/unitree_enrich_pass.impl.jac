@@ -1,25 +1,19 @@
 """Implementation of UniTreeEnrichPass and _typebase_to_tag()."""
-import from typing { TYPE_CHECKING }
-
-with entry {
-    if TYPE_CHECKING {
-        import from jaclang.compiler.type_system.types {
-            TypeBase,
-            ClassType,
-            NeverType,
-            UnknownType,
-            AnyType,
-            TypeVarType,
-            FunctionType,
-            ModuleType,
-            UnionType,
-            OverloadedType,
-            EnumMemberType
-        }
-    }
+import type from jaclang.compiler.type_system.types {
+    TypeBase,
+    ClassType,
+    NeverType,
+    UnknownType,
+    AnyType,
+    TypeVarType,
+    FunctionType,
+    ModuleType,
+    UnionType,
+    OverloadedType,
+    EnumMemberType
 }
 
-impl _typebase_to_tag(t: Any) -> (str | None) {
+impl _typebase_to_tag(t: any) -> (str | None) {
     if t is None {
         return None;
     }
@@ -39,9 +33,6 @@ impl _typebase_to_tag(t: Any) -> (str | None) {
             NeverType as _NeverType
         }
         if isinstance(t, _ClassType) {
-            if not t.shared {
-                return None;
-            }
             class_name = t.shared.class_name;
             if class_name in _prim_names {
                 return class_name;
@@ -49,7 +40,7 @@ impl _typebase_to_tag(t: Any) -> (str | None) {
             if class_name in ("NoneType", "None") {
                 return "void";
             }
-            type_args = (t.private.type_args if t.private else None) or [];
+            type_args = t.private.type_args or [];
             if class_name == "list" and len(type_args) == 1 {
                 elem_tag = _typebase_to_tag(type_args[0]);
                 if elem_tag and elem_tag in _prim_names {
@@ -91,14 +82,14 @@ impl UniTreeEnrichPass.before_pass -> None {
 
 
 impl UniTreeEnrichPass.enter_expr(nd: uni.Expr) -> None {
-    if getattr(nd, 'backend_type_tag', None) is None and nd.type is not None {
+    if nd?.backend_type_tag is None and nd.type is not None {
         nd.backend_type_tag = _typebase_to_tag(nd.type);
     }
 }
 
 
 impl UniTreeEnrichPass.enter_name(nd: uni.Name) -> None {
-    if getattr(nd, 'js_decl_kind', None) is not None {
+    if nd?.js_decl_kind is not None {
         return;
     }
     if nd.name_of is nd {
@@ -187,7 +178,5 @@ impl UniTreeEnrichPass.enter_module_code(nd: uni.ModuleCode) -> None {
 }
 
 impl UniTreeEnrichPass.exit_module(nd: uni.Module) -> None {
-    nd.gen.native_compat = (
-        not self._native_has_disqualifier and self._native_has_entry
-    );
+    nd.gen.native_compat = not self._native_has_disqualifier and self._native_has_entry;
 }
