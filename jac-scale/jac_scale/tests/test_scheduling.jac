@@ -106,6 +106,26 @@ def _stop_server(proc: subprocess.Popen | None) {
     gc.collect();
 }
 
+"""Dump the subprocess's stderr so CI logs surface whatever the server actually said.
+
+Use this from a test's `finally` only when an assertion failed — the server's
+captured stderr is otherwise invisible and any silently-caught exception
+inside the scheduler/execution path stays buried.
+"""
+def _dump_server_stderr(proc: subprocess.Popen | None, label: str) -> None {
+    if proc is None or proc.stderr is None {
+        return;
+    }
+    with contextlib.suppress(Exception) {
+        err = proc.stderr.read();
+        if err {
+            print(
+                f"\n===== {label} SERVER STDERR =====\n{err}\n===== END STDERR =====\n"
+            );
+        }
+    }
+}
+
 def _get_token(base_url: str, user: str = "testuser", pwd: str = "pass123") -> str {
     requests.post(
         f"{base_url}/user/register",
@@ -566,6 +586,11 @@ test "static walkers and functions actually execute" {
         # If we see only 1, something is gating execution.
         assert walker_count >= 3 , f"Expected >=3 walker fires, got {walker_count}";
         assert func_count >= 3 , f"Expected >=3 function fires, got {func_count}";
+    } except Exception {
+        # Surface whatever the server logged so CI shows the actual cause
+        # of a static-walker fire failure instead of just "log=[]".
+        _dump_server_stderr(sp, "static walkers");
+        raise;
     } finally {
         _stop_server(sp);
         _cleanup();
