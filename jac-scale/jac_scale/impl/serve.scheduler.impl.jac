@@ -1,31 +1,19 @@
 import from jac_scale.utils { authenticate_or_fail }
 import from jac_scale._optdeps.pymongo { PyMongoError }
 
-"""Classify an exception as a storage failure (Mongo down, network error, etc).
+"""Map an exception to the caller-facing TransportResponse.
 
-Returns a 503 response for storage failures, else None (caller should treat as 500).
+PyMongoError → 503 STORAGE_UNAVAILABLE; anything else → 500 SCHEDULER_ERROR.
+Single call site for the catch-block in every /jobs endpoint.
 """
-def _storage_failure_response(e: Exception) -> TransportResponse | None {
+def _err_response(e: Exception) -> TransportResponse {
     if isinstance(e, PyMongoError) {
+        logger.error(f"Storage failure on /jobs: {type(e).__name__}: {e}");
         return TransportResponse.fail(
             code='STORAGE_UNAVAILABLE',
             message='Job store temporarily unavailable',
             meta=Meta(extra={'http_status': 503})
         );
-    }
-    return None;
-}
-
-"""Map an exception to the caller-facing TransportResponse.
-
-Storage failures → 503 STORAGE_UNAVAILABLE; anything else → 500 SCHEDULER_ERROR.
-Single call site for the catch-block in every /jobs endpoint.
-"""
-def _err_response(e: Exception) -> TransportResponse {
-    storage = _storage_failure_response(e);
-    if storage {
-        logger.error(f"Storage failure on /jobs: {type(e).__name__}: {e}");
-        return storage;
     }
     logger.error(f"Scheduler endpoint error: {type(e).__name__}: {e}");
     return TransportResponse.fail(

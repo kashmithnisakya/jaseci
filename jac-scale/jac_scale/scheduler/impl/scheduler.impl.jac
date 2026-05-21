@@ -174,9 +174,13 @@ impl MongoJobStore.record_run(
     );
 }
 
-"""MemoryJobStore — fallback when no DB is configured."""
+"""MemoryJobStore — fallback when no DB is configured.
+
+Lazy-init per-instance: the `_jobs` field defaults to None (class-level) and
+the real dict is allocated here, so the class-level value can never be a
+shared-across-instances mutable. Same pattern as `JacScaleScheduler._store`.
+"""
 impl MemoryJobStore.postinit -> None {
-    # Ensure each instance gets its own dict (avoid mutable default sharing).
     self._jobs = {};
 }
 
@@ -266,7 +270,7 @@ impl MemoryJobStore.record_run(
     job['run_count'] = int(job.get('run_count', 0)) + 1;
 }
 
-"""Silence APScheduler's verbose logs on instantiation."""
+"""Silence APScheduler's verbose logs on instantiation; lazy-init per-instance state."""
 impl JacScaleScheduler.postinit -> None {
     logging.getLogger('apscheduler').setLevel(logging.ERROR);
     self._user_exists_cache = {};
@@ -481,7 +485,9 @@ impl JacScaleScheduler.register_dynamic_tasks_from_db -> None {
         if user_id != self._system_user_id and not self._user_is_live(user_id) {
             try {
                 self._require_store().update(
-                    job_id, {'status': 'orphaned', 'orphaned_at': _utc_now_iso()}
+                    job_id,
+                    {'status': 'orphaned', 'orphaned_at': _utc_now_iso()},
+                    where={'status': 'active'}
                 );
             } except Exception as e {
                 logger.debug(f"Could not mark job {job_id} orphaned: {e}");
@@ -619,9 +625,6 @@ impl JacScaleScheduler.update_job(
     if existing is None {
         return None;
     }
-    if acting_as is not None and existing.get('created_by') != acting_as {
-        return None;
-    }
 
     name = existing.get('name', '');
     user_id = existing.get('created_by', self._system_user_id);
@@ -662,7 +665,10 @@ impl JacScaleScheduler.delete_job(job_id: str, acting_as: str | None = None) -> 
         try {
             self._apscheduler.remove_job(job_id);
         } except Exception as e {
-            logger.debug(f"Could not remove APScheduler job {job_id}: {e}");
+            logger.warning(
+                f"DB row for job {job_id} deleted but APScheduler.remove_job failed: {e}. "
+                f"Job may keep firing until restart."
+            );
         }
         logger.debug(f"Deleted dynamic job id={job_id}");
     }
@@ -761,7 +767,7 @@ impl JacScaleScheduler._record_run(
     try {
         self._require_store().record_run(job_id, status, error);
     } except Exception as e {
-        logger.debug(f"Could not record run for job {job_id}: {e}");
+        logger.warning(f"Could not record run for job {job_id}: {e}");
     }
 }
 

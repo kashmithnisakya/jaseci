@@ -57,7 +57,7 @@ obj MongoJobStore(JobStore) {
 }
 
 obj MemoryJobStore(JobStore) {
-    has _jobs: dict[str, dict] = {};
+    has _jobs: dict[str, dict] | None = None;
 
     def postinit -> None;
     def insert(job: dict) -> str;
@@ -103,9 +103,7 @@ obj JacScaleScheduler {
         _system_user_id: str = '__system__',
         _store: JobStore | None = None,
         _server: Any | None = None,
-        # Positive cache: user_id -> expiry epoch seconds. Negative results are
-        # not cached (user was just deleted → transition immediately).
-        _user_exists_cache: dict[str, float] = {},
+        _user_exists_cache: dict[str, float] | None = None,
         _user_exists_ttl: float = 30.0;
 
     def postinit -> None;
