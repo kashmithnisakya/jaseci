@@ -5,7 +5,6 @@ import from collections.abc { Callable }
 import from datetime { UTC, datetime, timedelta }
 import from pathlib { Path }
 import from pydantic { BaseModel, Field, ValidationError }
-import from typing { Any }
 import jwt;
 import json;
 import from os { getenv }
@@ -28,6 +27,7 @@ import from jac_scale.utils { generate_random_password, _extract_path_param_name
 import from jac_scale.config_loader { get_scale_config }
 import from jac_scale.webhook { ApiKeyManager, WebhookUtils }
 import from jac_scale.abstractions.metrics { MetricsCollector }
+import from jac_scale.events.broker { EventStreamBroker }
 import from jac_scale.websocket { WebSocketConnectionManager }
 import from typing { AsyncGenerator }
 import from inspect { isgenerator }
@@ -43,12 +43,14 @@ import from jaclang.runtimelib.builtin { ScheduleTrigger }
 import from jaclang.jac0core.constant { Constants as Con }
 import traceback;
 import from urllib.parse { quote }
-import from jac_scale.utils { extract_bearer_token }
+import from jac_scale.utils { authenticate_or_fail }
 import from jac_scale.auth_models {
     RegisterRequest,
     LoginRequest,
     UpdatePasswordRequest,
-    validate_profile
+    UpdateProfileRequest,
+    UpdateProfileResponse,
+    MeResponse
 }
 import from jac_scale.scheduler.scheduler_models { CreateJobRequest, UpdateJobRequest }
 
@@ -82,6 +84,7 @@ obj JacAPIServerAuth {
     def register_update_password_endpoint -> None;
     # Current user
     def register_me_endpoint -> None;
+    def register_update_me_endpoint -> None;
     # SSO
     def register_sso_endpoints -> None;
     def _create_sso_callback_wrapper -> Callable[..., (Response | TransportResponse)];
@@ -115,14 +118,15 @@ obj JacAPIServerCore {
     # Client error reporting
     def _register_client_error_endpoint -> None;
     # HMR support
-    def enable_hmr(hot_reloader: Any) -> None;
+    def enable_hmr(hot_reloader: any) -> None;
     def _register_endpoints -> None;
     def _refresh_dev_endpoints -> None;
     def _setup_scheduler -> None;
+    def _setup_events -> None;
     # Metrics endpoint wrapper for admin-only access
     def _create_admin_metrics_handler(
-        original_handler: Callable[..., Any]
-    ) -> Callable[..., Any];
+        original_handler: Callable[..., any]
+    ) -> Callable[..., any];
 }
 
 """Walker, function, webhook, WebSocket endpoint registration and callbacks."""
@@ -192,8 +196,9 @@ obj JacAPIServerStatic {
 obj JacAPIServer(JacAPIServerCore, JacAPIServerAuth, JacAPIServerEndpoints, JacAPIServerStatic, JacAPIServerAdmin, JacAPIServerLLMTelemetry, JacAPIServerScheduler, JServer) {
     # HMR (Hot Module Replacement) support fields
     has _hmr_pending: bool = False,
-        _hot_reloader: Any | None = None,
+        _hot_reloader: any | None = None,
         _api_key_manager: ApiKeyManager | None = None,
         _metrics: MetricsCollector | None = None,
+        _broker: EventStreamBroker | None = None,
         _ws_manager: WebSocketConnectionManager | None = None;
 }

@@ -704,23 +704,39 @@ impl JacScaleScheduler._execute_task(
         }
 
         async def _run {
-            if is_walker {
-                result = await self._server.execution_manager.spawn_walker(
-                    target, {}, user_id
-                );
-            } else {
-                result = await self._server.execution_manager.execute_function(
-                    target, {}, user_id
-                );
-            }
-            if isinstance(result, dict) and 'error' in result {
-                err = str(result.get('error'));
-                logger.error(f"Scheduled {label} '{name}' error: {err}");
-                if job_id {
-                    self._record_run(job_id, 'failed', err);
+            import from jac_scale.context { JScaleExecutionContext }
+            import from jaclang { JacRuntimeInterface as Jac }
+            # Each scheduled job runs in its own isolated root context so
+            # concurrent jobs cannot share L1 state or interfere with
+            # in-flight HTTP requests that may be using the global context.
+            ctx = JScaleExecutionContext();
+            ctx_token = Jac.push_request_context(ctx);
+            try {
+                if is_walker {
+                    result = await self._server.execution_manager.spawn_walker(
+                        target, {}, user_id
+                    );
+                } else {
+                    result = await self._server.execution_manager.execute_function(
+                        target, {}, user_id
+                    );
                 }
-            } elif job_id {
-                self._record_run(job_id, 'succeeded');
+                if isinstance(result, dict) and 'error' in result {
+                    err = str(result.get('error'));
+                    logger.error(f"Scheduled {label} '{name}' error: {err}");
+                    if job_id {
+                        self._record_run(job_id, 'failed', err);
+                    }
+                } elif job_id {
+                    self._record_run(job_id, 'succeeded');
+                }
+            } finally {
+                Jac.reset_request_context(ctx_token);
+                try {
+                    ctx.mem.close();
+                } except Exception as ce {
+                    logger.warning(f"Scheduled job context close failed: {ce}");
+                }
             }
         }
 
