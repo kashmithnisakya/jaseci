@@ -41,8 +41,11 @@ obj JacScaleUserManager(UserManager) {
         _identity_storage: IdentityStorage by postinit;
 
     def postinit -> None;
-    # Identity-based user CRUD
-    def create_user(
+    # User creation: `create_user` honours the `UserManager` interface
+    # (username/password); `create_user_with_identities` is the richer
+    # identity-based form used by the `/register` endpoint and SSO.
+    def create_user(username: str, password: str) -> dict[str, any];
+    def create_user_with_identities(
         identities: list[dict[str, any]],
         credential: dict[str, any],
         profile: dict[str, any] | None = None
@@ -61,6 +64,10 @@ obj JacScaleUserManager(UserManager) {
         user_id: str, current_password: str, new_password: str
     ) -> dict[str, str];
 
+    def reset_password_by_user_id(user_id: str, new_password: str) -> dict[str, str];
+    def add_identity(user_id: str, identity: dict[str, Any]) -> bool;
+    def is_identity_taken(value: str) -> bool;
+    def set_identity_verified(user_id: str, value_normalized: str) -> bool;
     def update_profile(
         user_id: str, profile_updates: dict[str, any]
     ) -> dict[str, any];

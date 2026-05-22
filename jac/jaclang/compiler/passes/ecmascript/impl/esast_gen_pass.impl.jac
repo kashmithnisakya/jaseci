@@ -3025,6 +3025,37 @@ impl EsastGenPass.exit_jsx_expression(nd: uni.JsxExpression) -> None {
     self.jsx_processor.expression(nd);
 }
 
+"""Process JSX statement-form slot.
+
+A `JsxSlot` whose body has been lowered by `ViewLowerPass` (statements,
+including `__jac_view_kids = []` init and the trailing fragment-return
+guard) is wrapped here in an arrow function and called inline. The IIFE
+result is the slot's child expression -- the rendered JSX fragment of
+everything the body accumulated."""
+impl EsastGenPass.exit_jsx_slot(nd: uni.JsxSlot) -> None {
+    body_stmts: list = [];
+    for stmt in nd.body {
+        if stmt.gen.es_ast is None {
+            continue;
+        }
+        if isinstance(stmt.gen.es_ast, `list) {
+            for sub in stmt.gen.es_ast {
+                if sub is not None {
+                    body_stmts.append(sub);
+                }
+            }
+        } else {
+            body_stmts.append(stmt.gen.es_ast);
+        }
+    }
+    block = self.sync_loc(es.BlockStatement(body=body_stmts), jac_node=nd);
+    arrow = self.sync_loc(
+        es.ArrowFunctionExpression(params=[], body=block, async_=False), jac_node=nd
+    );
+    call = self.sync_loc(es.CallExpression(callee=arrow, arguments=[]), jac_node=nd);
+    nd.gen.es_ast = call;
+}
+
 """Process JSX text node."""
 impl EsastGenPass.exit_jsx_text(nd: uni.JsxText) -> None {
     self.jsx_processor.text(nd);
@@ -3052,6 +3083,19 @@ impl EsastGenPass.exit_jsx_element_name(nd: uni.JsxElementName) -> None {
 
 """Process JSX element."""
 impl EsastGenPass.exit_jsx_element(nd: uni.JsxElement) -> None {
+    # `<JacAwaiting>` is synthesized by ViewLowerPass to wrap a slot's
+    # `try { ... } awaiting { ... }` clause on the `cl` target. The
+    # component lives in `@jac/runtime`; auto-inject the import so the
+    # synthesized name resolves at runtime without forcing user code to
+    # import it explicitly.
+    if (
+        nd.name is not None
+        and nd.name.parts
+        and isinstance(nd.name.parts[0], uni.Name)
+        and nd.name.parts[0].value == "JacAwaiting"
+    ) {
+        self._inject_runtime_import("JacAwaiting", nd);
+    }
     nd.gen.es_ast = self.jsx_processor.element(nd);
 }
 
@@ -4543,6 +4587,27 @@ impl EsastGenPass._emit_boundary_type_stubs(nd: uni.Module) -> list[es.Statement
 
 """Process module node."""
 impl EsastGenPass.exit_module(nd: uni.Module) -> None {
+    # Scoped-style annex: emit the selector-rewritten CSS as a sidecar
+    # artifact and prepend a side-effect import so the styles load with the
+    # module. Duplicate imports from impl/variant modules are deduped below.
+    if (self.scoped_styles is not None and self.scoped_styles.class_map) {
+        import os;
+        nd.gen.css = self.scoped_styles.scoped_css;
+        base = os.path.basename(self.scoped_styles.css_path);
+        if base.endswith('.style.css') {
+            base = base[:-len('.style.css')];
+        }
+        css_import = f"./{base}.css";
+        css_source = self.sync_loc(
+            es.Literal(value=css_import, raw=f'"{css_import}"'), jac_node=nd
+        );
+        self.imports.insert(
+            0,
+            self.sync_loc(
+                es.ImportDeclaration(specifiers=[], source=css_source), jac_node=nd
+            )
+        );
+    }
     body: list[(es.Statement | es.ModuleDeclaration)] = [];
     body.extend(self.imports);
     # Include stubs for def:pub functions imported via sv import
@@ -5365,6 +5430,12 @@ impl EsastGenPass.before_pass -> None {
     self.scope_map: dict[(uni.UniScopeNode, ScopeInfo)] = {};
     self.client_manifest = ClientManifest();
     self.jsx_processor = EsJsxProcessor(self);
+    # Load the `.style.css` scoped-style annex (if any) keyed off the head
+    # module path, so every variant/impl module shares one class map and
+    # JSX `className` literals can be rewritten during traversal.
+    self.scoped_styles: (ScopedStyleSheet | None) = load_style_annex(
+        self.ir_in.annexable_by or self.ir_in.loc.mod_path
+    );
     # Track reactive state variables: maps var_name -> setter_name (e.g., "count" -> "setCount")
     self.reactive_vars: dict[str, str] = {};
     # Stack to save/restore reactive_vars per function boundary

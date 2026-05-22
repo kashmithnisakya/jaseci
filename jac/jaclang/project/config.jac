@@ -34,6 +34,7 @@ obj ProjectConfig {
         license: str = "",
         readme: str = "README.md",
         keywords: list[str] = [],
+        classifiers: list[str] = [],
         requires_python: str = "",
         jac_version: str = "",
         entry_point: str = "main.jac",
@@ -142,7 +143,13 @@ obj PluginsConfig {
 obj StorageConfig {
     has storage_type: str = "local",  # local, s3, gcs, azure
         base_path: str = "./storage",
-        create_dirs: bool = True;
+        create_dirs: bool = True,
+        # S3 specific configuration
+        bucket: str = "",
+        prefix: str = "",
+        region: str = "us-east-1",
+        endpoint_url: (str | None) = None,
+        public_read: bool = False;
 }
 
 """Environment configuration from [environment] section."""
