@@ -1429,6 +1429,21 @@ obj KubernetesTarget(DeploymentTarget) {
             # 13. Deploy databases
             self._deploy_databases(app_name, namespace, apps_v1, core_v1);
             details["deploy_databases"] = "Successful";
+            # 13a. Inject Grafana connection info into the app pod env so the
+            # admin /admin/cluster/* proxy endpoints can query Grafana's
+            # datasource-proxy API server-side. Grafana itself is deployed at
+            # step 15 and stays internal (ClusterIP + /grafana ingress for the UI).
+            if self.k8s_config.monitoring_enabled {
+                self.env_list.append({
+                    'name': 'GRAFANA_INTERNAL_URL',
+                    'value': f"http://{app_name}-grafana-service:3000"
+                });
+                self.env_list.append({'name': 'GRAFANA_USERNAME', 'value': 'admin'});
+                self.env_list.append({
+                    'name': 'GRAFANA_PASSWORD',
+                    'value': self.k8s_config.prometheus_admin_password
+                });
+            }
             # 13b. Apply NetworkPolicy for the app pod
             self._deploy_network_policy(app_name, namespace, networking_v1);
             details["deploy_network_policy"] = "Successful";

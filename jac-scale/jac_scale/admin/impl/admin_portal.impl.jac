@@ -66,6 +66,93 @@ impl JacAPIServerAdmin.register_admin_endpoints -> None {
             description='Authenticate as admin user'
         )
     );
+    # Cluster metrics endpoints — admin-only, proxy queries to Grafana's
+    # datasource-proxy API which forwards to Prometheus. Server-side basic-auth
+    # using GRAFANA_USERNAME / GRAFANA_PASSWORD env vars (injected at deploy
+    # time when monitoring is enabled).
+    async def admin_cluster_health_handler(request: Request) -> TransportResponse {
+        return self.admin_cluster_health(request.headers.get('Authorization'));
+    }
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.GET,
+            path='/admin/cluster/health',
+            callback=admin_cluster_health_handler,
+            parameters=[],
+            response_model=None,
+            tags=['Admin'],
+            summary='Cluster health',
+            description='Returns whether monitoring stack is reachable via Grafana'
+        )
+    );
+    async def admin_cluster_pods_handler(request: Request) -> TransportResponse {
+        return self.admin_cluster_pods(request.headers.get('Authorization'));
+    }
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.GET,
+            path='/admin/cluster/pods',
+            callback=admin_cluster_pods_handler,
+            parameters=[],
+            response_model=None,
+            tags=['Admin'],
+            summary='Cluster pod summary',
+            description='Pod counts per phase (Running, Pending, Failed, Succeeded)'
+        )
+    );
+    async def admin_cluster_nodes_handler(request: Request) -> TransportResponse {
+        return self.admin_cluster_nodes(request.headers.get('Authorization'));
+    }
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.GET,
+            path='/admin/cluster/nodes',
+            callback=admin_cluster_nodes_handler,
+            parameters=[],
+            response_model=None,
+            tags=['Admin'],
+            summary='Cluster nodes',
+            description='Per-node Ready=1/0 status from kube-state-metrics'
+        )
+    );
+    async def admin_cluster_deployments_handler(
+        request: Request
+    ) -> TransportResponse {
+        return self.admin_cluster_deployments(
+            request.headers.get('Authorization')
+        );
+    }
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.GET,
+            path='/admin/cluster/deployments',
+            callback=admin_cluster_deployments_handler,
+            parameters=[],
+            response_model=None,
+            tags=['Admin'],
+            summary='Cluster deployments',
+            description='Per-deployment desired vs available replicas'
+        )
+    );
+    async def admin_cluster_node_usage_handler(
+        request: Request
+    ) -> TransportResponse {
+        return self.admin_cluster_node_usage(
+            request.headers.get('Authorization')
+        );
+    }
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.GET,
+            path='/admin/cluster/node-usage',
+            callback=admin_cluster_node_usage_handler,
+            parameters=[],
+            response_model=None,
+            tags=['Admin'],
+            summary='Cluster node CPU/mem usage',
+            description='Per-node CPU% and memory% from node-exporter'
+        )
+    );
     # Password reset endpoint (for users who require password reset)
     import from fastapi { Request }
     async def reset_password_handler(
@@ -530,6 +617,279 @@ impl JacAPIServerAdmin.require_admin(
         );
     }
     return None;
+}
+
+"""Execute a PromQL instant query through Grafana's datasource-proxy API.
+
+GRAFANA_INTERNAL_URL / GRAFANA_USERNAME / GRAFANA_PASSWORD are injected into
+the app pod at deploy time when monitoring is enabled. Returns a
+TransportResponse-wrapped Prometheus response on success, or a fail()
+TransportResponse on transport / auth / parse errors (502).
+"""
+def _grafana_promql(promql: str) -> TransportResponse {
+    import os;
+    import requests;
+    base = os.environ.get('GRAFANA_INTERNAL_URL', '').rstrip('/');
+    user = os.environ.get('GRAFANA_USERNAME', 'admin');
+    password = os.environ.get('GRAFANA_PASSWORD', '');
+    if not base or not password {
+        return TransportResponse.fail(
+            code='MONITORING_DISABLED',
+            message=(
+                'Grafana is not configured for this deployment. '
+                'Enable [monitoring] in jac.toml and redeploy.'
+            ),
+            meta=Meta(extra={'http_status': 503})
+        );
+    }
+    url = (
+        f"{base}/api/datasources/proxy/uid/prometheus/api/v1/query"
+    );
+    try {
+        resp = requests.get(
+            url, params={'query': promql}, auth=(user, password), timeout=10
+        );
+    } except requests.exceptions.RequestException as e {
+        return TransportResponse.fail(
+            code='GRAFANA_UNREACHABLE',
+            message=f"Failed to reach Grafana at {base}: {e}",
+            meta=Meta(extra={'http_status': 502})
+        );
+    }
+    if resp.status_code == 401 {
+        return TransportResponse.fail(
+            code='GRAFANA_AUTH',
+            message='Grafana rejected the configured admin credentials',
+            meta=Meta(extra={'http_status': 502})
+        );
+    }
+    try {
+        body = resp.json();
+    } except ValueError {
+        return TransportResponse.fail(
+            code='GRAFANA_BAD_RESPONSE',
+            message=f"Grafana returned non-JSON (status {resp.status_code})",
+            meta=Meta(extra={'http_status': 502})
+        );
+    }
+    return TransportResponse.success(
+        data=body, meta=Meta(extra={'http_status': resp.status_code})
+    );
+}
+
+"""Helper: extract the .data.result list from a Grafana-proxied Prometheus response."""
+def _prom_result(tr: TransportResponse) -> list {
+    if not tr.ok or not tr.data or not isinstance(tr.data, dict) {
+        return [];
+    }
+    inner = tr.data.get('data') or {};
+    result = inner.get('result') or [];
+    return result if isinstance(result, list) else [];
+}
+
+"""GET /admin/cluster/health — Grafana reachable + can query Prometheus?"""
+impl JacAPIServerAdmin.admin_cluster_health(
+    Authorization: str | None = None
+) -> TransportResponse {
+    error = self.require_admin(Authorization);
+    if error {
+        return error;
+    }
+    tr = _grafana_promql('up{job="kube-state-metrics"}');
+    if not tr.ok {
+        return tr;
+    }
+    results = _prom_result(tr);
+    ksm_up = any(
+        (
+            isinstance(r, dict)
+            and r.get('value')
+            and len(r['value']) > 1
+            and str(r['value'][1]) == '1'
+        ) for r in results
+    );
+    return TransportResponse.success(
+        data={
+            'grafana_reachable': True,
+            'kube_state_metrics_up': ksm_up,
+            'targets_seen': len(results)
+        },
+        meta=Meta(extra={'http_status': 200})
+    );
+}
+
+"""GET /admin/cluster/pods — pod counts per phase across all namespaces."""
+impl JacAPIServerAdmin.admin_cluster_pods(
+    Authorization: str | None = None
+) -> TransportResponse {
+    error = self.require_admin(Authorization);
+    if error {
+        return error;
+    }
+    tr = _grafana_promql('sum by (phase) (kube_pod_status_phase)');
+    if not tr.ok {
+        return tr;
+    }
+    phases: dict[str, int] = {
+        'Running': 0, 'Pending': 0, 'Failed': 0, 'Succeeded': 0, 'Unknown': 0
+    };
+    for r in _prom_result(tr) {
+        if not isinstance(r, dict) {
+            continue;
+        }
+        phase = (r.get('metric') or {}).get('phase', 'Unknown');
+        value = r.get('value') or [None, '0'];
+        try {
+            phases[phase] = int(float(value[1]));
+        } except (ValueError, KeyError, IndexError, TypeError) {
+            continue;
+        }
+    }
+    return TransportResponse.success(
+        data={'phases': phases},
+        meta=Meta(extra={'http_status': 200})
+    );
+}
+
+"""GET /admin/cluster/nodes — per-node Ready status."""
+impl JacAPIServerAdmin.admin_cluster_nodes(
+    Authorization: str | None = None
+) -> TransportResponse {
+    error = self.require_admin(Authorization);
+    if error {
+        return error;
+    }
+    tr = _grafana_promql(
+        'kube_node_status_condition{condition="Ready",status="true"}'
+    );
+    if not tr.ok {
+        return tr;
+    }
+    nodes: list[dict[str, any]] = [];
+    for r in _prom_result(tr) {
+        if not isinstance(r, dict) {
+            continue;
+        }
+        metric = r.get('metric') or {};
+        value = r.get('value') or [None, '0'];
+        try {
+            ready = int(float(value[1])) == 1;
+        } except (ValueError, IndexError, TypeError) {
+            ready = False;
+        }
+        nodes.append({'node': metric.get('node', '?'), 'ready': ready});
+    }
+    return TransportResponse.success(
+        data={'nodes': nodes, 'total': len(nodes)},
+        meta=Meta(extra={'http_status': 200})
+    );
+}
+
+"""GET /admin/cluster/deployments — per-deployment desired vs available replicas."""
+impl JacAPIServerAdmin.admin_cluster_deployments(
+    Authorization: str | None = None
+) -> TransportResponse {
+    error = self.require_admin(Authorization);
+    if error {
+        return error;
+    }
+    desired_tr = _grafana_promql('kube_deployment_spec_replicas');
+    if not desired_tr.ok {
+        return desired_tr;
+    }
+    available_tr = _grafana_promql('kube_deployment_status_replicas_available');
+    if not available_tr.ok {
+        return available_tr;
+    }
+    desired_map: dict[str, int] = {};
+    available_map: dict[str, int] = {};
+    for (results, target) in [
+        (_prom_result(desired_tr), desired_map),
+        (_prom_result(available_tr), available_map)
+    ] {
+        for r in results {
+            if not isinstance(r, dict) {
+                continue;
+            }
+            metric = r.get('metric') or {};
+            ns = metric.get('namespace', '');
+            name = metric.get('deployment', '');
+            key = f"{ns}/{name}";
+            value = r.get('value') or [None, '0'];
+            try {
+                target[key] = int(float(value[1]));
+            } except (ValueError, IndexError, TypeError) {
+                continue;
+            }
+        }
+    }
+    deployments = [
+        {
+            'name': key,
+            'desired': desired_map[key],
+            'available': available_map.get(key, 0),
+            'healthy': available_map.get(key, 0) >= desired_map[key]
+        } for key in sorted(desired_map.keys())
+    ];
+    return TransportResponse.success(
+        data={
+            'deployments': deployments,
+            'total': len(deployments),
+            'healthy': sum((1 for d in deployments if d['healthy']))
+        },
+        meta=Meta(extra={'http_status': 200})
+    );
+}
+
+"""GET /admin/cluster/node-usage — per-node CPU% and memory%."""
+impl JacAPIServerAdmin.admin_cluster_node_usage(
+    Authorization: str | None = None
+) -> TransportResponse {
+    error = self.require_admin(Authorization);
+    if error {
+        return error;
+    }
+    cpu_tr = _grafana_promql(
+        '(1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100'
+    );
+    if not cpu_tr.ok {
+        return cpu_tr;
+    }
+    mem_tr = _grafana_promql(
+        '(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100'
+    );
+    if not mem_tr.ok {
+        return mem_tr;
+    }
+    cpu_map: dict[str, float] = {};
+    mem_map: dict[str, float] = {};
+    for (results, target) in [
+        (_prom_result(cpu_tr), cpu_map),
+        (_prom_result(mem_tr), mem_map)
+    ] {
+        for r in results {
+            if not isinstance(r, dict) {
+                continue;
+            }
+            instance = (r.get('metric') or {}).get('instance', '?');
+            value = r.get('value') or [None, '0'];
+            try {
+                target[instance] = round(float(value[1]), 1);
+            } except (ValueError, IndexError, TypeError) {
+                continue;
+            }
+        }
+    }
+    nodes = [
+        {
+            'instance': key,
+            'cpu_percent': cpu_map[key],
+            'memory_percent': mem_map.get(key, 0.0)
+        } for key in sorted(cpu_map.keys())
+    ];
+    return TransportResponse.success(
+        data={'nodes': nodes}, meta=Meta(extra={'http_status': 200})
+    );
 }
 
 """Admin login endpoint."""

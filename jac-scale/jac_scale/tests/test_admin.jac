@@ -91,6 +91,70 @@ test "admin login non-admin user rejected" {
 }
 
 # ============================================================================
+# Cluster Metrics Tests (Grafana proxy)
+# ============================================================================
+test "/admin/cluster/health requires admin" {
+    client = make_client();
+    try {
+        response = client.get("/admin/cluster/health");
+        assert response.status_code == 403;
+    } finally {
+        client.close();
+    }
+}
+
+test "/admin/cluster/pods rejects non-admin user" {
+    client = make_client();
+    try {
+        admin_token = client.admin_login();
+        username = f"reguser_{uuid.uuid4().hex[:8]}";
+        client.post(
+            "/admin/users",
+            json={"username": username, "password": "userpass123", "role": "user"},
+            headers={"Authorization": f"Bearer {admin_token}"}
+        );
+        user_token = client.login_user(username, "userpass123");
+        response = client.get(
+            "/admin/cluster/pods",
+            headers={"Authorization": f"Bearer {user_token}"}
+        );
+        assert response.status_code == 403;
+    } finally {
+        client.close();
+    }
+}
+
+test "/admin/cluster/* returns MONITORING_DISABLED when Grafana env is unset" {
+    # Unit tests run without monitoring deployed; the helper should detect that
+    # and return a clean 503 with code=MONITORING_DISABLED rather than
+    # crashing on a missing env var.
+    client = make_client();
+    try {
+        token = client.admin_login();
+        for path in [
+            "/admin/cluster/health",
+            "/admin/cluster/pods",
+            "/admin/cluster/nodes",
+            "/admin/cluster/deployments",
+            "/admin/cluster/node-usage"
+        ] {
+            response = client.get(
+                path, headers={"Authorization": f"Bearer {token}"}
+            );
+            assert response.status_code == 503 , (
+                f"{path} should return 503 when Grafana is not configured, got {response.status_code}"
+            );
+            data = extract_data(response.json());
+            assert data.get("error_code") == "MONITORING_DISABLED" , (
+                f"{path} should return MONITORING_DISABLED, got {data.get('error_code')}"
+            );
+        }
+    } finally {
+        client.close();
+    }
+}
+
+# ============================================================================
 # User Management Tests
 # ============================================================================
 test "admin list users" {

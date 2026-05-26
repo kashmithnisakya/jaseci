@@ -25,6 +25,22 @@ obj JacAPIServerAdmin {
     def admin_login(username: str, password: str) -> TransportResponse;
     def validate_admin_token(Authorization: str | None) -> (str | None);
     def require_admin(Authorization: str | None) -> TransportResponse | None;
+    # Cluster metrics (Grafana-proxied, admin only)
+    def admin_cluster_health(
+        Authorization: str | None = None
+    ) -> TransportResponse;
+    def admin_cluster_pods(
+        Authorization: str | None = None
+    ) -> TransportResponse;
+    def admin_cluster_nodes(
+        Authorization: str | None = None
+    ) -> TransportResponse;
+    def admin_cluster_deployments(
+        Authorization: str | None = None
+    ) -> TransportResponse;
+    def admin_cluster_node_usage(
+        Authorization: str | None = None
+    ) -> TransportResponse;
     # User management endpoints
     def admin_list_users(
         limit: int = 100, offset: int = 0, Authorization: str | None = None
