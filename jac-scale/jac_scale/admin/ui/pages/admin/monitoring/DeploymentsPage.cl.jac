@@ -1,0 +1,269 @@
+"""Deployments page: non-technical-friendly view of K8s workload health.
+
+Renders summary cards + a per-deployment table driven by /admin/deployments/*.
+Status strings ('Healthy', 'Starting', 'Broken', 'Unstable') are pre-computed
+server-side so this page is purely presentational.
+"""
+
+cl {
+    import from react { useEffect }
+    import from ....context.AuthContext { useAuth }
+    import from ....services.deploymentsService {
+        getDeploymentsSummary,
+        getDeploymentsList
+    }
+
+    def:pub DeploymentsPage -> JsxElement {
+        has isLoading: bool = True,
+            metricsAvailable: bool = True,
+            unavailableReason: str = "",
+            summary: dict = {},
+            deployments: list = [],
+            autoRefresh: bool = True;
+
+        auth = useAuth();
+
+        async def loadAll {
+            sumRes = await getDeploymentsSummary(auth["authToken"]);
+            listRes = await getDeploymentsList(auth["authToken"]);
+            sumData = {};
+            if sumRes["ok"] and sumRes["data"] {
+                sumData = sumRes["data"];
+            }
+            listData = {};
+            if listRes["ok"] and listRes["data"] {
+                listData = listRes["data"];
+            }
+            metricsAvailable = bool(sumData["metrics_available"]);
+            unavailableReason = sumData["reason"] or "";
+            summary = sumData;
+            deployments = listData["deployments"] or [];
+            isLoading = False;
+        }
+
+        useEffect(lambda { loadAll(); }, []);
+
+        useEffect(
+            lambda -> any {
+                if not autoRefresh {
+                    return undefined;
+                }
+                interval = setInterval(lambda { loadAll(); }, 10000);
+                return lambda { clearInterval(interval); };
+            },
+            [autoRefresh]
+        );
+
+        def formatBytes(b: float) -> str {
+            if b >= 1073741824 {
+                return str(int(b / 10737418.24) / 100) + " GB";
+            }
+            if b >= 1048576 {
+                return str(int(b / 10485.76) / 100) + " MB";
+            }
+            if b >= 1024 {
+                return str(int(b / 10.24) / 100) + " KB";
+            }
+            return str(int(b)) + " B";
+        }
+
+        def statusBadge(status: str) -> JsxElement {
+            classes = {
+                "Healthy": "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
+                "Starting": "bg-amber-500/20 text-amber-300 border-amber-500/40",
+                "Unstable": "bg-orange-500/20 text-orange-300 border-orange-500/40",
+                "Broken": "bg-red-500/20 text-red-300 border-red-500/40"
+            };
+            cls = classes[status] or "bg-slate-700/40 text-slate-300 border-slate-600/40";
+            dotClasses = {
+                "Healthy": "bg-emerald-400",
+                "Starting": "bg-amber-400",
+                "Unstable": "bg-orange-400",
+                "Broken": "bg-red-400"
+            };
+            dotCls = dotClasses[status] or "bg-slate-400";
+            return
+                <span
+                    className={"inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium border " + cls}
+                >
+                    <span className={"w-1.5 h-1.5 rounded-full " + dotCls}></span>
+                    {status}
+                </span>;
+        }
+
+        def renderStatCard(
+            label: str, value: any, sub: str = "", tone: str = "white"
+        ) -> JsxElement {
+            colors = {
+                "white": "text-white",
+                "good": "text-emerald-300",
+                "warn": "text-amber-300",
+                "bad": "text-red-300"
+            };
+            valueCls = "text-2xl font-semibold mt-1 " + (colors[tone] or "text-white");
+            return
+                <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
+                    <p className="text-xs text-slate-500 uppercase tracking-wider">
+                        {label}
+                    </p>
+                    <p className={valueCls}>{value}</p>
+                    {sub and <p className="text-xs text-slate-500 mt-1">{sub}</p>}
+                </div>;
+        }
+
+        if isLoading {
+            return
+                <div
+                    className="bg-slate-900 border border-slate-800 rounded-lg p-8 text-center"
+                >
+                    <p className="text-sm text-slate-400">Loading deployments...</p>
+                </div>;
+        }
+
+        if not metricsAvailable {
+            return
+                <div
+                    className="bg-slate-900 border border-amber-500/30 rounded-lg p-6"
+                >
+                    <h2 className="text-sm font-medium text-white mb-2">
+                        Metrics unavailable
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                        {unavailableReason or
+                            "Could not reach the Prometheus monitoring stack. Confirm monitoring is enabled in jac.toml and the cluster has finished deploying."}
+                    </p>
+                </div>;
+        }
+
+        pods = summary["pods"] or {};
+        nodes = summary["nodes"] or {};
+        traffic = summary["traffic"] or {};
+        running = pods["running"] or 0;
+        pending = pods["pending"] or 0;
+        failed = pods["failed"] or 0;
+        nodesReady = nodes["ready"] or 0;
+        nodesTotal = nodes["total"] or 0;
+        rps = traffic["requests_per_sec"] or 0;
+        errPct = traffic["error_rate_pct"] or 0;
+        p95 = traffic["p95_latency_ms"] or 0;
+
+        pendingTone = "white";
+        if pending > 0 {
+            pendingTone = "warn";
+        }
+        failedTone = "white";
+        if failed > 0 {
+            failedTone = "bad";
+        }
+        errTone = "good";
+        if errPct > 0 {
+            errTone = "warn";
+        }
+        if errPct >= 1 {
+            errTone = "bad";
+        }
+
+        return
+            <div className="space-y-4">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    {renderStatCard("Healthy", running, "pods running", "good")}
+                    {renderStatCard("Starting", pending, "pods pending", pendingTone)}
+                    {renderStatCard("Broken", failed, "pods failing", failedTone)}
+                    {renderStatCard(
+                        "Traffic", str(rps) + " r/s", "requests per second"
+                    )}
+                    {renderStatCard(
+                        "Errors",
+                        str(errPct) + "%",
+                        "of requests are errors",
+                        errTone
+                    )}
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {renderStatCard(
+                        "Cluster nodes",
+                        str(nodesReady) + " / " + str(nodesTotal),
+                        "ready"
+                    )}
+                    {renderStatCard(
+                        "Response time (p95)", str(p95) + " ms", "95% of requests under"
+                    )}
+                    {renderStatCard("Namespace", summary["namespace"] or "default")}
+                </div>
+                <div
+                    className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden"
+                >
+                    <div
+                        className="flex items-center justify-between px-4 py-3 border-b border-slate-800"
+                    >
+                        <h2 className="text-sm font-medium text-white">Deployments</h2>
+                        <p className="text-xs text-slate-500">
+                            {str(len(deployments))} found, refreshing every 10s
+                        </p>
+                    </div>
+                    {len(deployments) == 0
+                        and <div className="p-6 text-center text-sm text-slate-500">
+                                No deployments visible.
+                            </div>}
+                    {len(deployments) > 0
+                        and <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="text-xs text-slate-500 uppercase tracking-wider bg-slate-950/40">
+                                        <tr>
+                                            <th className="text-left px-4 py-2 font-medium">
+                                                Deployment
+                                            </th>
+                                            <th className="text-left px-4 py-2 font-medium">
+                                                Status
+                                            </th>
+                                            <th className="text-left px-4 py-2 font-medium">
+                                                Replicas
+                                            </th>
+                                            <th className="text-left px-4 py-2 font-medium">
+                                                CPU
+                                            </th>
+                                            <th className="text-left px-4 py-2 font-medium">
+                                                Memory
+                                            </th>
+                                            <th className="text-left px-4 py-2 font-medium">
+                                                Restarts (1h)
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {[
+                                            <tr
+                                                key={d["name"]}
+                                                className="border-t border-slate-800"
+                                            >
+                                                <td className="px-4 py-2 text-white">
+                                                    {d["name"]}
+                                                </td>
+                                                <td className="px-4 py-2">
+                                                    {statusBadge(d["status"])}
+                                                </td>
+                                                <td className="px-4 py-2 text-slate-300">
+                                                    {d["replicas_ready"]}
+                                                    {" / "}
+                                                    {d["replicas_desired"]}
+                                                </td>
+                                                <td className="px-4 py-2 text-slate-300">
+                                                    {d["cpu_cores"]}
+                                                    {" cores"}
+                                                </td>
+                                                <td className="px-4 py-2 text-slate-300">
+                                                    {formatBytes(d["memory_bytes"])}
+                                                </td>
+                                                <td className="px-4 py-2 text-slate-300">
+                                                    {d["restarts_last_hour"]}
+                                                </td>
+                                            </tr>
+                                            for d in deployments
+                                        ]}
+                                    </tbody>
+                                </table>
+                            </div>}
+                </div>
+            </div>;
+    }
+}

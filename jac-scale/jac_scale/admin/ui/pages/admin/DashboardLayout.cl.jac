@@ -15,6 +15,7 @@ cl {
     import from .monitoring.MetricsPage { MetricsPage }
     import from .monitoring.LLMMetricsPage { LLMMetricsPage }
     import from .monitoring.LLMTracesPage { LLMTracesPage }
+    import from .monitoring.DeploymentsPage { DeploymentsPage }
     import from .placeholder.PlaceholderPage {
         SessionsPage,
         ApiKeysPage,
@@ -36,7 +37,6 @@ cl {
         NotificationsPage,
         StorageProvidersPage,
         DatabasePage,
-        DeploymentsPage,
         ScalingPage,
         PodsPage,
         ActivityPage,

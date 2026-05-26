@@ -327,15 +327,6 @@ cl {
             </Card>;
     }
 
-    def:pub DeploymentsPage -> JsxElement {
-        return
-            <PlaceholderCard
-                title="Deployments"
-                message="Kubernetes deployment management coming soon"
-                action={<Button>Deploy Now</Button>}
-            />;
-    }
-
     def:pub ScalingPage -> JsxElement {
         has minReplicas: str = "",
             maxReplicas: str = "",
