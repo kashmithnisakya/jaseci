@@ -30,11 +30,11 @@ We hide these from the deployments list so users see only *their* deployments,
 not jac-scale's own observability sidecars.
 """
 glob _MONITORING_SUFFIXES: list = [
-    "-prometheus",
-    "-grafana",
-    "-kube-state-metrics",
-    "-node-exporter"
-];
+         "-prometheus",
+         "-grafana",
+         "-kube-state-metrics",
+         "-node-exporter"
+     ];
 
 """Map a kube_pod_status_phase result set to a UI-friendly status.
 
@@ -149,10 +149,7 @@ impl JacAPIServerDeployments.register_deployments_endpoints -> None {
         )
     );
     async def timeseries_handler(
-        request: Request,
-        name: str,
-        metric: str = "cpu",
-        range_minutes: int = 60
+        request: Request, name: str, metric: str = "cpu", range_minutes: int = 60
     ) -> TransportResponse {
         authorization = request.headers.get('Authorization');
         return self.admin_deployment_timeseries(
@@ -225,38 +222,48 @@ impl JacAPIServerDeployments.admin_deployments_summary(
     }
     ns_filter = f'namespace="{namespace}"' if namespace else '';
     ns_and = f',{ns_filter}' if ns_filter else '';
-    running = int(prom_scalar(prom_query(
-        f'count(kube_pod_status_phase{{phase="Running"{ns_and}}} == 1)'
-    )));
-    pending = int(prom_scalar(prom_query(
-        f'count(kube_pod_status_phase{{phase="Pending"{ns_and}}} == 1)'
-    )));
-    failed = int(prom_scalar(prom_query(
-        f'count(kube_pod_status_phase{{phase="Failed"{ns_and}}} == 1)'
-    )));
-    nodes_ready = int(prom_scalar(prom_query(
-        'count(kube_node_status_condition{condition="Ready",status="true"} == 1)'
-    )));
+    running = int(
+        prom_scalar(
+            prom_query(f'count(kube_pod_status_phase{{phase="Running"{ns_and}}} == 1)')
+        )
+    );
+    pending = int(
+        prom_scalar(
+            prom_query(f'count(kube_pod_status_phase{{phase="Pending"{ns_and}}} == 1)')
+        )
+    );
+    failed = int(
+        prom_scalar(
+            prom_query(f'count(kube_pod_status_phase{{phase="Failed"{ns_and}}} == 1)')
+        )
+    );
+    nodes_ready = int(
+        prom_scalar(
+            prom_query(
+                'count(kube_node_status_condition{condition="Ready",status="true"} == 1)'
+            )
+        )
+    );
     nodes_total = int(prom_scalar(prom_query('count(kube_node_info)')));
-    request_rate = prom_scalar(prom_query(
-        f'sum(rate({{__name__=~".+_http_requests_total"{ns_and}}}[1m]))'
-    ));
-    error_rate = prom_scalar(prom_query(
-        f'sum(rate({{__name__=~".+_http_requests_total",status_code=~"5.."{ns_and}}}[1m]))'
-    ));
+    request_rate = prom_scalar(
+        prom_query(f'sum(rate({{__name__=~".+_http_requests_total"{ns_and}}}[1m]))')
+    );
+    error_rate = prom_scalar(
+        prom_query(
+            f'sum(rate({{__name__=~".+_http_requests_total",status_code=~"5.."{ns_and}}}[1m]))'
+        )
+    );
     error_pct = (error_rate / request_rate * 100.0) if request_rate > 0 else 0.0;
-    p95_latency = prom_scalar(prom_query(
-        f'histogram_quantile(0.95, sum(rate({{__name__=~".+_http_request_duration_seconds_bucket"{ns_and}}}[5m])) by (le))'
-    ));
+    p95_latency = prom_scalar(
+        prom_query(
+            f'histogram_quantile(0.95, sum(rate({{__name__=~".+_http_request_duration_seconds_bucket"{ns_and}}}[5m])) by (le))'
+        )
+    );
     return TransportResponse.success(
         data={
             'metrics_available': True,
             'namespace': namespace,
-            'pods': {
-                'running': running,
-                'pending': pending,
-                'failed': failed
-            },
+            'pods': {'running': running, 'pending': pending, 'failed': failed},
             'nodes': {'ready': nodes_ready, 'total': nodes_total},
             'traffic': {
                 'requests_per_sec': round(request_rate, 2),
@@ -284,10 +291,7 @@ impl JacAPIServerDeployments.admin_deployments_list(
     namespace = os.environ.get("K8S_NAMESPACE", "");
     if resolve_prometheus_url() is None {
         return TransportResponse.success(
-            data={
-                'metrics_available': False,
-                'deployments': []
-            },
+            data={'metrics_available': False, 'deployments': []},
             meta=Meta(extra={'http_status': 200})
         );
     }
@@ -297,28 +301,35 @@ impl JacAPIServerDeployments.admin_deployments_list(
         f'kube_deployment_status_replicas_available{{{ns_filter}}}'
             if ns_filter
             else 'kube_deployment_status_replicas_available'
-    ) or [];
+    )
+    or [];
     desired = prom_query(
         f'kube_deployment_spec_replicas{{{ns_filter}}}'
             if ns_filter
             else 'kube_deployment_spec_replicas'
-    ) or [];
+    )
+    or [];
     cpu_by_pod = prom_query(
         f'sum(rate(container_cpu_usage_seconds_total{{pod!=""{ns_and}}}[5m])) by (pod)'
-    ) or [];
+    )
+    or [];
     mem_by_pod = prom_query(
         f'sum(container_memory_working_set_bytes{{pod!=""{ns_and}}}) by (pod)'
-    ) or [];
+    )
+    or [];
     restarts_by_pod = prom_query(
         f'sum(increase(kube_pod_container_status_restarts_total{{{ns_filter}}}[1h])) by (pod)'
             if ns_filter
             else 'sum(increase(kube_pod_container_status_restarts_total[1h])) by (pod)'
-    ) or [];
+    )
+    or [];
     desired_by_name = {};
     for entry in desired {
         m = entry.get("metric", {});
         v = entry.get("value", [0, "0"]);
-        desired_by_name[m.get("deployment", "")] = int(float(v[1])) if len(v) > 1 else 0;
+        desired_by_name[m.get("deployment", "")] = int(float(v[1]))
+            if len(v) > 1
+            else 0;
     }
     cpu_by_deploy: dict = {};
     mem_by_deploy: dict = {};
@@ -327,19 +338,25 @@ impl JacAPIServerDeployments.admin_deployments_list(
         pod = entry.get("metric", {}).get("pod", "");
         v = entry.get("value", [0, "0"]);
         deploy = _deployment_name_from_pod(pod);
-        cpu_by_deploy[deploy] = cpu_by_deploy.get(deploy, 0.0) + float(v[1] if len(v) > 1 else 0);
+        cpu_by_deploy[deploy] = cpu_by_deploy.get(deploy, 0.0) + float(
+            v[1] if len(v) > 1 else 0
+        );
     }
     for entry in mem_by_pod {
         pod = entry.get("metric", {}).get("pod", "");
         v = entry.get("value", [0, "0"]);
         deploy = _deployment_name_from_pod(pod);
-        mem_by_deploy[deploy] = mem_by_deploy.get(deploy, 0.0) + float(v[1] if len(v) > 1 else 0);
+        mem_by_deploy[deploy] = mem_by_deploy.get(deploy, 0.0) + float(
+            v[1] if len(v) > 1 else 0
+        );
     }
     for entry in restarts_by_pod {
         pod = entry.get("metric", {}).get("pod", "");
         v = entry.get("value", [0, "0"]);
         deploy = _deployment_name_from_pod(pod);
-        restarts_by_deploy[deploy] = restarts_by_deploy.get(deploy, 0) + int(float(v[1] if len(v) > 1 else 0));
+        restarts_by_deploy[deploy] = restarts_by_deploy.get(deploy, 0) + int(
+            float(v[1] if len(v) > 1 else 0)
+        );
     }
     deployments: list = [];
     for entry in available {
@@ -396,11 +413,7 @@ impl JacAPIServerDeployments.admin_deployment_detail(
     namespace = os.environ.get("K8S_NAMESPACE", "");
     if resolve_prometheus_url() is None {
         return TransportResponse.success(
-            data={
-                'metrics_available': False,
-                'name': name,
-                'pods': []
-            },
+            data={'metrics_available': False, 'name': name, 'pods': []},
             meta=Meta(extra={'http_status': 200})
         );
     }
@@ -409,22 +422,26 @@ impl JacAPIServerDeployments.admin_deployment_detail(
     pod_filter = f'pod=~"{name}-.+"';
     cpu_by_pod = prom_query(
         f'sum(rate(container_cpu_usage_seconds_total{{{pod_filter}{ns_and}}}[5m])) by (pod)'
-    ) or [];
+    )
+    or [];
     mem_by_pod = prom_query(
         f'sum(container_memory_working_set_bytes{{{pod_filter}{ns_and}}}) by (pod)'
-    ) or [];
+    )
+    or [];
     cpu_request_by_pod = prom_query(
         f'sum(kube_pod_container_resource_requests{{resource="cpu",{pod_filter}{ns_and}}}) by (pod)'
-    ) or [];
+    )
+    or [];
     mem_request_by_pod = prom_query(
         f'sum(kube_pod_container_resource_requests{{resource="memory",{pod_filter}{ns_and}}}) by (pod)'
-    ) or [];
-    phase_by_pod = prom_query(
-        f'kube_pod_status_phase{{{pod_filter}{ns_and}}} == 1'
-    ) or [];
+    )
+    or [];
+    phase_by_pod = prom_query(f'kube_pod_status_phase{{{pod_filter}{ns_and}}} == 1')
+    or [];
     restarts_by_pod = prom_query(
         f'sum(increase(kube_pod_container_status_restarts_total{{{pod_filter}{ns_and}}}[1h])) by (pod)'
-    ) or [];
+    )
+    or [];
     def _index_by_pod(rows: list) -> dict {
         out = {};
         for entry in rows {

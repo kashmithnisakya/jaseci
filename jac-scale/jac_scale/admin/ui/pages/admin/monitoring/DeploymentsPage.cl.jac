@@ -74,7 +74,8 @@ cl {
                 "Unstable": "bg-orange-500/20 text-orange-300 border-orange-500/40",
                 "Broken": "bg-red-500/20 text-red-300 border-red-500/40"
             };
-            cls = classes[status] or "bg-slate-700/40 text-slate-300 border-slate-600/40";
+            cls = classes[status]
+            or "bg-slate-700/40 text-slate-300 border-slate-600/40";
             dotClasses = {
                 "Healthy": "bg-emerald-400",
                 "Starting": "bg-amber-400",
@@ -122,15 +123,13 @@ cl {
 
         if not metricsAvailable {
             return
-                <div
-                    className="bg-slate-900 border border-amber-500/30 rounded-lg p-6"
-                >
+                <div className="bg-slate-900 border border-amber-500/30 rounded-lg p-6">
                     <h2 className="text-sm font-medium text-white mb-2">
                         Metrics unavailable
                     </h2>
                     <p className="text-xs text-slate-400">
-                        {unavailableReason or
-                            "Could not reach the Prometheus monitoring stack. Confirm monitoring is enabled in jac.toml and the cluster has finished deploying."}
+                        {unavailableReason
+                        or "Could not reach the Prometheus monitoring stack. Confirm monitoring is enabled in jac.toml and the cluster has finished deploying."}
                     </p>
                 </div>;
         }
@@ -166,17 +165,12 @@ cl {
         return
             <div className="space-y-4">
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                    {renderStatCard("Healthy", running, "pods running", "good")}
-                    {renderStatCard("Starting", pending, "pods pending", pendingTone)}
-                    {renderStatCard("Broken", failed, "pods failing", failedTone)}
-                    {renderStatCard(
+                    {renderStatCard("Healthy", running, "pods running", "good")}{renderStatCard(
+                        "Starting", pending, "pods pending", pendingTone
+                    )}{renderStatCard("Broken", failed, "pods failing", failedTone)}{renderStatCard(
                         "Traffic", str(rps) + " r/s", "requests per second"
-                    )}
-                    {renderStatCard(
-                        "Errors",
-                        str(errPct) + "%",
-                        "of requests are errors",
-                        errTone
+                    )}{renderStatCard(
+                        "Errors", str(errPct) + "%", "of requests are errors", errTone
                     )}
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -184,11 +178,9 @@ cl {
                         "Cluster nodes",
                         str(nodesReady) + " / " + str(nodesTotal),
                         "ready"
-                    )}
-                    {renderStatCard(
+                    )}{renderStatCard(
                         "Response time (p95)", str(p95) + " ms", "95% of requests under"
-                    )}
-                    {renderStatCard("Namespace", summary["namespace"] or "default")}
+                    )}{renderStatCard("Namespace", summary["namespace"] or "default")}
                 </div>
                 <div
                     className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden"
@@ -202,67 +194,67 @@ cl {
                         </p>
                     </div>
                     {len(deployments) == 0
-                        and <div className="p-6 text-center text-sm text-slate-500">
-                                No deployments visible.
-                            </div>}
+                    and <div className="p-6 text-center text-sm text-slate-500">
+                        No deployments visible.
+                    </div>}
                     {len(deployments) > 0
-                        and <div className="overflow-x-auto">
-                                <table className="w-full text-sm">
-                                    <thead className="text-xs text-slate-500 uppercase tracking-wider bg-slate-950/40">
-                                        <tr>
-                                            <th className="text-left px-4 py-2 font-medium">
-                                                Deployment
-                                            </th>
-                                            <th className="text-left px-4 py-2 font-medium">
-                                                Status
-                                            </th>
-                                            <th className="text-left px-4 py-2 font-medium">
-                                                Replicas
-                                            </th>
-                                            <th className="text-left px-4 py-2 font-medium">
-                                                CPU
-                                            </th>
-                                            <th className="text-left px-4 py-2 font-medium">
-                                                Memory
-                                            </th>
-                                            <th className="text-left px-4 py-2 font-medium">
-                                                Restarts (1h)
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {[
-                                            <tr
-                                                key={d["name"]}
-                                                className="border-t border-slate-800"
-                                            >
-                                                <td className="px-4 py-2 text-white">
-                                                    {d["name"]}
-                                                </td>
-                                                <td className="px-4 py-2">
-                                                    {statusBadge(d["status"])}
-                                                </td>
-                                                <td className="px-4 py-2 text-slate-300">
-                                                    {d["replicas_ready"]}
-                                                    {" / "}
-                                                    {d["replicas_desired"]}
-                                                </td>
-                                                <td className="px-4 py-2 text-slate-300">
-                                                    {d["cpu_cores"]}
-                                                    {" cores"}
-                                                </td>
-                                                <td className="px-4 py-2 text-slate-300">
-                                                    {formatBytes(d["memory_bytes"])}
-                                                </td>
-                                                <td className="px-4 py-2 text-slate-300">
-                                                    {d["restarts_last_hour"]}
-                                                </td>
-                                            </tr>
-                                            for d in deployments
-                                        ]}
-                                    </tbody>
-                                </table>
-                            </div>}
+                    and <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead
+                                className="text-xs text-slate-500 uppercase tracking-wider bg-slate-950/40"
+                            >
+                                <tr>
+                                    <th className="text-left px-4 py-2 font-medium">
+                                        Deployment
+                                    </th>
+                                    <th className="text-left px-4 py-2 font-medium">
+                                        Status
+                                    </th>
+                                    <th className="text-left px-4 py-2 font-medium">
+                                        Replicas
+                                    </th>
+                                    <th className="text-left px-4 py-2 font-medium">
+                                        CPU
+                                    </th>
+                                    <th className="text-left px-4 py-2 font-medium">
+                                        Memory
+                                    </th>
+                                    <th className="text-left px-4 py-2 font-medium">
+                                        Restarts (1h)
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {[
+                                    <tr
+                                        key={d["name"]}
+                                        className="border-t border-slate-800"
+                                    >
+                                        <td className="px-4 py-2 text-white">
+                                            {d["name"]}
+                                        </td>
+                                        <td className="px-4 py-2">
+                                            {statusBadge(d["status"])}
+                                        </td>
+                                        <td className="px-4 py-2 text-slate-300">
+                                            {d["replicas_ready"]}{" / "}{d[
+                                                "replicas_desired"
+                                            ]}
+                                        </td>
+                                        <td className="px-4 py-2 text-slate-300">
+                                            {d["cpu_cores"]}{" cores"}
+                                        </td>
+                                        <td className="px-4 py-2 text-slate-300">
+                                            {formatBytes(d["memory_bytes"])}
+                                        </td>
+                                        <td className="px-4 py-2 text-slate-300">
+                                            {d["restarts_last_hour"]}
+                                        </td>
+                                    </tr> for d in deployments
+                                ]}
+                            </tbody>
+                        </table>
+                    </div>}
                 </div>
             </div>;
     }

@@ -18,9 +18,9 @@ cl {
     async def:pub getDeploymentTimeseries(
         token: str, name: str, metric: str = "cpu", rangeMinutes: int = 60
     ) -> dict {
-        path = "/admin/deployments/" + name + "/timeseries"
-            + "?metric=" + metric
-            + "&range_minutes=" + str(rangeMinutes);
+        path = "/admin/deployments/" + name + "/timeseries" + "?metric=" + metric + "&range_minutes=" + str(
+            rangeMinutes
+        );
         return await get(path, token);
     }
 }

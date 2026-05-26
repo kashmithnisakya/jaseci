@@ -19,12 +19,12 @@ glob logger = logging.getLogger(__name__);
 Honors PROMETHEUS_URL when set so deployments running outside the standard
 monitoring stack (or local dev with port-forward) can point elsewhere.
 """
-def resolve_prometheus_url() -> str | None {
-    let override_url: str | None = os.environ.get("PROMETHEUS_URL");
+def resolve_prometheus_url -> str | None {
+    override_url: str | None = os.environ.get("PROMETHEUS_URL");
     if override_url {
         return override_url.rstrip("/");
     }
-    let app_name: str | None = os.environ.get("K8S_APP_NAME");
+    app_name: str | None = os.environ.get("K8S_APP_NAME");
     if not app_name {
         return None;
     }
@@ -37,21 +37,17 @@ Returns the parsed `data.result` list, or None if Prometheus is unreachable
 or returns a non-success status. Logs the failure so callers can show a
 'metrics unavailable' state without surfacing the underlying error to users.
 """
-def query(promql: str, timeout: float = 3.0) -> list | None {
+def query(promql: str, timeout: float = 3.0) -> list[any] | None {
     base = resolve_prometheus_url();
     if not base {
         return None;
     }
     try {
         resp = requests.get(
-            f"{base}/api/v1/query",
-            params={"query": promql},
-            timeout=timeout
+            f"{base}/api/v1/query", params={"query": promql}, timeout=timeout
         );
         if resp.status_code != 200 {
-            logger.warning(
-                f"Prometheus query returned {resp.status_code}: {promql}"
-            );
+            logger.warning(f"Prometheus query returned {resp.status_code}: {promql}");
             return None;
         }
         body = resp.json();
@@ -59,13 +55,30 @@ def query(promql: str, timeout: float = 3.0) -> list | None {
             logger.warning(f"Prometheus query failed: {body}");
             return None;
         }
-        return body.get("data", {}).get("result", []);
+        return _extract_result(body);
     } except RequestException as e {
         logger.warning(f"Prometheus unreachable: {e}");
         return None;
     } except Exception as e {
         logger.warning(f"Prometheus query error: {e}");
         return None;
+    }
+}
+
+"""Pull `data.result` from a parsed Prometheus response JSON."""
+def _extract_result(body: any) -> list[any] {
+    try {
+        data = body["data"];
+        raw = data["result"];
+        out: list[any] = [];
+        if raw {
+            for entry in raw {
+                out.append(entry);
+            }
+        }
+        return out;
+    } except Exception {
+        return [];
     }
 }
 
@@ -76,7 +89,7 @@ def query(promql: str, timeout: float = 3.0) -> list | None {
 """
 def query_range(
     promql: str, start: float, end: float, step: str = "15s", timeout: float = 5.0
-) -> list | None {
+) -> list[any] | None {
     base = resolve_prometheus_url();
     if not base {
         return None;
@@ -98,7 +111,7 @@ def query_range(
             logger.warning(f"Prometheus query_range failed: {body}");
             return None;
         }
-        return body.get("data", {}).get("result", []);
+        return _extract_result(body);
     } except RequestException as e {
         logger.warning(f"Prometheus unreachable: {e}");
         return None;
@@ -111,21 +124,18 @@ def query_range(
 """Extract the scalar numeric value from a single-vector Prometheus result.
 
 Prometheus returns values as ['<timestamp>', '<value as string>']. This helper
-parses the string into a float, returning the supplied default on missing data
-or parse failures.
+parses the string into a float, returning the supplied fallback on missing
+data or parse failures.
 """
-def scalar(result: list | None, default: float = 0.0) -> float {
+def scalar(result: any, fallback: float = 0.0) -> float {
     if not result {
-        return default;
-    }
-    first = result[0];
-    value = first.get("value");
-    if not value or len(value) < 2 {
-        return default;
+        return fallback;
     }
     try {
-        return float(value[1]);
-    } except (ValueError, TypeError) {
-        return default;
+        first = result[0];
+        value = first["value"];
+        return float(str(value[1]));
+    } except Exception {
+        return fallback;
     }
 }
