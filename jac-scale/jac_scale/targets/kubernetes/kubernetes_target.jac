@@ -1042,7 +1042,9 @@ obj KubernetesTarget(DeploymentTarget) {
                     }
                 ]
             },
-            # Prometheus — allow grafana to query on port 9090
+            # Prometheus — allow grafana and the main app to query on port 9090.
+            # The main app reads Prometheus directly for the admin Deployments
+            # view, so it needs ingress here alongside Grafana.
             {
                 'name': f"{app_name}-prometheus-network-policy",
                 'pod_selector': {'matchLabels': {'app': f"{app_name}-prometheus"}},
@@ -1053,7 +1055,8 @@ obj KubernetesTarget(DeploymentTarget) {
                                 'podSelector': {
                                     'matchLabels': {'app': f"{app_name}-grafana"}
                                 }
-                            }
+                            },
+                            {'podSelector': {'matchLabels': {'app': app_name}}}
                         ],
                         'ports': [{'protocol': 'TCP', 'port': 9090}]
                     }

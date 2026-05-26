@@ -222,11 +222,23 @@ impl JacAPIServerDeployments.admin_deployments_summary(
     }
     ns_filter = f'namespace="{namespace}"' if namespace else '';
     ns_and = f',{ns_filter}' if ns_filter else '';
-    running = int(
-        prom_scalar(
-            prom_query(f'count(kube_pod_status_phase{{phase="Running"{ns_and}}} == 1)')
-        )
+    # Probe Prometheus once before fanning out queries. If we can't reach it,
+    # surface metrics_available: false so the UI shows the right banner
+    # instead of pretending the cluster is empty.
+    probe = prom_query(
+        f'count(kube_pod_status_phase{{phase="Running"{ns_and}}} == 1)'
     );
+    if probe is None {
+        return TransportResponse.success(
+            data={
+                'metrics_available': False,
+                'reason': 'Prometheus is configured but unreachable from the app pod (check cross-node networking)',
+                'namespace': namespace
+            },
+            meta=Meta(extra={'http_status': 200})
+        );
+    }
+    running = int(prom_scalar(probe));
     pending = int(
         prom_scalar(
             prom_query(f'count(kube_pod_status_phase{{phase="Pending"{ns_and}}} == 1)')
@@ -297,12 +309,22 @@ impl JacAPIServerDeployments.admin_deployments_list(
     }
     ns_filter = f'namespace="{namespace}"' if namespace else '';
     ns_and = f',{ns_filter}' if ns_filter else '';
-    available = prom_query(
+    available_raw = prom_query(
         f'kube_deployment_status_replicas_available{{{ns_filter}}}'
             if ns_filter
             else 'kube_deployment_status_replicas_available'
-    )
-    or [];
+    );
+    if available_raw is None {
+        return TransportResponse.success(
+            data={
+                'metrics_available': False,
+                'reason': 'Prometheus is configured but unreachable from the app pod',
+                'deployments': []
+            },
+            meta=Meta(extra={'http_status': 200})
+        );
+    }
+    available = available_raw;
     desired = prom_query(
         f'kube_deployment_spec_replicas{{{ns_filter}}}'
             if ns_filter
