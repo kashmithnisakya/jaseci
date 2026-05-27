@@ -18,7 +18,6 @@ obj JacAPIServerDeployments {
     ) -> TransportResponse;
 
     def admin_deployments_list(Authorization: str | None = None) -> TransportResponse;
-
     def admin_deployment_detail(
         name: str, Authorization: str | None = None
     ) -> TransportResponse;

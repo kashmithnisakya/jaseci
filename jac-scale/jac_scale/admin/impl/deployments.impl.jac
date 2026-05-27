@@ -225,9 +225,7 @@ impl JacAPIServerDeployments.admin_deployments_summary(
     # Probe Prometheus once before fanning out queries. If we can't reach it,
     # surface metrics_available: false so the UI shows the right banner
     # instead of pretending the cluster is empty.
-    probe = prom_query(
-        f'count(kube_pod_status_phase{{phase="Running"{ns_and}}} == 1)'
-    );
+    probe = prom_query(f'count(kube_pod_status_phase{{phase="Running"{ns_and}}} == 1)');
     if probe is None {
         return TransportResponse.success(
             data={
