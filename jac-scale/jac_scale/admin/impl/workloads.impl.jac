@@ -301,18 +301,22 @@ impl JacAPIServerWorkloads.admin_workloads_summary(
         )
     );
     nodes_total = int(prom_scalar(prom_query('count(kube_node_info)')));
+    # The app's own /metrics series carry no `namespace` label (only k8s SD
+    # metrics do), so these app-traffic queries are NOT namespace-filtered.
+    # Safe because Prometheus is per-namespace and only this app exposes
+    # *_http_requests_total here.
     request_rate = prom_scalar(
-        prom_query(f'sum(rate({{__name__=~".+_http_requests_total"{ns_and}}}[1m]))')
+        prom_query('sum(rate({__name__=~".+_http_requests_total"}[1m]))')
     );
     error_rate = prom_scalar(
         prom_query(
-            f'sum(rate({{__name__=~".+_http_requests_total",status_code=~"5.."{ns_and}}}[1m]))'
+            'sum(rate({__name__=~".+_http_requests_total",status_code=~"5.."}[1m]))'
         )
     );
     error_pct = (error_rate / request_rate * 100.0) if request_rate > 0 else 0.0;
     p95_latency = prom_scalar(
         prom_query(
-            f'histogram_quantile(0.95, sum(rate({{__name__=~".+_http_request_duration_seconds_bucket"{ns_and}}}[5m])) by (le))'
+            'histogram_quantile(0.95, sum(rate({__name__=~".+_http_request_duration_seconds_bucket"}[5m])) by (le))'
         )
     );
     return TransportResponse.success(
@@ -810,7 +814,7 @@ impl JacAPIServerWorkloads.admin_workload_timeseries(
     if metric == "memory" {
         promql = f'sum(container_memory_working_set_bytes{{{pod_filter},container!=""{ns_and}}})';
     } elif metric == "requests" {
-        promql = f'sum(rate({{__name__=~".+_http_requests_total"{ns_and}}}[1m]))';
+        promql = 'sum(rate({__name__=~".+_http_requests_total"}[1m]))';
     } else {
         promql = f'sum(rate(container_cpu_usage_seconds_total{{{pod_filter},container!=""{ns_and}}}[5m]))';
     }
