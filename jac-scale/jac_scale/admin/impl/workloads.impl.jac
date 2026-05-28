@@ -49,20 +49,49 @@ def _phase_to_status(ready: int, desired: int, restarts: int) -> str {
     return "Unknown";
 }
 
-"""Strip the trailing replicaset/pod hash segments to recover the parent name.
+"""Best-effort recovery of a pod's parent workload name from the pod name.
 
-K8s pod names look like `<owner>-<replicaset_hash>-<pod_hash>`. We strip the
-trailing two hash segments to roll pod-level metrics up to their owner.
+Pod naming differs by controller:
+  - Deployment:  <name>-<replicaset_hash>-<pod_hash>   (two trailing segments)
+  - StatefulSet: <name>-<ordinal>                       (one numeric segment)
+  - DaemonSet:   <name>-<pod_hash>                       (one segment)
+Since this is ambiguous from the name alone, prefer `_match_owner` (which
+matches against the known workload-name list). This heuristic is the fallback
+for the pods endpoint where the name list isn't queried.
 """
 def _owner_name_from_pod(pod: str) -> str {
     if not pod {
         return "";
     }
     parts = pod.split("-");
+    if len(parts) < 2 {
+        return pod;
+    }
+    # StatefulSet pod: trailing numeric ordinal.
+    if parts[-1].isdigit() {
+        return "-".join(parts[:-1]);
+    }
     if len(parts) < 3 {
         return pod;
     }
     return "-".join(parts[:-2]);
+}
+
+"""Match a pod to the longest workload name it belongs to.
+
+A pod belongs to workload `nm` when its name equals `nm` or starts with
+`nm-`. Choosing the longest match disambiguates e.g. `jaseci-redis-<hash>`
+(owner `jaseci-redis`, not `jaseci`). Falls back to the name heuristic when
+no workload matches.
+"""
+def _match_owner(pod: str, names: list) -> str {
+    best = "";
+    for nm in names {
+        if (pod == nm or pod.startswith(nm + "-")) and len(nm) > len(best) {
+            best = nm;
+        }
+    }
+    return best if best else _owner_name_from_pod(pod);
 }
 
 """Register all workloads endpoints under /admin/workloads/*."""
@@ -343,11 +372,11 @@ impl JacAPIServerWorkloads.admin_workloads_list(
     )
     or [];
     cpu_by_pod = prom_query(
-        f'sum(rate(container_cpu_usage_seconds_total{{pod=~".+"{ns_and}}}[5m])) by (pod)'
+        f'sum(rate(container_cpu_usage_seconds_total{{pod=~".+",container!=""{ns_and}}}[5m])) by (pod)'
     )
     or [];
     mem_by_pod = prom_query(
-        f'sum(container_memory_working_set_bytes{{pod=~".+"{ns_and}}}) by (pod)'
+        f'sum(container_memory_working_set_bytes{{pod=~".+",container!=""{ns_and}}}) by (pod)'
     )
     or [];
     restarts_by_pod = prom_query(
@@ -394,54 +423,10 @@ impl JacAPIServerWorkloads.admin_workloads_list(
     sts_created_by = _index_by_label(sts_created, "statefulset");
     ds_created_by = _index_by_label(ds_created, "daemonset");
 
-    cpu_by_owner: dict = {};
-    mem_by_owner: dict = {};
-    restarts_by_owner: dict = {};
-    for entry in cpu_by_pod {
-        pod = entry.get("metric", {}).get("pod", "");
-        v = entry.get("value", [0, "0"]);
-        owner = _owner_name_from_pod(pod);
-        cpu_by_owner[owner] = cpu_by_owner.get(owner, 0.0) + float(
-            v[1] if len(v) > 1 else 0
-        );
-    }
-    for entry in mem_by_pod {
-        pod = entry.get("metric", {}).get("pod", "");
-        v = entry.get("value", [0, "0"]);
-        owner = _owner_name_from_pod(pod);
-        mem_by_owner[owner] = mem_by_owner.get(owner, 0.0) + float(
-            v[1] if len(v) > 1 else 0
-        );
-    }
-    for entry in restarts_by_pod {
-        pod = entry.get("metric", {}).get("pod", "");
-        v = entry.get("value", [0, "0"]);
-        owner = _owner_name_from_pod(pod);
-        restarts_by_owner[owner] = restarts_by_owner.get(owner, 0) + int(
-            float(v[1] if len(v) > 1 else 0)
-        );
-    }
-
-    workloads: list = [];
-
-    def _append(name: str, kind: str, ready: int, desired: int, created: int) {
-        restarts = restarts_by_owner.get(name, 0);
-        status = _phase_to_status(ready, desired, restarts);
-        workloads.append(
-            {
-                'name': name,
-                'kind': kind,
-                'status': status,
-                'replicas_ready': ready,
-                'replicas_desired': desired,
-                'cpu_cores': round(cpu_by_owner.get(name, 0.0), 3),
-                'memory_bytes': int(mem_by_owner.get(name, 0.0)),
-                'restarts_last_hour': restarts,
-                'created': created
-            }
-        );
-    }
-
+    # Build the workload entries first so we know every workload name before
+    # rolling pod-level metrics up to their owner.
+    entries: list = [];
+    wl_names: list = [];
     for entry in dep_available_raw {
         m = entry.get("metric", {});
         v = entry.get("value", [0, "0"]);
@@ -450,13 +435,16 @@ impl JacAPIServerWorkloads.admin_workloads_list(
             continue;
         }
         ready = int(float(v[1])) if len(v) > 1 else 0;
-        _append(
-            name,
-            "Deployment",
-            ready,
-            dep_desired_by.get(name, ready),
-            dep_created_by.get(name, 0)
+        entries.append(
+            {
+                'name': name,
+                'kind': "Deployment",
+                'ready': ready,
+                'desired': dep_desired_by.get(name, ready),
+                'created': dep_created_by.get(name, 0)
+            }
         );
+        wl_names.append(name);
     }
     for entry in sts_ready {
         m = entry.get("metric", {});
@@ -466,13 +454,16 @@ impl JacAPIServerWorkloads.admin_workloads_list(
             continue;
         }
         ready = int(float(v[1])) if len(v) > 1 else 0;
-        _append(
-            name,
-            "StatefulSet",
-            ready,
-            sts_desired_by.get(name, ready),
-            sts_created_by.get(name, 0)
+        entries.append(
+            {
+                'name': name,
+                'kind': "StatefulSet",
+                'ready': ready,
+                'desired': sts_desired_by.get(name, ready),
+                'created': sts_created_by.get(name, 0)
+            }
         );
+        wl_names.append(name);
     }
     for entry in ds_ready {
         m = entry.get("metric", {});
@@ -482,12 +473,64 @@ impl JacAPIServerWorkloads.admin_workloads_list(
             continue;
         }
         ready = int(float(v[1])) if len(v) > 1 else 0;
-        _append(
-            name,
-            "DaemonSet",
-            ready,
-            ds_desired_by.get(name, ready),
-            ds_created_by.get(name, 0)
+        entries.append(
+            {
+                'name': name,
+                'kind': "DaemonSet",
+                'ready': ready,
+                'desired': ds_desired_by.get(name, ready),
+                'created': ds_created_by.get(name, 0)
+            }
+        );
+        wl_names.append(name);
+    }
+
+    # Roll pod-level metrics up to the longest matching workload name.
+    cpu_by_owner: dict = {};
+    mem_by_owner: dict = {};
+    restarts_by_owner: dict = {};
+    for entry in cpu_by_pod {
+        pod = entry.get("metric", {}).get("pod", "");
+        v = entry.get("value", [0, "0"]);
+        owner = _match_owner(pod, wl_names);
+        cpu_by_owner[owner] = cpu_by_owner.get(owner, 0.0) + float(
+            v[1] if len(v) > 1 else 0
+        );
+    }
+    for entry in mem_by_pod {
+        pod = entry.get("metric", {}).get("pod", "");
+        v = entry.get("value", [0, "0"]);
+        owner = _match_owner(pod, wl_names);
+        mem_by_owner[owner] = mem_by_owner.get(owner, 0.0) + float(
+            v[1] if len(v) > 1 else 0
+        );
+    }
+    for entry in restarts_by_pod {
+        pod = entry.get("metric", {}).get("pod", "");
+        v = entry.get("value", [0, "0"]);
+        owner = _match_owner(pod, wl_names);
+        restarts_by_owner[owner] = restarts_by_owner.get(owner, 0) + int(
+            float(v[1] if len(v) > 1 else 0)
+        );
+    }
+
+    workloads: list = [];
+    for e in entries {
+        name = e["name"];
+        restarts = restarts_by_owner.get(name, 0);
+        status = _phase_to_status(e["ready"], e["desired"], restarts);
+        workloads.append(
+            {
+                'name': name,
+                'kind': e["kind"],
+                'status': status,
+                'replicas_ready': e["ready"],
+                'replicas_desired': e["desired"],
+                'cpu_cores': round(cpu_by_owner.get(name, 0.0), 3),
+                'memory_bytes': int(mem_by_owner.get(name, 0.0)),
+                'restarts_last_hour': restarts,
+                'created': e["created"]
+            }
         );
     }
 
@@ -535,11 +578,11 @@ impl JacAPIServerWorkloads.admin_workloads_pods(
         );
     }
     cpu_by_pod = prom_query(
-        f'sum(rate(container_cpu_usage_seconds_total{{pod=~".+"{ns_and}}}[5m])) by (pod)'
+        f'sum(rate(container_cpu_usage_seconds_total{{pod=~".+",container!=""{ns_and}}}[5m])) by (pod)'
     )
     or [];
     mem_by_pod = prom_query(
-        f'sum(container_memory_working_set_bytes{{pod=~".+"{ns_and}}}) by (pod)'
+        f'sum(container_memory_working_set_bytes{{pod=~".+",container!=""{ns_and}}}) by (pod)'
     )
     or [];
     restarts_by_pod = prom_query(
@@ -633,11 +676,11 @@ impl JacAPIServerWorkloads.admin_workload_detail(
     ns_and = f',{ns_filter}' if ns_filter else '';
     pod_filter = f'pod=~"{name}-.+"';
     cpu_by_pod = prom_query(
-        f'sum(rate(container_cpu_usage_seconds_total{{{pod_filter}{ns_and}}}[5m])) by (pod)'
+        f'sum(rate(container_cpu_usage_seconds_total{{{pod_filter},container!=""{ns_and}}}[5m])) by (pod)'
     )
     or [];
     mem_by_pod = prom_query(
-        f'sum(container_memory_working_set_bytes{{{pod_filter}{ns_and}}}) by (pod)'
+        f'sum(container_memory_working_set_bytes{{{pod_filter},container!=""{ns_and}}}) by (pod)'
     )
     or [];
     cpu_request_by_pod = prom_query(
@@ -737,11 +780,11 @@ impl JacAPIServerWorkloads.admin_workload_timeseries(
     ns_and = f',{ns_filter}' if ns_filter else '';
     pod_filter = f'pod=~"{name}-.+"';
     if metric == "memory" {
-        promql = f'sum(container_memory_working_set_bytes{{{pod_filter}{ns_and}}})';
+        promql = f'sum(container_memory_working_set_bytes{{{pod_filter},container!=""{ns_and}}})';
     } elif metric == "requests" {
         promql = f'sum(rate({{__name__=~".+_http_requests_total"{ns_and}}}[1m]))';
     } else {
-        promql = f'sum(rate(container_cpu_usage_seconds_total{{{pod_filter}{ns_and}}}[5m]))';
+        promql = f'sum(rate(container_cpu_usage_seconds_total{{{pod_filter},container!=""{ns_and}}}[5m]))';
     }
     now = time.time();
     start = now - (range_minutes * 60);
