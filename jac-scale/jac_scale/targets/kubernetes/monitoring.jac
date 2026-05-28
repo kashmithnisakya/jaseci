@@ -182,10 +182,7 @@ obj MonitoringDeployer {
                     ],
                     'verbs': ['get', 'list', 'watch']
                 },
-                {
-                    'nonResourceURLs': ['/metrics', '/metrics/cadvisor'],
-                    'verbs': ['get']
-                }
+                {'nonResourceURLs': ['/metrics', '/metrics/cadvisor'], 'verbs': ['get']}
             ]
         };
         try {

@@ -91,7 +91,7 @@ def _match_owner(pod: str, names: list) -> str {
             best = nm;
         }
     }
-    return best if best else _owner_name_from_pod(pod);
+    return best or _owner_name_from_pod(pod);
 }
 
 """Register all workloads endpoints under /admin/workloads/*."""
@@ -597,8 +597,11 @@ impl JacAPIServerWorkloads.admin_workloads_pods(
     }
     ns_filter = f'namespace="{namespace}"' if namespace else '';
     ns_and = f',{ns_filter}' if ns_filter else '';
-    phase_by_pod = prom_query(f'kube_pod_status_phase{{{ns_filter}}} == 1' if ns_filter
-        else 'kube_pod_status_phase == 1');
+    phase_by_pod = prom_query(
+        f'kube_pod_status_phase{{{ns_filter}}} == 1'
+            if ns_filter
+            else 'kube_pod_status_phase == 1'
+    );
     if phase_by_pod is None {
         return TransportResponse.success(
             data={
@@ -623,11 +626,13 @@ impl JacAPIServerWorkloads.admin_workloads_pods(
             else 'sum(increase(kube_pod_container_status_restarts_total[1h])) by (pod)'
     )
     or [];
-    node_by_pod = prom_query(f'kube_pod_info{{{ns_filter}}}' if ns_filter
-        else 'kube_pod_info')
+    node_by_pod = prom_query(
+        f'kube_pod_info{{{ns_filter}}}' if ns_filter else 'kube_pod_info'
+    )
     or [];
-    started_by_pod = prom_query(f'kube_pod_start_time{{{ns_filter}}}' if ns_filter
-        else 'kube_pod_start_time')
+    started_by_pod = prom_query(
+        f'kube_pod_start_time{{{ns_filter}}}' if ns_filter else 'kube_pod_start_time'
+    )
     or [];
 
     def _index_float_by_pod(rows: list) -> dict {
@@ -680,11 +685,7 @@ impl JacAPIServerWorkloads.admin_workloads_pods(
     }
     pods = sorted(pods, key=_pod_name);
     return TransportResponse.success(
-        data={
-            'metrics_available': True,
-            'namespace': namespace,
-            'pods': pods
-        },
+        data={'metrics_available': True, 'namespace': namespace, 'pods': pods},
         meta=Meta(extra={'http_status': 200})
     );
 }
@@ -917,10 +918,7 @@ impl JacAPIServerWorkloads.admin_workloads_timeseries(
         ('kube_statefulset_created', 'statefulset'),
         ('kube_daemonset_created', 'daemonset')
     ] {
-        rows = prom_query(
-            f'{spec[0]}{{{ns_filter}}}' if ns_filter else spec[0]
-        )
-        or [];
+        rows = prom_query(f'{spec[0]}{{{ns_filter}}}' if ns_filter else spec[0]) or [];
         for r in rows {
             nm = r.get("metric", {}).get(spec[1], "");
             if nm {

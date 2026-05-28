@@ -271,7 +271,9 @@ cl {
                                 {c["label"]}
                             </p>
                             <p
-                                className={"text-2xl font-semibold mt-1 " + str(toneClasses[c["tone"]] or "text-white")}
+                                className={"text-2xl font-semibold mt-1 " + str(
+                                    toneClasses[c["tone"]] or "text-white"
+                                )}
                             >
                                 {c["value"]}
                             </p>
@@ -294,7 +296,9 @@ cl {
                                 {c["label"]}
                             </p>
                             <p
-                                className={"text-2xl font-semibold mt-1 " + str(toneClasses[c["tone"]] or "text-white")}
+                                className={"text-2xl font-semibold mt-1 " + str(
+                                    toneClasses[c["tone"]] or "text-white"
+                                )}
                             >
                                 {c["value"]}
                             </p>
@@ -312,26 +316,30 @@ cl {
                         className="flex items-center justify-between px-4 py-3 border-b border-slate-800"
                     >
                         <h2 className="text-sm font-medium text-white">Workloads</h2>
-                        <p className="text-xs text-slate-500">
-                            refreshing every 10s
-                        </p>
+                        <p className="text-xs text-slate-500">refreshing every 10s</p>
                     </div>
                     <div className="flex gap-2 px-4 py-3 border-b border-slate-800">
                         {[
                             <button
                                 key={k}
-                                className={chipBase + (activeChipCls if kindFilter == k else inactiveChipCls)}
+                                className={chipBase + (
+                                    activeChipCls
+                                        if kindFilter == k
+                                        else inactiveChipCls
+                                )}
                                 onClick={lambda e: any { kindFilter = k; }}
                             >
                                 {k}
                             </button> for k in chipLabels
                         ]}
                     </div>
-                    {not showPods and len(filteredWorkloads) == 0
+                    {not showPods
+                    and len(filteredWorkloads) == 0
                     and <div className="p-6 text-center text-sm text-slate-500">
                         No workloads visible.
                     </div>}
-                    {not showPods and len(filteredWorkloads) > 0
+                    {not showPods
+                    and len(filteredWorkloads) > 0
                     and <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                             <thead
@@ -382,10 +390,16 @@ cl {
                                         </td>
                                         <td className="px-4 py-2">
                                             <span
-                                                className={"inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium border " + str(statusClasses[w["status"]] or "bg-slate-700/40 text-slate-300 border-slate-600/40")}
+                                                className={"inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium border " + str(
+                                                    statusClasses[w["status"]]
+                                                    or "bg-slate-700/40 text-slate-300 border-slate-600/40"
+                                                )}
                                             >
                                                 <span
-                                                    className={"w-1.5 h-1.5 rounded-full " + str(statusDotClasses[w["status"]] or "bg-slate-400")}
+                                                    className={"w-1.5 h-1.5 rounded-full " + str(
+                                                        statusDotClasses[w["status"]]
+                                                        or "bg-slate-400"
+                                                    )}
                                                 ></span>
                                                 {w["status"]}
                                             </span>
@@ -412,11 +426,13 @@ cl {
                             </tbody>
                         </table>
                     </div>}
-                    {showPods and len(pods) == 0
+                    {showPods
+                    and len(pods) == 0
                     and <div className="p-6 text-center text-sm text-slate-500">
                         No pods visible.
                     </div>}
-                    {showPods and len(pods) > 0
+                    {showPods
+                    and len(pods) > 0
                     and <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                             <thead
@@ -463,12 +479,25 @@ cl {
                                         </td>
                                         <td className="px-4 py-2">
                                             <span
-                                                className={"inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium border " + str(statusClasses[phaseToStatus[p["phase"]] or p["phase"]] or "bg-slate-700/40 text-slate-300 border-slate-600/40")}
+                                                className={"inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium border " + str(
+                                                    statusClasses[
+                                                        phaseToStatus[p["phase"]]
+                                                        or p["phase"]
+                                                    ]
+                                                    or "bg-slate-700/40 text-slate-300 border-slate-600/40"
+                                                )}
                                             >
                                                 <span
-                                                    className={"w-1.5 h-1.5 rounded-full " + str(statusDotClasses[phaseToStatus[p["phase"]] or p["phase"]] or "bg-slate-400")}
+                                                    className={"w-1.5 h-1.5 rounded-full " + str(
+                                                        statusDotClasses[
+                                                            phaseToStatus[p["phase"]]
+                                                            or p["phase"]
+                                                        ]
+                                                        or "bg-slate-400"
+                                                    )}
                                                 ></span>
-                                                {phaseToStatus[p["phase"]] or p["phase"]}
+                                                {phaseToStatus[p["phase"]]
+                                                or p["phase"]}
                                             </span>
                                         </td>
                                         <td className="px-4 py-2 text-slate-300">

@@ -77,10 +77,7 @@ cl {
                  "storage_providers": StorageProvidersPage,
                  "database": DatabasePage
              },
-             "deploy": {
-                 "workloads": WorkloadsPage,
-                 "usage": GraphsPage
-             },
+             "deploy": {"workloads": WorkloadsPage, "usage": GraphsPage},
              "audit": {"activity": ActivityPage, "security": SecurityPage}
          };
 

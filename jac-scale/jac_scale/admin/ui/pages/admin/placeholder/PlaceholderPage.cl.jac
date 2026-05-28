@@ -327,7 +327,6 @@ cl {
             </Card>;
     }
 
-
     def:pub ActivityPage -> JsxElement {
         return
             <div

@@ -208,9 +208,7 @@ cl {
                     className="bg-slate-900 border border-amber-500/30 rounded-lg px-4 py-3"
                 >
                     <p className="text-xs text-amber-300">
-                        Collecting data. History builds up as the cluster runs, so
-                        graphs fill in over the next several minutes. (Prometheus
-                        history also resets if its pod restarts.)
+                        Collecting data. History builds up as the cluster runs, so graphs fill in over the next several minutes. (Prometheus history also resets if its pod restarts.)
                     </p>
                 </div>}
                 <div className="space-y-3">
@@ -232,7 +230,9 @@ cl {
                                         >
                                             CPU
                                         </span>
-                                        <span className="text-xs text-teal-300 font-mono">
+                                        <span
+                                            className="text-xs text-teal-300 font-mono"
+                                        >
                                             {formatCores(c["cpuLast"])}
                                         </span>
                                     </div>
@@ -331,7 +331,9 @@ cl {
                                         >
                                             Memory
                                         </span>
-                                        <span className="text-xs text-purple-300 font-mono">
+                                        <span
+                                            className="text-xs text-purple-300 font-mono"
+                                        >
                                             {formatBytes(c["memLast"])}
                                         </span>
                                     </div>
