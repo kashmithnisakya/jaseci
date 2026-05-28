@@ -100,13 +100,13 @@ Distinguishes "monitoring disabled in jac.toml" (the stack was never deployed)
 from "Prometheus URL unresolved" so the UI can tell the user to enable
 monitoring rather than implying a transient outage.
 """
-def _unavailable_reason() -> str {
+def _unavailable_reason -> str {
     try {
         import from jac_scale.config_loader { get_scale_config }
         if not bool(get_scale_config().get_monitoring_config().get('enabled', False)) {
             return "Monitoring is disabled. Set [plugins.scale.monitoring] enabled = true in jac.toml and redeploy to see workload metrics.";
         }
-    } except Exception {}
+    } except Exception { }
     if resolve_prometheus_url() is None {
         return "Prometheus URL not configured (K8S_APP_NAME unset).";
     }
@@ -281,11 +281,7 @@ impl JacAPIServerWorkloads.admin_workloads_summary(
     reason = _unavailable_reason();
     if reason {
         return TransportResponse.success(
-            data={
-                'metrics_available': False,
-                'reason': reason,
-                'namespace': namespace
-            },
+            data={'metrics_available': False, 'reason': reason, 'namespace': namespace},
             meta=Meta(extra={'http_status': 200})
         );
     }
