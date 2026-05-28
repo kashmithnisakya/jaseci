@@ -44,6 +44,9 @@ obj MonitoringDeployer {
         ne_name = f"{app_name}-node-exporter";
         service_port = provider.prometheus_scrape_port(self.k8s_config.container_port);
 
+        # The app's /metrics endpoint is admin-protected and also accepts Basic
+        # Auth (admin username + prometheus_admin_password). Send those creds so
+        # Prometheus can scrape without exposing /metrics unauthenticated.
         scrape_config = (
             "global:\n"
             "  scrape_interval: 15s\n"
@@ -53,6 +56,9 @@ obj MonitoringDeployer {
             "    static_configs:\n"
             f"      - targets: ['{app_name}-service:{service_port}']\n"
             "    metrics_path: '/metrics'\n"
+            "    basic_auth:\n"
+            f"      username: '{self.k8s_config.admin_username}'\n"
+            f"      password: '{self.k8s_config.prometheus_admin_password}'\n"
         );
         if self.k8s_config.k8s_metrics_enabled {
             scrape_config = scrape_config + (

@@ -54,6 +54,9 @@ obj KubernetesConfig(BaseConfig) {
         k8s_metrics_enabled: bool = True,
         loki_enabled: bool = False,
         prometheus_admin_password: str = 'Adminpassword123',
+        # Admin username, used by Prometheus to Basic-Auth scrape the app's
+        # admin-protected /metrics endpoint.
+        admin_username: str = 'admin',
         # Dashboard configuration
         redis_dashboard: bool = False,
         mongodb_dashboard: bool = False,
@@ -135,6 +138,7 @@ obj KubernetesConfig(BaseConfig) {
                 'k8s_metrics_enabled': self.k8s_metrics_enabled,
                 'loki_enabled': self.loki_enabled,
                 'prometheus_admin_password': self.prometheus_admin_password,
+                'admin_username': self.admin_username,
                 # Dashboard configuration
                 'redis_dashboard': self.redis_dashboard,
                 'mongodb_dashboard': self.mongodb_dashboard,
