@@ -16,6 +16,7 @@ cl {
     import from .monitoring.LLMMetricsPage { LLMMetricsPage }
     import from .monitoring.LLMTracesPage { LLMTracesPage }
     import from .monitoring.WorkloadsPage { WorkloadsPage }
+    import from .monitoring.GraphsPage { GraphsPage }
     import from .placeholder.PlaceholderPage {
         SessionsPage,
         ApiKeysPage,
@@ -37,7 +38,6 @@ cl {
         NotificationsPage,
         StorageProvidersPage,
         DatabasePage,
-        ScalingPage,
         ActivityPage,
         SecurityPage
     }
@@ -79,7 +79,7 @@ cl {
              },
              "deploy": {
                  "workloads": WorkloadsPage,
-                 "scaling": ScalingPage
+                 "graphs": GraphsPage
              },
              "audit": {"activity": ActivityPage, "security": SecurityPage}
          };

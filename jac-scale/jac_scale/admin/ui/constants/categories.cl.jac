@@ -52,7 +52,7 @@ cl {
              ],
              "deploy": [
                  {"id": "workloads", "label": "Workloads"},
-                 {"id": "scaling", "label": "Auto-scaling"}
+                 {"id": "graphs", "label": "Graphs"}
              ],
              "audit": [
                  {"id": "activity", "label": "Activity Log"},

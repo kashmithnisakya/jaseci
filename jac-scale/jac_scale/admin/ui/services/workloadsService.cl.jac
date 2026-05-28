@@ -27,4 +27,10 @@ cl {
         );
         return await get(path, token);
     }
+
+    async def:pub getWorkloadsTimeseries(token: str, rangeMinutes: int = 60) -> dict {
+        return await get(
+            "/admin/workloads/timeseries?range_minutes=" + str(rangeMinutes), token
+        );
+    }
 }

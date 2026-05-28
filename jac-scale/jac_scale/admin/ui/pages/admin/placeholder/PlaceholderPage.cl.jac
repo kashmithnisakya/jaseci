@@ -327,41 +327,6 @@ cl {
             </Card>;
     }
 
-    def:pub ScalingPage -> JsxElement {
-        has minReplicas: str = "",
-            maxReplicas: str = "",
-            targetCpu: str = "";
-
-        return
-            <Card className="overflow-hidden">
-                <CardHeader title="Auto-Scaling"/>
-                <CardBody className="p-4 space-y-4">
-                    <div className="grid grid-cols-3 gap-4">
-                        <Input
-                            label="Min Replicas"
-                            type="number"
-                            value={minReplicas}
-                            onChange={lambda e: any { minReplicas = e.target.value; }}
-                            placeholder="1"
-                        />
-                        <Input
-                            label="Max Replicas"
-                            type="number"
-                            value={maxReplicas}
-                            onChange={lambda e: any { maxReplicas = e.target.value; }}
-                            placeholder="10"
-                        />
-                        <Input
-                            label="Target CPU %"
-                            type="number"
-                            value={targetCpu}
-                            onChange={lambda e: any { targetCpu = e.target.value; }}
-                            placeholder="70"
-                        />
-                    </div>
-                </CardBody>
-            </Card>;
-    }
 
     def:pub ActivityPage -> JsxElement {
         return

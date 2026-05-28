@@ -144,6 +144,34 @@ impl JacAPIServerWorkloads.register_workloads_endpoints -> None {
             description='Per-pod health table for the admin dashboard (admin only)'
         )
     );
+    # Registered before the '{name}' route so the static path wins the match.
+    async def all_timeseries_handler(
+        request: Request, range_minutes: int = 60
+    ) -> TransportResponse {
+        authorization = request.headers.get('Authorization');
+        return self.admin_workloads_timeseries(range_minutes, authorization);
+    }
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.GET,
+            path='/admin/workloads/timeseries',
+            callback=all_timeseries_handler,
+            parameters=[
+                APIParameter(
+                    name='range_minutes',
+                    data_type='integer',
+                    required=False,
+                    default=60,
+                    description='Range in minutes (60=1h, 360=6h, 1440=24h, 10080=7d)',
+                    type=ParameterType.QUERY
+                )
+            ],
+            response_model=None,
+            tags=['Admin'],
+            summary='All-workload time-series',
+            description='CPU + memory time-series for every workload over a range (admin only)'
+        )
+    );
     async def detail_handler(request: Request, name: str) -> TransportResponse {
         authorization = request.headers.get('Authorization');
         return self.admin_workload_detail(name, authorization);
@@ -812,6 +840,158 @@ impl JacAPIServerWorkloads.admin_workload_timeseries(
             'metric': metric,
             'range_minutes': range_minutes,
             'points': points
+        },
+        meta=Meta(extra={'http_status': 200})
+    );
+}
+
+"""Roll a `by (pod)` range-query result up to per-workload time-series.
+
+Returns {workload_name: {timestamp: summed_value}}. Pods are matched to the
+longest owning workload name (same logic as the list endpoint).
+"""
+def _rollup_range(rows: list, names: list) -> dict {
+    out: dict = {};
+    for entry in rows {
+        pod = entry.get("metric", {}).get("pod", "");
+        owner = _match_owner(pod, names);
+        series = out.get(owner, {});
+        for v in entry.get("values", []) {
+            if len(v) >= 2 {
+                try {
+                    ts = float(v[0]);
+                    series[ts] = series.get(ts, 0.0) + float(v[1]);
+                } except (ValueError, TypeError) {
+                    continue;
+                }
+            }
+        }
+        out[owner] = series;
+    }
+    return out;
+}
+
+"""Flatten a {timestamp: value} map into a sorted list of {t, v} points."""
+def _series_points(tsmap: dict) -> list {
+    pts: list = [];
+    for ts in sorted(tsmap.keys()) {
+        pts.append({'t': ts, 'v': round(tsmap[ts], 4)});
+    }
+    return pts;
+}
+
+"""CPU + memory time-series for every workload over a range, in one response.
+
+Powers the admin Graphs tab: two range queries (cpu, memory) bucketed by pod,
+rolled up to workloads. `range_minutes` picks both the window and the step so
+point counts stay reasonable (1h/30s, 6h/2m, 24h/10m, 7d/1h).
+"""
+impl JacAPIServerWorkloads.admin_workloads_timeseries(
+    range_minutes: int = 60, Authorization: str | None = None
+) -> TransportResponse {
+    error = self.require_admin(Authorization);
+    if error {
+        return error;
+    }
+    namespace = os.environ.get("K8S_NAMESPACE", "");
+    if resolve_prometheus_url() is None {
+        return TransportResponse.success(
+            data={
+                'metrics_available': False,
+                'range_minutes': range_minutes,
+                'workloads': []
+            },
+            meta=Meta(extra={'http_status': 200})
+        );
+    }
+    ns_filter = f'namespace="{namespace}"' if namespace else '';
+    ns_and = f',{ns_filter}' if ns_filter else '';
+    # Collect workload names so pods can be rolled up to their owner.
+    names: list = [];
+    for spec in [
+        ('kube_deployment_created', 'deployment'),
+        ('kube_statefulset_created', 'statefulset'),
+        ('kube_daemonset_created', 'daemonset')
+    ] {
+        rows = prom_query(
+            f'{spec[0]}{{{ns_filter}}}' if ns_filter else spec[0]
+        )
+        or [];
+        for r in rows {
+            nm = r.get("metric", {}).get(spec[1], "");
+            if nm {
+                names.append(nm);
+            }
+        }
+    }
+    if range_minutes <= 60 {
+        step = "30s";
+        step_seconds = 30;
+    } elif range_minutes <= 360 {
+        step = "2m";
+        step_seconds = 120;
+    } elif range_minutes <= 1440 {
+        step = "10m";
+        step_seconds = 600;
+    } else {
+        step = "1h";
+        step_seconds = 3600;
+    }
+    now = time.time();
+    start = now - (range_minutes * 60);
+    cpu_rows = prom_query_range(
+        f'sum(rate(container_cpu_usage_seconds_total{{pod=~".+",container!=""{ns_and}}}[5m])) by (pod)',
+        start,
+        now,
+        step
+    );
+    if cpu_rows is None {
+        return TransportResponse.success(
+            data={
+                'metrics_available': False,
+                'reason': 'Prometheus is configured but unreachable from the app pod',
+                'range_minutes': range_minutes,
+                'workloads': []
+            },
+            meta=Meta(extra={'http_status': 200})
+        );
+    }
+    mem_rows = prom_query_range(
+        f'sum(container_memory_working_set_bytes{{pod=~".+",container!=""{ns_and}}}) by (pod)',
+        start,
+        now,
+        step
+    )
+    or [];
+    cpu_by_wl = _rollup_range(cpu_rows, names);
+    mem_by_wl = _rollup_range(mem_rows, names);
+    all_names = set();
+    for nm in names {
+        all_names.add(nm);
+    }
+    for nm in cpu_by_wl {
+        all_names.add(nm);
+    }
+    for nm in mem_by_wl {
+        all_names.add(nm);
+    }
+    workloads: list = [];
+    for nm in sorted(all_names) {
+        workloads.append(
+            {
+                'name': nm,
+                'cpu': _series_points(cpu_by_wl.get(nm, {})),
+                'memory': _series_points(mem_by_wl.get(nm, {}))
+            }
+        );
+    }
+    return TransportResponse.success(
+        data={
+            'metrics_available': True,
+            'namespace': namespace,
+            'range_minutes': range_minutes,
+            'step_seconds': step_seconds,
+            'workloads': workloads
         },
         meta=Meta(extra={'http_status': 200})
     );

@@ -38,4 +38,8 @@ obj JacAPIServerWorkloads {
         range_minutes: int = 60,
         Authorization: str | None = None
     ) -> TransportResponse;
+
+    def admin_workloads_timeseries(
+        range_minutes: int = 60, Authorization: str | None = None
+    ) -> TransportResponse;
 }
