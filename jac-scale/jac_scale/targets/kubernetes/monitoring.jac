@@ -1992,9 +1992,7 @@ obj MonitoringDeployer {
                 raise;
             }
         }
-        delete_k8s_secret(
-            core_v1, namespace, f"{prometheus_name}-scrape-secret"
-        );
+        delete_k8s_secret(core_v1, namespace, f"{prometheus_name}-scrape-secret");
         try {
             core_v1.delete_namespaced_service_account(
                 name=f"{prometheus_name}-sa", namespace=namespace
