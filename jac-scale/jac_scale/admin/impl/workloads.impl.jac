@@ -589,6 +589,9 @@ impl JacAPIServerWorkloads.admin_workloads_timeseries(
     if error {
         return error;
     }
+    # Clamp to the [1 min, 7 day] window the UI exposes - uncapped values
+    # would ask Prometheus for huge bucket counts; <=0 gives an empty window.
+    range_minutes = max(1, min(int(range_minutes), 10080));
     namespace = os.environ.get("K8S_NAMESPACE", "");
     reason = _unavailable_reason();
     if reason {
