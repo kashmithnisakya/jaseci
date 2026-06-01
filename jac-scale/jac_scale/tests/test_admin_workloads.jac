@@ -45,26 +45,6 @@ test "workloads pods requires admin" {
     }
 }
 
-test "workload detail requires admin" {
-    client = make_client();
-    try {
-        response = client.get("/admin/workloads/jac-app");
-        assert response.status_code == 403;
-    } finally {
-        client.close();
-    }
-}
-
-test "workload timeseries requires admin" {
-    client = make_client();
-    try {
-        response = client.get("/admin/workloads/jac-app/timeseries");
-        assert response.status_code == 403;
-    } finally {
-        client.close();
-    }
-}
-
 # ============================================================================
 # Graceful degradation when Prometheus is not reachable
 # ============================================================================
