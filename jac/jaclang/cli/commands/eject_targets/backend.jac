@@ -24,141 +24,141 @@ import from jaclang.cli.console { console }
 # Built as a line list so the Python docstrings inside it do not terminate the
 # surrounding Jac string.
 glob _OSP_RUNTIME_LINES: list[str] = [
-    '"""Standalone Object-Spatial micro-runtime for ejected Jac backends.',
-    '',
-    'Dependency-free replacements for the jaclang runtime symbols the compiled',
-    'walker modules import (Root, Walker, on_entry, set_trigger, spawn, root,',
-    'log_report, field, ...), so the ejected backend runs with only',
-    'fastapi + uvicorn installed -- no jaclang.',
-    '',
-    'Stage 1 scope: walkers whose entry abilities fire on the spawn Root and',
-    'report values. No graph persistence, traversal, permissions, or LLM.',
-    '"""',
-    'from __future__ import annotations',
-    '',
-    'import threading',
-    'import dataclasses',
-    'from dataclasses import dataclass',
-    '',
-    '_state = threading.local()',
-    '',
-    '',
-    'def field(factory=None, init=True):',
-    '    """Mirror jaclib.field: factory -> default_factory, else plain field."""',
-    '    if factory is not None:',
-    '        return dataclasses.field(default_factory=factory)',
-    '    return dataclasses.field(init=init)',
-    '',
-    '',
-    'def on_entry(func):',
-    '    func._osp_entry = True',
-    '    return func',
-    '',
-    '',
-    'def on_exit(func):',
-    '    func._osp_exit = True',
-    '    return func',
-    '',
-    '',
-    'def set_trigger(trigger_thunk):',
-    '    def deco(func):',
-    '        func._osp_trigger = trigger_thunk',
-    '        return func',
-    '    return deco',
-    '',
-    '',
-    'class _Archetype:',
-    '    """Base for compiled archetypes: make each subclass a dataclass and',
-    '    collect its entry/exit abilities (the part of jaclang make_archetype',
-    '    the ejected code relies on)."""',
-    '',
-    '    _osp_entries = ()',
-    '    _osp_exits = ()',
-    '',
-    '    def __init_subclass__(cls, **kwargs):',
-    '        super().__init_subclass__(**kwargs)',
-    '        cls._osp_entries = tuple(',
-    '            fn for fn in vars(cls).values()',
-    '            if callable(fn) and getattr(fn, "_osp_entry", False)',
-    '        )',
-    '        cls._osp_exits = tuple(',
-    '            fn for fn in vars(cls).values()',
-    '            if callable(fn) and getattr(fn, "_osp_exit", False)',
-    '        )',
-    '        dataclass(eq=False)(cls)',
-    '',
-    '',
-    'class Walker(_Archetype):',
-    '    pass',
-    '',
-    '',
-    'class Node(_Archetype):',
-    '    pass',
-    '',
-    '',
-    'class Obj(_Archetype):',
-    '    pass',
-    '',
-    '',
-    'class Edge(_Archetype):',
-    '    pass',
-    '',
-    '',
-    'class Root(Node):',
-    '    pass',
-    '',
-    '',
-    'class GenericEdge(Edge):',
-    '    pass',
-    '',
-    '',
-    'def root():',
-    '    """Return a fresh in-memory root node (stage 1: no persistence)."""',
-    '    return Root()',
-    '',
-    '',
-    'def log_report(expr, custom=False):',
-    '    """Collect a value reported by the active walker (Jac `report`)."""',
-    '    walker = getattr(_state, "walker", None)',
-    '    if walker is not None:',
-    '        walker.reports.append(expr)',
-    '',
-    '',
-    'def _trigger_matches(fn, location):',
-    '    thunk = getattr(fn, "_osp_trigger", None)',
-    '    if thunk is None:',
-    '        return True',
-    '    trig = thunk()',
-    '    return trig is None or isinstance(location, trig)',
-    '',
-    '',
-    'def spawn(op1, op2):',
-    '    """Run a walker on a location and return the walker (Jac `spawn`).',
-    '',
-    '    Either operand may be the walker; the other is the spawn location.',
-    '    Fires entry abilities whose trigger matches the location, then exits,',
-    '    and returns the walker with `reports` populated.',
-    '    """',
-    '    if isinstance(op1, Walker):',
-    '        walker, location = op1, op2',
-    '    else:',
-    '        walker, location = op2, op1',
-    '    if not hasattr(walker, "reports"):',
-    '        walker.reports = []',
-    '    prev = getattr(_state, "walker", None)',
-    '    _state.walker = walker',
-    '    try:',
-    '        for fn in type(walker)._osp_entries:',
-    '            if _trigger_matches(fn, location):',
-    '                fn(walker, location)',
-    '        for fn in type(walker)._osp_exits:',
-    '            if _trigger_matches(fn, location):',
-    '                fn(walker, location)',
-    '    finally:',
-    '        _state.walker = prev',
-    '    return walker',
-    ''
-];
+         '"""Standalone Object-Spatial micro-runtime for ejected Jac backends.',
+         '',
+         'Dependency-free replacements for the jaclang runtime symbols the compiled',
+         'walker modules import (Root, Walker, on_entry, set_trigger, spawn, root,',
+         'log_report, field, ...), so the ejected backend runs with only',
+         'fastapi + uvicorn installed -- no jaclang.',
+         '',
+         'Stage 1 scope: walkers whose entry abilities fire on the spawn Root and',
+         'report values. No graph persistence, traversal, permissions, or LLM.',
+         '"""',
+         'from __future__ import annotations',
+         '',
+         'import threading',
+         'import dataclasses',
+         'from dataclasses import dataclass',
+         '',
+         '_state = threading.local()',
+         '',
+         '',
+         'def field(factory=None, init=True):',
+         '    """Mirror jaclib.field: factory -> default_factory, else plain field."""',
+         '    if factory is not None:',
+         '        return dataclasses.field(default_factory=factory)',
+         '    return dataclasses.field(init=init)',
+         '',
+         '',
+         'def on_entry(func):',
+         '    func._osp_entry = True',
+         '    return func',
+         '',
+         '',
+         'def on_exit(func):',
+         '    func._osp_exit = True',
+         '    return func',
+         '',
+         '',
+         'def set_trigger(trigger_thunk):',
+         '    def deco(func):',
+         '        func._osp_trigger = trigger_thunk',
+         '        return func',
+         '    return deco',
+         '',
+         '',
+         'class _Archetype:',
+         '    """Base for compiled archetypes: make each subclass a dataclass and',
+         '    collect its entry/exit abilities (the part of jaclang make_archetype',
+         '    the ejected code relies on)."""',
+         '',
+         '    _osp_entries = ()',
+         '    _osp_exits = ()',
+         '',
+         '    def __init_subclass__(cls, **kwargs):',
+         '        super().__init_subclass__(**kwargs)',
+         '        cls._osp_entries = tuple(',
+         '            fn for fn in vars(cls).values()',
+         '            if callable(fn) and getattr(fn, "_osp_entry", False)',
+         '        )',
+         '        cls._osp_exits = tuple(',
+         '            fn for fn in vars(cls).values()',
+         '            if callable(fn) and getattr(fn, "_osp_exit", False)',
+         '        )',
+         '        dataclass(eq=False)(cls)',
+         '',
+         '',
+         'class Walker(_Archetype):',
+         '    pass',
+         '',
+         '',
+         'class Node(_Archetype):',
+         '    pass',
+         '',
+         '',
+         'class Obj(_Archetype):',
+         '    pass',
+         '',
+         '',
+         'class Edge(_Archetype):',
+         '    pass',
+         '',
+         '',
+         'class Root(Node):',
+         '    pass',
+         '',
+         '',
+         'class GenericEdge(Edge):',
+         '    pass',
+         '',
+         '',
+         'def root():',
+         '    """Return a fresh in-memory root node (stage 1: no persistence)."""',
+         '    return Root()',
+         '',
+         '',
+         'def log_report(expr, custom=False):',
+         '    """Collect a value reported by the active walker (Jac `report`)."""',
+         '    walker = getattr(_state, "walker", None)',
+         '    if walker is not None:',
+         '        walker.reports.append(expr)',
+         '',
+         '',
+         'def _trigger_matches(fn, location):',
+         '    thunk = getattr(fn, "_osp_trigger", None)',
+         '    if thunk is None:',
+         '        return True',
+         '    trig = thunk()',
+         '    return trig is None or isinstance(location, trig)',
+         '',
+         '',
+         'def spawn(op1, op2):',
+         '    """Run a walker on a location and return the walker (Jac `spawn`).',
+         '',
+         '    Either operand may be the walker; the other is the spawn location.',
+         '    Fires entry abilities whose trigger matches the location, then exits,',
+         '    and returns the walker with `reports` populated.',
+         '    """',
+         '    if isinstance(op1, Walker):',
+         '        walker, location = op1, op2',
+         '    else:',
+         '        walker, location = op2, op1',
+         '    if not hasattr(walker, "reports"):',
+         '        walker.reports = []',
+         '    prev = getattr(_state, "walker", None)',
+         '    _state.walker = walker',
+         '    try:',
+         '        for fn in type(walker)._osp_entries:',
+         '            if _trigger_matches(fn, location):',
+         '                fn(walker, location)',
+         '        for fn in type(walker)._osp_exits:',
+         '            if _trigger_matches(fn, location):',
+         '                fn(walker, location)',
+         '    finally:',
+         '        _state.walker = prev',
+         '    return walker',
+         ''
+     ];
 
 
 """Emit the FastAPI backend into `backend_dir`.
@@ -209,20 +209,20 @@ def emit_backend(
     walkers_full: list = [];
     for w in walkers {
         wn = str(w["name"]);
-        walkers_full.append({
-            "name": wn,
-            "module": str(w["module"]),
-            "fields": walker_fields.get(wn, [])
-        });
+        walkers_full.append(
+            {
+                "name": wn,
+                "module": str(w["module"]),
+                "fields": walker_fields.get(wn, [])
+            }
+        );
     }
     functions_full: list = [];
     for f in functions {
         fn = str(f["name"]);
-        functions_full.append({
-            "name": fn,
-            "module": str(f["module"]),
-            "params": func_params.get(fn, [])
-        });
+        functions_full.append(
+            {"name": fn, "module": str(f["module"]), "params": func_params.get(fn, [])}
+        );
     }
 
     _emit_osp_runtime(backend_dir);
@@ -245,8 +245,11 @@ def _rewrite_imports(py_code: str, remap: dict) -> str {
             orig_s = str(orig);
             new_s = str(new);
             if line.startswith("from " + orig_s + " import ") {
-                line = "from " + new_s + " import " + line[len("from " + orig_s + " import "):];
-            } elif (line == "import " + orig_s) or line.startswith("import " + orig_s + " ") {
+                line = "from " + new_s + " import " + line[len(
+                    "from " + orig_s + " import "
+                ):];
+            } elif (line == "import " + orig_s)
+            or line.startswith("import " + orig_s + " ") {
                 line = "import " + new_s + line[len("import " + orig_s):];
             }
         }
@@ -283,13 +286,17 @@ def _extract_walker_fields(py_code: str, walker_names: set) -> dict {
                         continue;
                     }
                     has_default = stmt.value is not None;
-                    default_src = ast.unparse(stmt.value) if stmt.value is not None else None;
-                    fields.append({
-                        "name": fname,
-                        "type": ftype,
-                        "has_default": has_default,
-                        "default": default_src
-                    });
+                    default_src = ast.unparse(stmt.value)
+                        if stmt.value is not None
+                        else None;
+                    fields.append(
+                        {
+                            "name": fname,
+                            "type": ftype,
+                            "has_default": has_default,
+                            "default": default_src
+                        }
+                    );
                 }
             }
             result[node.name] = fields;
@@ -315,7 +322,9 @@ def _extract_func_params(py_code: str, func_names: set) -> dict {
                 if arg.arg == "self" {
                     continue;
                 }
-                ptype = ast.unparse(arg.annotation) if arg.annotation is not None else "object";
+                ptype = ast.unparse(arg.annotation)
+                    if arg.annotation is not None
+                    else "object";
                 params.append({"name": arg.arg, "type": ptype});
             }
             result[node.name] = params;
@@ -340,7 +349,9 @@ def _model_class_name(name: str) -> str {
 
 
 """Write main.py: the FastAPI app implementing the @jac/runtime HTTP contract."""
-def _emit_main_py(backend_dir: Path, project_name: str, walkers: list, functions: list) {
+def _emit_main_py(
+    backend_dir: Path, project_name: str, walkers: list, functions: list
+) {
     lines: list[str] = [
         f'"""Auto-generated FastAPI app for the ejected Jac project {project_name!r}.',
         '',
@@ -395,8 +406,12 @@ def _emit_main_py(backend_dir: Path, project_name: str, walkers: list, functions
     lines.append("");
     lines.append("");
     lines.append("def _walker_data(w):");
-    lines.append('    """Serialize a spawned walker for the client `{data}` envelope."""');
-    lines.append("    data = {f.name: getattr(w, f.name) for f in dataclasses.fields(w)}");
+    lines.append(
+        '    """Serialize a spawned walker for the client `{data}` envelope."""'
+    );
+    lines.append(
+        "    data = {f.name: getattr(w, f.name) for f in dataclasses.fields(w)}"
+    );
     lines.append('    data["reports"] = list(getattr(w, "reports", []))');
     lines.append("    return data");
 
@@ -411,7 +426,9 @@ def _emit_main_py(backend_dir: Path, project_name: str, walkers: list, functions
                 fname = str(fld["name"]);
                 ftype = str(fld["type"]);
                 if fld["has_default"] {
-                    lines.append("    " + fname + ": " + ftype + " = " + str(fld["default"]));
+                    lines.append(
+                        "    " + fname + ": " + ftype + " = " + str(fld["default"])
+                    );
                 } else {
                     lines.append("    " + fname + ": " + ftype);
                 }
@@ -423,7 +440,9 @@ def _emit_main_py(backend_dir: Path, project_name: str, walkers: list, functions
         lines.append("");
         lines.append('@app.post("/walker/' + wn + '")');
         lines.append('@app.post("/walker/' + wn + '/{node_id}")');
-        lines.append("def run_" + wn + "(body: " + model + ", node_id: str = \"\") -> dict:");
+        lines.append(
+            "def run_" + wn + "(body: " + model + ", node_id: str = \"\") -> dict:"
+        );
         lines.append("    walker = spawn(root(), " + wn + "(**body.model_dump()))");
         lines.append('    return {"data": _walker_data(walker)}');
     }
@@ -445,7 +464,9 @@ def _emit_main_py(backend_dir: Path, project_name: str, walkers: list, functions
         lines.append("");
         lines.append('@app.post("/function/' + fn + '")');
         lines.append("def call_" + fn + "(body: " + model + ") -> dict:");
-        lines.append("    return {\"ok\": True, \"data\": {\"result\": " + fn + "(**body.model_dump())}}");
+        lines.append(
+            "    return {\"ok\": True, \"data\": {\"result\": " + fn + "(**body.model_dump())}}"
+        );
     }
 
     walker_list_lit = "[" + ", ".join([repr(str(w["name"])) for w in walkers]) + "]";
@@ -455,21 +476,27 @@ def _emit_main_py(backend_dir: Path, project_name: str, walkers: list, functions
     lines.append('@app.get("/__health")');
     lines.append("def __health() -> dict:");
     lines.append(
-        '    return {"project": ' + repr(project_name)
-        + ', "walkers": ' + walker_list_lit
-        + ', "functions": ' + func_list_lit + "}"
+        '    return {"project": ' + repr(project_name) + ', "walkers": ' + walker_list_lit + ', "functions": ' + func_list_lit + "}"
     );
     lines.append("");
     lines.append("");
-    lines.append("# Serve the built frontend (../frontend/dist) when present so a single");
-    lines.append("# `uvicorn main:app` serves API + UI on one origin. Mounted last so the");
+    lines.append(
+        "# Serve the built frontend (../frontend/dist) when present so a single"
+    );
+    lines.append(
+        "# `uvicorn main:app` serves API + UI on one origin. Mounted last so the"
+    );
     lines.append("# API routes above take precedence.");
     lines.append("_FRONTEND_DIST = os.path.join(");
-    lines.append('    os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "dist"');
+    lines.append(
+        '    os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "dist"'
+    );
     lines.append(")");
     lines.append("if os.path.isdir(_FRONTEND_DIST):");
     lines.append("    from fastapi.staticfiles import StaticFiles");
-    lines.append('    app.mount("/", StaticFiles(directory=_FRONTEND_DIST, html=True), name="frontend")');
+    lines.append(
+        '    app.mount("/", StaticFiles(directory=_FRONTEND_DIST, html=True), name="frontend")'
+    );
     lines.append("");
     lines.append("");
     lines.append('if __name__ == "__main__":');

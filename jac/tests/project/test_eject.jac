@@ -39,34 +39,16 @@ def _silent_eject(source: str, output: str = "", force: bool = False) -> int {
 def _write_project(src: Path, name: str = "test_app") {
     src.mkdir(parents=True, exist_ok=True);
     (src / "jac.toml").write_text(
-        f'[project]\nname = "{name}"\nversion = "0.1.0"\nentry-point = "main.jac"\n'
-        + '[dependencies.npm]\nreact = "^18.2.0"\nreact-dom = "^18.2.0"\n'
+        f'[project]\nname = "{name}"\nversion = "0.1.0"\nentry-point = "main.jac"\n' + '[dependencies.npm]\nreact = "^18.2.0"\nreact-dom = "^18.2.0"\n'
     );
     (src / "main.jac").write_text(
-        'import from server { Greet }\n\n'
-        + 'cl {\n'
-        + '    import from .frontend { app as ClientApp }\n'
-        + '    def:pub app -> JsxElement {\n'
-        + '        return <ClientApp/>;\n'
-        + '    }\n'
-        + '}\n'
+        'import from server { Greet }\n\n' + 'cl {\n' + '    import from .frontend { app as ClientApp }\n' + '    def:pub app -> JsxElement {\n' + '        return <ClientApp/>;\n' + '    }\n' + '}\n'
     );
     (src / "server.sv.jac").write_text(
-        'walker:pub Greet {\n'
-        + '    has name: str,\n'
-        + '        reports: list[str] = [];\n'
-        + '    can g with Root entry {\n'
-        + '        report f"Hello, {self.name}!";\n'
-        + '    }\n'
-        + '}\n'
+        'walker:pub Greet {\n' + '    has name: str,\n' + '        reports: list[str] = [];\n' + '    can g with Root entry {\n' + '        report f"Hello, {self.name}!";\n' + '    }\n' + '}\n'
     );
     (src / "frontend.cl.jac").write_text(
-        '"""Client UI."""\n'
-        + 'sv import from server { Greet }\n\n'
-        + 'def:pub app -> JsxElement {\n'
-        + '    has msg: str = "hi";\n'
-        + '    return <div>{msg}</div>;\n'
-        + '}\n'
+        '"""Client UI."""\n' + 'sv import from server { Greet }\n\n' + 'def:pub app -> JsxElement {\n' + '    has msg: str = "hi";\n' + '    return <div>{msg}</div>;\n' + '}\n'
     );
 }
 
@@ -87,7 +69,8 @@ def _frontend(src: Path, rel: str) -> Path {
 def _has_jaclang_import(py_text: str) -> bool {
     for line in py_text.splitlines() {
         stripped = line.strip();
-        if stripped.startswith("import jaclang") or stripped.startswith("from jaclang") {
+        if stripped.startswith("import jaclang")
+        or stripped.startswith("from jaclang") {
             return True;
         }
     }
@@ -228,8 +211,14 @@ test "_osp.py defines the runtime contract symbols and no jaclang import" {
             }
         }
         for required in [
-            "Root", "Walker", "on_entry", "set_trigger",
-            "spawn", "root", "log_report", "field"
+            "Root",
+            "Walker",
+            "on_entry",
+            "set_trigger",
+            "spawn",
+            "root",
+            "log_report",
+            "field"
         ] {
             assert required in names , f"_osp.py missing {required}";
         }
