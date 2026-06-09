@@ -9,6 +9,8 @@ Status strings ('Healthy', 'Starting', 'Broken', 'Unstable') are pre-computed
 server-side so this page is purely presentational.
 """
 
+cl import from "lucide-react" { Activity }
+
 cl {
     import from react { useEffect }
     import from ....context.AuthContext { useAuth }
@@ -142,24 +144,22 @@ cl {
         if not metricsAvailable {
             return
                 <div
-                    className="relative bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 border border-teal-500/30 rounded-2xl p-8 text-center shadow-2xl shadow-teal-500/10"
+                    className="bg-surface border border-line rounded-lg p-10 text-center shadow-sm"
                 >
                     <div
-                        className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(20,184,166,0.1),transparent_70%)] rounded-2xl"
-                    ></div>
-                    <div className="relative">
-                        <div
-                            className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-800 border-2 border-orange-500/50 flex items-center justify-center"
-                        >
-                            <span className="text-2xl text-orange-400">!</span>
-                        </div>
-                        <h2 className="text-xl font-bold text-white mb-2 tracking-wide">
-                            WORKLOADS OFFLINE
-                        </h2>
-                        <p className="text-sm text-slate-400 font-mono">
-                            Enable in jac.toml: [plugins.scale.monitoring] enabled = true
-                        </p>
+                        className="w-12 h-12 mx-auto mb-4 rounded-full bg-surface-2 border border-line flex items-center justify-center"
+                    >
+                        <Activity className="w-5 h-5 text-faint"/>
                     </div>
+                    <h2 className="text-base font-semibold text-fg mb-1">
+                        Workloads are off
+                    </h2>
+                    <p className="text-sm text-muted">
+                        Enable in jac.toml:
+                        <span className="font-mono text-fg ml-1">
+                            [plugins.scale.monitoring] enabled = true
+                        </span>
+                    </p>
                 </div>;
         }
 
