@@ -9,10 +9,11 @@ Status strings ('Healthy', 'Starting', 'Broken', 'Unstable') are pre-computed
 server-side so this page is purely presentational.
 """
 
-cl import from "lucide-react" { Activity }
+cl import from "lucide-react" { Boxes, RefreshCw, Activity }
 
 cl {
     import from react { useEffect }
+    import from ....components.common.Button { Button }
     import from ....context.AuthContext { useAuth }
     import from ....services.workloadsService {
         getWorkloadsSummary,
@@ -107,22 +108,22 @@ cl {
         }
 
         statusClasses = {
-            "Healthy": "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
-            "Starting": "bg-amber-500/20 text-amber-300 border-amber-500/40",
-            "Unstable": "bg-orange-500/20 text-orange-300 border-orange-500/40",
-            "Broken": "bg-red-500/20 text-red-300 border-red-500/40"
+            "Healthy": "bg-success-weak text-success border-success/40",
+            "Starting": "bg-warning-weak text-warning border-warning/40",
+            "Unstable": "bg-warning-weak text-warning border-warning/40",
+            "Broken": "bg-danger-weak text-danger border-danger/40"
         };
         statusDotClasses = {
-            "Healthy": "bg-emerald-400",
-            "Starting": "bg-amber-400",
-            "Unstable": "bg-orange-400",
-            "Broken": "bg-red-400"
+            "Healthy": "bg-success",
+            "Starting": "bg-warning",
+            "Unstable": "bg-warning",
+            "Broken": "bg-danger"
         };
         toneClasses = {
-            "white": "text-white",
-            "good": "text-emerald-300",
-            "warn": "text-amber-300",
-            "bad": "text-red-300"
+            "white": "text-fg",
+            "good": "text-success",
+            "warn": "text-warning",
+            "bad": "text-danger"
         };
         phaseToStatus = {
             "Running": "Healthy",
@@ -135,9 +136,9 @@ cl {
         if isLoading {
             return
                 <div
-                    className="bg-slate-900 border border-slate-800 rounded-lg p-8 text-center"
+                    className="bg-surface border border-line rounded-lg p-8 text-center shadow-sm"
                 >
-                    <p className="text-sm text-slate-400">Loading workloads...</p>
+                    <p className="text-sm text-muted">Loading workloads...</p>
                 </div>;
         }
 
@@ -264,32 +265,59 @@ cl {
         showPods = kindFilter == "Pods";
 
         chipLabels = ["All", "Deployments", "StatefulSets", "DaemonSets", "Pods"];
-        activeChipCls = "bg-teal-500/20 text-teal-200 border-teal-500/40";
-        inactiveChipCls = "bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200";
-        chipBase = "px-3 py-1 rounded-full text-xs font-medium cursor-pointer border ";
+        activeChipCls = "bg-accent-weak text-accent border-accent-line";
+        inactiveChipCls = "bg-surface-2 text-muted border-line hover:text-fg";
+        chipBase = "px-3 py-1 rounded-full text-xs font-medium cursor-pointer border transition-colors ";
 
         return
             <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                        <Boxes className="w-5 h-5 text-accent"/>
+                        <h1 className="text-lg font-semibold text-fg">Workloads</h1>
+                        <span
+                            className="ml-1 inline-flex items-center gap-1.5 text-xs text-success"
+                        >
+                            <span className="w-1.5 h-1.5 rounded-full bg-success"></span>
+                            Live
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-2 text-xs text-muted">
+                            <input
+                                type="checkbox"
+                                checked={autoRefresh}
+                                onChange={lambda e: any { autoRefresh = e.target.checked; }}
+                                className="rounded border-line bg-surface-2 text-accent focus:ring-accent"
+                            />
+                            Auto-refresh
+                        </label>
+                        <Button variant="secondary" onClick={lambda { loadAll(); }}>
+                            <RefreshCw className="w-3.5 h-3.5"/>
+                            Refresh
+                        </Button>
+                    </div>
+                </div>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                     {[
                         <div
                             key={c["label"]}
-                            className="bg-slate-900 border border-slate-800 rounded-lg p-4"
+                            className="bg-surface border border-line rounded-lg p-4 shadow-sm"
                         >
                             <p
-                                className="text-xs text-slate-500 uppercase tracking-wider"
+                                className="text-xs text-faint uppercase tracking-wider"
                             >
                                 {c["label"]}
                             </p>
                             <p
-                                className={"text-2xl font-semibold mt-1 " + str(
-                                    toneClasses[c["tone"]] or "text-white"
+                                className={"text-2xl font-semibold mt-1 tabular-nums " + str(
+                                    toneClasses[c["tone"]] or "text-fg"
                                 )}
                             >
                                 {c["value"]}
                             </p>
                             {c["sub"]
-                            and <p className="text-xs text-slate-500 mt-1">
+                            and <p className="text-xs text-faint mt-1">
                                 {c["sub"]}
                             </p>}
                         </div> for c in primaryCards
@@ -299,37 +327,37 @@ cl {
                     {[
                         <div
                             key={c["label"]}
-                            className="bg-slate-900 border border-slate-800 rounded-lg p-4"
+                            className="bg-surface border border-line rounded-lg p-4 shadow-sm"
                         >
                             <p
-                                className="text-xs text-slate-500 uppercase tracking-wider"
+                                className="text-xs text-faint uppercase tracking-wider"
                             >
                                 {c["label"]}
                             </p>
                             <p
-                                className={"text-2xl font-semibold mt-1 " + str(
-                                    toneClasses[c["tone"]] or "text-white"
+                                className={"text-2xl font-semibold mt-1 tabular-nums " + str(
+                                    toneClasses[c["tone"]] or "text-fg"
                                 )}
                             >
                                 {c["value"]}
                             </p>
                             {c["sub"]
-                            and <p className="text-xs text-slate-500 mt-1">
+                            and <p className="text-xs text-faint mt-1">
                                 {c["sub"]}
                             </p>}
                         </div> for c in secondaryCards
                     ]}
                 </div>
                 <div
-                    className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden"
+                    className="bg-surface border border-line rounded-lg overflow-hidden shadow-sm"
                 >
                     <div
-                        className="flex items-center justify-between px-4 py-3 border-b border-slate-800"
+                        className="flex items-center justify-between px-4 py-3 border-b border-line"
                     >
-                        <h2 className="text-sm font-medium text-white">Workloads</h2>
-                        <p className="text-xs text-slate-500">refreshing every 10s</p>
+                        <h2 className="text-sm font-medium text-fg">Workloads</h2>
+                        <p className="text-xs text-faint">refreshing every 10s</p>
                     </div>
-                    <div className="flex gap-2 px-4 py-3 border-b border-slate-800">
+                    <div className="flex gap-2 px-4 py-3 border-b border-line">
                         {[
                             <button
                                 key={k}
@@ -346,7 +374,7 @@ cl {
                     </div>
                     {not showPods
                     and len(filteredWorkloads) == 0
-                    and <div className="p-6 text-center text-sm text-slate-500">
+                    and <div className="p-6 text-center text-sm text-faint">
                         No workloads visible.
                     </div>}
                     {not showPods
@@ -354,7 +382,7 @@ cl {
                     and <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                             <thead
-                                className="text-xs text-slate-500 uppercase tracking-wider bg-slate-950/40"
+                                className="text-xs text-faint uppercase tracking-wider bg-surface-2"
                             >
                                 <tr>
                                     <th className="text-left px-4 py-2 font-medium">
@@ -387,14 +415,14 @@ cl {
                                 {[
                                     <tr
                                         key={w["kind"] + "/" + w["name"]}
-                                        className="border-t border-slate-800"
+                                        className="border-t border-line"
                                     >
-                                        <td className="px-4 py-2 text-white">
+                                        <td className="px-4 py-2 text-fg">
                                             {w["name"]}
                                         </td>
                                         <td className="px-4 py-2">
                                             <span
-                                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700"
+                                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-surface-2 text-muted border border-line"
                                             >
                                                 {w["kind"]}
                                             </span>
@@ -403,33 +431,33 @@ cl {
                                             <span
                                                 className={"inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium border " + str(
                                                     statusClasses[w["status"]]
-                                                    or "bg-slate-700/40 text-slate-300 border-slate-600/40"
+                                                    or "bg-surface-2 text-muted border-line"
                                                 )}
                                             >
                                                 <span
                                                     className={"w-1.5 h-1.5 rounded-full " + str(
                                                         statusDotClasses[w["status"]]
-                                                        or "bg-slate-400"
+                                                        or "bg-faint"
                                                     )}
                                                 ></span>
                                                 {w["status"]}
                                             </span>
                                         </td>
-                                        <td className="px-4 py-2 text-slate-300">
+                                        <td className="px-4 py-2 text-muted tabular-nums">
                                             {w["replicas_ready"]}{" / "}{w[
                                                 "replicas_desired"
                                             ]}
                                         </td>
-                                        <td className="px-4 py-2 text-slate-300">
+                                        <td className="px-4 py-2 text-muted tabular-nums">
                                             {w["cpu_cores"]}{" cores"}
                                         </td>
-                                        <td className="px-4 py-2 text-slate-300">
+                                        <td className="px-4 py-2 text-muted tabular-nums">
                                             {formatBytes(w["memory_bytes"])}
                                         </td>
-                                        <td className="px-4 py-2 text-slate-300">
+                                        <td className="px-4 py-2 text-muted tabular-nums">
                                             {w["restarts_last_hour"]}
                                         </td>
-                                        <td className="px-4 py-2 text-slate-300">
+                                        <td className="px-4 py-2 text-muted tabular-nums">
                                             {formatAge(w["created"])}
                                         </td>
                                     </tr> for w in filteredWorkloads
@@ -439,7 +467,7 @@ cl {
                     </div>}
                     {showPods
                     and len(pods) == 0
-                    and <div className="p-6 text-center text-sm text-slate-500">
+                    and <div className="p-6 text-center text-sm text-faint">
                         No pods visible.
                     </div>}
                     {showPods
@@ -447,7 +475,7 @@ cl {
                     and <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                             <thead
-                                className="text-xs text-slate-500 uppercase tracking-wider bg-slate-950/40"
+                                className="text-xs text-faint uppercase tracking-wider bg-surface-2"
                             >
                                 <tr>
                                     <th className="text-left px-4 py-2 font-medium">
@@ -480,12 +508,12 @@ cl {
                                 {[
                                     <tr
                                         key={p["name"]}
-                                        className="border-t border-slate-800"
+                                        className="border-t border-line"
                                     >
-                                        <td className="px-4 py-2 text-white">
+                                        <td className="px-4 py-2 text-fg">
                                             {p["name"]}
                                         </td>
-                                        <td className="px-4 py-2 text-slate-300">
+                                        <td className="px-4 py-2 text-muted">
                                             {p["owner"]}
                                         </td>
                                         <td className="px-4 py-2">
@@ -495,7 +523,7 @@ cl {
                                                         phaseToStatus[p["phase"]]
                                                         or p["phase"]
                                                     ]
-                                                    or "bg-slate-700/40 text-slate-300 border-slate-600/40"
+                                                    or "bg-surface-2 text-muted border-line"
                                                 )}
                                             >
                                                 <span
@@ -504,26 +532,26 @@ cl {
                                                             phaseToStatus[p["phase"]]
                                                             or p["phase"]
                                                         ]
-                                                        or "bg-slate-400"
+                                                        or "bg-faint"
                                                     )}
                                                 ></span>
                                                 {phaseToStatus[p["phase"]]
                                                 or p["phase"]}
                                             </span>
                                         </td>
-                                        <td className="px-4 py-2 text-slate-300">
+                                        <td className="px-4 py-2 text-muted">
                                             {p["node"]}
                                         </td>
-                                        <td className="px-4 py-2 text-slate-300">
+                                        <td className="px-4 py-2 text-muted tabular-nums">
                                             {p["cpu_cores"]}{" cores"}
                                         </td>
-                                        <td className="px-4 py-2 text-slate-300">
+                                        <td className="px-4 py-2 text-muted tabular-nums">
                                             {formatBytes(p["memory_bytes"])}
                                         </td>
-                                        <td className="px-4 py-2 text-slate-300">
+                                        <td className="px-4 py-2 text-muted tabular-nums">
                                             {p["restarts_last_hour"]}
                                         </td>
-                                        <td className="px-4 py-2 text-slate-300">
+                                        <td className="px-4 py-2 text-muted tabular-nums">
                                             {formatAge(p["created"])}
                                         </td>
                                     </tr> for p in pods

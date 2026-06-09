@@ -11,7 +11,7 @@ chart large and readable. Path strings are built by str-returning helpers
 because cl mode drops args to JSX-returning helper functions.
 """
 
-cl import from "lucide-react" { Activity }
+cl import from "lucide-react" { TrendingUp, Activity }
 
 cl {
     import from react { useEffect }
@@ -136,9 +136,9 @@ cl {
         if isLoading {
             return
                 <div
-                    className="bg-slate-900 border border-slate-800 rounded-lg p-8 text-center"
+                    className="bg-surface border border-line rounded-lg p-8 text-center shadow-sm"
                 >
-                    <p className="text-sm text-slate-400">Loading usage...</p>
+                    <p className="text-sm text-muted">Loading usage...</p>
                 </div>;
         }
 
@@ -195,18 +195,36 @@ cl {
         }
         startLabel = rangeLabel(rangeMinutes);
 
+        # SVG-only stroke/fill colors. Browsers resolve var(...) inside SVG
+        # presentation attributes, so the chart adapts to light/dark via the
+        # same tokens as the rest of the page.
+        gridStroke = "var(--line)";
+        gridStrongStroke = "var(--line-strong)";
+        axisFill = "var(--muted)";
+        cpuLineColor = "#0d9488";
+        cpuAreaFill = "rgba(13,148,136,0.15)";
+        memLineColor = "#7c3aed";
+        memAreaFill = "rgba(124,58,237,0.15)";
+
         return
             <div className="space-y-4">
-                <div
-                    className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-lg px-4 py-3"
-                >
-                    <h2 className="text-sm font-medium text-white">
-                        Resource usage over time
-                    </h2>
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                        <TrendingUp className="w-5 h-5 text-accent"/>
+                        <h1 className="text-lg font-semibold text-fg">
+                            Resource usage
+                        </h1>
+                        <span
+                            className="ml-1 inline-flex items-center gap-1.5 text-xs text-success"
+                        >
+                            <span className="w-1.5 h-1.5 rounded-full bg-success"></span>
+                            Live
+                        </span>
+                    </div>
                     <select
                         value={str(rangeMinutes)}
                         onChange={lambda e: any { rangeMinutes = int(e.target.value); }}
-                        className="px-2 py-1 bg-slate-950 border border-slate-700 rounded text-white text-xs"
+                        className="bg-surface border border-line rounded px-2 py-1.5 text-sm text-fg"
                     >
                         <option value="60">Last 1 hour</option>
                         <option value="360">Last 6 hours</option>
@@ -216,9 +234,9 @@ cl {
                 </div>
                 {sparse
                 and <div
-                    className="bg-slate-900 border border-amber-500/30 rounded-lg px-4 py-3"
+                    className="bg-warning-weak border border-warning/30 rounded-lg px-4 py-3"
                 >
-                    <p className="text-xs text-amber-300">
+                    <p className="text-xs text-warning">
                         Collecting data. History builds up as the cluster runs, so graphs fill in over the next several minutes. (Prometheus history also resets if its pod restarts.)
                     </p>
                 </div>}
@@ -226,9 +244,9 @@ cl {
                     {[
                         <div
                             key={c["name"]}
-                            className="bg-slate-900 border border-slate-800 rounded-lg p-4"
+                            className="bg-surface border border-line rounded-lg p-4 shadow-sm"
                         >
-                            <p className="text-sm font-medium text-white mb-3">
+                            <p className="text-sm font-medium text-fg mb-3">
                                 {c["name"]}
                             </p>
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -237,12 +255,13 @@ cl {
                                         className="flex items-center justify-between mb-1"
                                     >
                                         <span
-                                            className="text-xs font-medium text-slate-300"
+                                            className="text-xs font-medium text-muted"
                                         >
                                             CPU
                                         </span>
                                         <span
-                                            className="text-xs text-teal-300 font-mono"
+                                            className="text-xs font-mono tabular-nums"
+                                            style={{"color": cpuLineColor}}
                                         >
                                             {formatCores(c["cpuLast"])}
                                         </span>
@@ -257,7 +276,7 @@ cl {
                                             y1="20"
                                             x2="880"
                                             y2="20"
-                                            stroke="#1e293b"
+                                            stroke={gridStroke}
                                             strokeWidth="1"
                                         />
                                         <line
@@ -265,7 +284,7 @@ cl {
                                             y1="115"
                                             x2="880"
                                             y2="115"
-                                            stroke="#1e293b"
+                                            stroke={gridStroke}
                                             strokeWidth="1"
                                         />
                                         <line
@@ -273,14 +292,14 @@ cl {
                                             y1="210"
                                             x2="880"
                                             y2="210"
-                                            stroke="#334155"
+                                            stroke={gridStrongStroke}
                                             strokeWidth="1"
                                         />
                                         <text
                                             x="82"
                                             y="24"
                                             textAnchor="end"
-                                            fill="#94a3b8"
+                                            fill={axisFill}
                                             fontSize="15"
                                         >
                                             {c["cpuMaxLabel"]}
@@ -289,7 +308,7 @@ cl {
                                             x="82"
                                             y="119"
                                             textAnchor="end"
-                                            fill="#94a3b8"
+                                            fill={axisFill}
                                             fontSize="15"
                                         >
                                             {c["cpuMidLabel"]}
@@ -298,7 +317,7 @@ cl {
                                             x="82"
                                             y="214"
                                             textAnchor="end"
-                                            fill="#94a3b8"
+                                            fill={axisFill}
                                             fontSize="15"
                                         >
                                             0
@@ -306,7 +325,7 @@ cl {
                                         <text
                                             x="90"
                                             y="234"
-                                            fill="#94a3b8"
+                                            fill={axisFill}
                                             fontSize="15"
                                         >
                                             {startLabel}
@@ -315,20 +334,20 @@ cl {
                                             x="880"
                                             y="234"
                                             textAnchor="end"
-                                            fill="#94a3b8"
+                                            fill={axisFill}
                                             fontSize="15"
                                         >
                                             now
                                         </text>
                                         <polygon
                                             points={c["cpuArea"]}
-                                            fill="rgba(45,212,191,0.15)"
+                                            fill={cpuAreaFill}
                                             stroke="none"
                                         />
                                         <polyline
                                             points={c["cpuLine"]}
                                             fill="none"
-                                            stroke="#2dd4bf"
+                                            stroke={cpuLineColor}
                                             strokeWidth="2.5"
                                         />
                                     </svg>
@@ -338,12 +357,13 @@ cl {
                                         className="flex items-center justify-between mb-1"
                                     >
                                         <span
-                                            className="text-xs font-medium text-slate-300"
+                                            className="text-xs font-medium text-muted"
                                         >
                                             Memory
                                         </span>
                                         <span
-                                            className="text-xs text-purple-300 font-mono"
+                                            className="text-xs font-mono tabular-nums"
+                                            style={{"color": memLineColor}}
                                         >
                                             {formatBytes(c["memLast"])}
                                         </span>
@@ -358,7 +378,7 @@ cl {
                                             y1="20"
                                             x2="880"
                                             y2="20"
-                                            stroke="#1e293b"
+                                            stroke={gridStroke}
                                             strokeWidth="1"
                                         />
                                         <line
@@ -366,7 +386,7 @@ cl {
                                             y1="115"
                                             x2="880"
                                             y2="115"
-                                            stroke="#1e293b"
+                                            stroke={gridStroke}
                                             strokeWidth="1"
                                         />
                                         <line
@@ -374,14 +394,14 @@ cl {
                                             y1="210"
                                             x2="880"
                                             y2="210"
-                                            stroke="#334155"
+                                            stroke={gridStrongStroke}
                                             strokeWidth="1"
                                         />
                                         <text
                                             x="82"
                                             y="24"
                                             textAnchor="end"
-                                            fill="#94a3b8"
+                                            fill={axisFill}
                                             fontSize="15"
                                         >
                                             {c["memMaxLabel"]}
@@ -390,7 +410,7 @@ cl {
                                             x="82"
                                             y="119"
                                             textAnchor="end"
-                                            fill="#94a3b8"
+                                            fill={axisFill}
                                             fontSize="15"
                                         >
                                             {c["memMidLabel"]}
@@ -399,7 +419,7 @@ cl {
                                             x="82"
                                             y="214"
                                             textAnchor="end"
-                                            fill="#94a3b8"
+                                            fill={axisFill}
                                             fontSize="15"
                                         >
                                             0
@@ -407,7 +427,7 @@ cl {
                                         <text
                                             x="90"
                                             y="234"
-                                            fill="#94a3b8"
+                                            fill={axisFill}
                                             fontSize="15"
                                         >
                                             {startLabel}
@@ -416,20 +436,20 @@ cl {
                                             x="880"
                                             y="234"
                                             textAnchor="end"
-                                            fill="#94a3b8"
+                                            fill={axisFill}
                                             fontSize="15"
                                         >
                                             now
                                         </text>
                                         <polygon
                                             points={c["memArea"]}
-                                            fill="rgba(168,85,247,0.15)"
+                                            fill={memAreaFill}
                                             stroke="none"
                                         />
                                         <polyline
                                             points={c["memLine"]}
                                             fill="none"
-                                            stroke="#a855f7"
+                                            stroke={memLineColor}
                                             strokeWidth="2.5"
                                         />
                                     </svg>
