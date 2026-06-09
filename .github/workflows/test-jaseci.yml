@@ -595,11 +595,11 @@ jobs:
 
     # ========== fullstack eject smoke ==========
     # Structural / codegen correctness of `jac eject` is covered by
-    # jac/tests/project/test_eject.jac (21 in-process unit tests, ~0.5s).
+    # jac/tests/project/test_eject.jac (in-process unit tests, ~0.5s).
     # The steps below are deliberately end-to-end: they exist to validate
     # what the unit tests cannot - that `jac eject` works against the real
-    # fullstack template and that the ejected backend imports cleanly
-    # against the wheel-installed jaclang runtime and actually serves HTTP.
+    # fullstack template and that the standalone (zero-jaclang) FastAPI
+    # backend installs with only fastapi + uvicorn and actually serves HTTP.
     # The live `jac start` path is exercised separately by the test-client
     # job (`start dev with client does initial compilation`), so this job
     # focuses solely on the eject pipeline.
@@ -609,10 +609,10 @@ jobs:
         jac eject fs-smoke
 
     - name: Install ejected backend and start it
-      working-directory: fs-smoke-ejected
+      working-directory: fs-smoke/ejected/backend
       run: |
-        pip install -r backend/requirements.txt
-        PORT=8000 timeout 600 python backend/serve.py > /tmp/fullstack-ejected.log 2>&1 &
+        pip install -r requirements.txt
+        PORT=8000 timeout 600 python main.py > /tmp/fullstack-ejected.log 2>&1 &
         EJECTED_PID=$!
         echo "EJECTED_PID=$EJECTED_PID" >> $GITHUB_ENV
         sleep 5
@@ -630,7 +630,7 @@ jobs:
             tail -100 /tmp/fullstack-ejected.log
             exit 1
           fi
-          if curl -sf --max-time 5 http://localhost:8000 -o /dev/null 2>&1; then
+          if curl -sf --max-time 5 http://localhost:8000/__health -o /dev/null 2>&1; then
             echo "Ejected backend responding (attempt $i)"
             exit 0
           fi
