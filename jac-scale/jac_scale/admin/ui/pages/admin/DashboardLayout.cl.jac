@@ -17,6 +17,7 @@ cl {
     import from .monitoring.LLMTracesPage { LLMTracesPage }
     import from .monitoring.WorkloadsPage { WorkloadsPage }
     import from .monitoring.GraphsPage { GraphsPage }
+    import from .monitoring.TracesPage { TracesPage }
     import from .logs.LogsPage { LogsPage }
     import from .placeholder.PlaceholderPage {
         SessionsPage,
@@ -62,6 +63,7 @@ cl {
                  "usage": GraphsPage,
                  "llm_metrics": LLMMetricsPage,
                  "llm_traces": LLMTracesPage,
+                 "traces": TracesPage,
                  "logs": LogsPage,
                  "health": HealthPage,
                  "alerts": AlertsConfigPage
