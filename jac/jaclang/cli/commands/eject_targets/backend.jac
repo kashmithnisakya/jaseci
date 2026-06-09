@@ -1,47 +1,35 @@
-"""Standalone FastAPI backend target for `jac eject` (`[eject].target = "backend"`).
+"""Standalone FastAPI backend emitter for `jac eject`.
 
-Emits a self-contained backend directory with zero `.jac` files AND zero
-`jaclang` runtime dependency. The compiler turns each `.jac` file into Python
-that imports a handful of symbols from `jaclang.jac0core.jaclib`; this target
-rewrites that single import to a vendored `_osp.py` micro-runtime and wraps
-each Jac walker in a FastAPI endpoint, so the result runs with only
-`fastapi` + `uvicorn` installed.
+Writes the `backend/` half of the ejected project: the compiled Jac modules
+(with their `jaclang.jac0core.jaclib` import rewritten to a vendored `_osp.py`
+micro-runtime), a FastAPI `main.py` that exposes each walker and function over
+the same HTTP contract the compiled `.cl.jac` frontend speaks
+(`POST /walker/<Name>` -> `{"data": {...reports...}}`,
+`POST /function/<name>` -> `{"ok": true, "data": {"result": ...}}`), and a
+`requirements.txt` with only fastapi + uvicorn. The result runs with no
+`jaclang` installed; `main.py` also serves the built frontend (../frontend/dist)
+when present, so a single `uvicorn main:app` serves the whole app.
 
-Stage 1 scope: walkers whose entry abilities fire on the spawn Root and
-report values, plus module-level `def` abilities exposed as functions. Graph
-persistence, multi-node traversal, permissions, and `by llm()` are out of
-scope and grow in later stages.
+Stage 1 scope: walkers whose entry abilities fire on the spawn Root and report
+values. Graph persistence, multi-node traversal, permissions, and `by llm()`
+are out of scope.
 """
 
 import ast;
-import shutil;
 import from pathlib { Path }
 import from jaclang.cli.console { console }
-import from jaclang.cli.commands.eject { _collect_jac_files, _strip_jac_suffix }
 
 
-# Marker file written at the output root. Its presence tells a later eject run
-# that the directory is ours and safe to regenerate without `--force`.
-glob _EJECT_MARKER: str = ".jac-ejected";
-
-
-# Module names we generate ourselves in the output; a compiled Jac module
-# whose stem collides with one of these is renamed (e.g. main -> _jac_main)
-# and references to it are rewritten across the other emitted modules.
-glob _RESERVED_MODULES: set = {"main", "_osp"};
-
-
-# The vendored Object-Spatial micro-runtime, written verbatim to <out>/_osp.py.
-# Built as a line list (not a triple-quoted literal) so the Python docstrings
-# inside it do not terminate the surrounding Jac string, matching how the
-# default eject builds serve.py.
+# The vendored Object-Spatial micro-runtime, written verbatim to backend/_osp.py.
+# Built as a line list so the Python docstrings inside it do not terminate the
+# surrounding Jac string.
 glob _OSP_RUNTIME_LINES: list[str] = [
     '"""Standalone Object-Spatial micro-runtime for ejected Jac backends.',
     '',
     'Dependency-free replacements for the jaclang runtime symbols the compiled',
     'walker modules import (Root, Walker, on_entry, set_trigger, spawn, root,',
-    'log_report, ...), so the ejected backend runs with only fastapi + uvicorn',
-    'installed -- no jaclang.',
+    'log_report, field, ...), so the ejected backend runs with only',
+    'fastapi + uvicorn installed -- no jaclang.',
     '',
     'Stage 1 scope: walkers whose entry abilities fire on the spawn Root and',
     'report values. No graph persistence, traversal, permissions, or LLM.',
@@ -49,25 +37,30 @@ glob _OSP_RUNTIME_LINES: list[str] = [
     'from __future__ import annotations',
     '',
     'import threading',
-    'from dataclasses import dataclass, field  # noqa: F401  (re-exported)',
+    'import dataclasses',
+    'from dataclasses import dataclass',
     '',
     '_state = threading.local()',
     '',
     '',
+    'def field(factory=None, init=True):',
+    '    """Mirror jaclib.field: factory -> default_factory, else plain field."""',
+    '    if factory is not None:',
+    '        return dataclasses.field(default_factory=factory)',
+    '    return dataclasses.field(init=init)',
+    '',
+    '',
     'def on_entry(func):',
-    '    """Mark an ability as an entry ability (mirrors jaclib.on_entry)."""',
     '    func._osp_entry = True',
     '    return func',
     '',
     '',
     'def on_exit(func):',
-    '    """Mark an ability as an exit ability (mirrors jaclib.on_exit)."""',
     '    func._osp_exit = True',
     '    return func',
     '',
     '',
     'def set_trigger(trigger_thunk):',
-    '    """Stamp an ability with its compiler-known trigger thunk (lambda: T)."""',
     '    def deco(func):',
     '        func._osp_trigger = trigger_thunk',
     '        return func',
@@ -75,9 +68,9 @@ glob _OSP_RUNTIME_LINES: list[str] = [
     '',
     '',
     'class _Archetype:',
-    '    """Base for compiled archetypes: make each subclass a dataclass (so it',
-    '    builds from its field annotations) and collect its entry/exit abilities,',
-    '    mirroring the part of jaclang make_archetype the ejected code relies on."""',
+    '    """Base for compiled archetypes: make each subclass a dataclass and',
+    '    collect its entry/exit abilities (the part of jaclang make_archetype',
+    '    the ejected code relies on)."""',
     '',
     '    _osp_entries = ()',
     '    _osp_exits = ()',
@@ -143,15 +136,15 @@ glob _OSP_RUNTIME_LINES: list[str] = [
     '    """Run a walker on a location and return the walker (Jac `spawn`).',
     '',
     '    Either operand may be the walker; the other is the spawn location.',
-    '    Fires entry abilities whose trigger matches the location (in order),',
-    '    then exit abilities, and returns the walker with `reports` populated.',
-    '    Grows into the full DFS kernel (visit / connect / disengage) later.',
+    '    Fires entry abilities whose trigger matches the location, then exits,',
+    '    and returns the walker with `reports` populated.',
     '    """',
     '    if isinstance(op1, Walker):',
     '        walker, location = op1, op2',
     '    else:',
     '        walker, location = op2, op1',
-    '    walker.reports = []',
+    '    if not hasattr(walker, "reports"):',
+    '        walker.reports = []',
     '    prev = getattr(_state, "walker", None)',
     '    _state.walker = walker',
     '    try:',
@@ -168,187 +161,78 @@ glob _OSP_RUNTIME_LINES: list[str] = [
 ];
 
 
-"""Eject a Jac project to a standalone FastAPI backend.
+"""Emit the FastAPI backend into `backend_dir`.
 
-Called by the eject command when jac.toml declares `[eject].target = "backend"`.
-`out` is the project-internal output directory (e.g. `<project>/dist`). It is
-regenerated on every run when it carries our marker file; a pre-existing
-directory without the marker is only overwritten when `force` is set, so we
-never clobber a folder we did not create.
+`compiled` is a list of {module, py, meaningful} dicts (one per compiled Jac
+file); `walkers` / `functions` are [{name, module}] descriptors harvested from
+the AST by the orchestrator. `remap` renames Jac modules whose stem collided
+with a generated file (e.g. main -> _jac_main).
 """
-def eject_backend(src: Path, out: Path, force: bool, metadata: dict) -> int {
-    project_name = str(metadata["project_name"]);
+def emit_backend(
+    backend_dir: Path,
+    project_name: str,
+    compiled: list,
+    walkers: list,
+    functions: list,
+    remap: dict
+) -> int {
+    backend_dir.mkdir(parents=True, exist_ok=True);
 
-    marker = out / _EJECT_MARKER;
-    if out.exists() {
-        if force or marker.exists() {
-            try {
-                shutil.rmtree(out);
-            } except Exception as e {
-                console.error(f"Failed to remove existing output directory: {e}");
-                return 1;
-            }
-        } else {
-            console.error(f"Output directory already exists: {out}");
-            console.print(
-                "  It was not created by eject. Use --force to overwrite.",
-                style="muted"
-            );
-            return 1;
-        }
+    walker_names: set = set();
+    for w in walkers {
+        walker_names.add(str(w["name"]));
+    }
+    func_names: set = set();
+    for f in functions {
+        func_names.add(str(f["name"]));
     }
 
-    # Collect sources, skipping anything inside the output directory itself
-    # (so re-running over a project-internal output dir never re-ingests it).
-    jac_files = [f for f in _collect_jac_files(src) if out not in Path(str(f)).parents];
-    if not jac_files {
-        console.error("No .jac source files found to eject.");
-        return 1;
-    }
-
-    import from jaclang.jac0core.program { JacProgram }
-    import jaclang.jac0core.unitree as uni;
-    import from jaclang.jac0core.constant { SymbolType }
-
-    out.mkdir(parents=True);
-
-    console.print(
-        f"\n📦 Ejecting '{project_name}' → standalone FastAPI backend",
-        style="bold cyan"
-    );
-    console.print(f"  Source: {src}");
-    console.print(f"  Output: {out}\n");
-
-    # Pass one: compile every file, decide its emitted module name, harvest
-    # walker / function names, and stash the generated Python for pass two.
-    compiled: list[dict] = [];
-    remap: dict[str, str] = {};
-    walker_names: set[str] = set();
-    func_names: set[str] = set();
-    walker_module: dict[str, str] = {};
-    func_module: dict[str, str] = {};
-    error_count = 0;
-
-    for jac_file in jac_files {
-        rel = Path(str(jac_file)).relative_to(src);
-        if len(rel.parts) > 1 {
-            console.warning(
-                f"  {rel}: nested modules are not supported yet; emitting flat."
-            );
-        }
-        try {
-            prog = JacProgram();
-            ir = prog.compile(file_path=str(jac_file));
-        } except Exception as e {
-            console.error(f"  ✗ {rel}: compile failed: {e}");
-            error_count += 1;
-            continue;
-        }
-        if prog.errors_had {
-            for err in prog.errors_had {
-                console.error(f"  ✗ {rel}: {err}");
-            }
-            error_count += 1;
-            continue;
-        }
-        py_code = ir.gen.py or "";
-        if not py_code.strip() {
-            console.print(f"  · {rel} (no output)", style="muted");
-            continue;
-        }
-        stem = str(_strip_jac_suffix(rel.name));
-        module = stem;
-        if stem in _RESERVED_MODULES {
-            module = f"_jac_{stem}";
-            remap[stem] = module;
-        }
-        for item in ir.body {
-            if isinstance(item, uni.Archetype)
-            and item.sym_category == SymbolType.WALKER_ARCH {
-                wname = str(item.name.sym_name);
-                walker_names.add(wname);
-                walker_module[wname] = module;
-            } elif isinstance(item, uni.Ability) and item.name_ref is not None {
-                fname = str(item.name_ref.sym_name);
-                func_names.add(fname);
-                func_module[fname] = module;
-            }
-        }
-        compiled.append({"rel": rel, "module": module, "py": py_code});
-    }
-
-    if error_count > 0 {
-        console.error(
-            f"\n{error_count} file(s) failed to compile. Output is incomplete."
-        );
-        return 1;
-    }
-    if not compiled {
-        console.error("No Python output produced; nothing to eject.");
-        return 1;
-    }
-
-    # Pass two: rewrite imports (jaclib -> _osp, remapped module names), write
-    # each module, and harvest fields / params from the final Python.
     walker_fields: dict = {};
     func_params: dict = {};
+    written = 0;
     for unit in compiled {
-        rel_disp = unit["rel"];
+        if not unit["server"] {
+            continue;
+        }
         module = str(unit["module"]);
         code = _rewrite_imports(str(unit["py"]), remap);
-        (out / f"{module}.py").write_text(code, encoding="utf-8");
+        (backend_dir / f"{module}.py").write_text(code, encoding="utf-8");
+        written += 1;
         walker_fields.update(_extract_walker_fields(code, walker_names));
         func_params.update(_extract_func_params(code, func_names));
-        console.print(f"  ✔ {rel_disp} → {module}.py", style="success");
+    }
+    if written == 0 {
+        console.error("  backend: no server-side Python to emit.");
+        return 1;
     }
 
-    walkers: list[dict] = [];
-    for wname in sorted(list(walker_names)) {
-        walkers.append({
-            "name": wname,
-            "module": walker_module[wname],
-            "fields": walker_fields.get(wname, [])
+    walkers_full: list = [];
+    for w in walkers {
+        wn = str(w["name"]);
+        walkers_full.append({
+            "name": wn,
+            "module": str(w["module"]),
+            "fields": walker_fields.get(wn, [])
         });
     }
-    functions: list[dict] = [];
-    for fname in sorted(list(func_names)) {
-        functions.append({
-            "name": fname,
-            "module": func_module[fname],
-            "params": func_params.get(fname, [])
+    functions_full: list = [];
+    for f in functions {
+        fn = str(f["name"]);
+        functions_full.append({
+            "name": fn,
+            "module": str(f["module"]),
+            "params": func_params.get(fn, [])
         });
     }
 
-    _emit_osp_runtime(out);
-    _emit_main_py(out, project_name, walkers, functions);
-    _emit_requirements(out);
-    _emit_readme(out, project_name);
-    (out / _EJECT_MARKER).write_text(
-        "Generated by `jac eject` (target = backend). Safe to delete.\n",
-        encoding="utf-8"
-    );
-
-    console.print();
-    console.success(f"Ejected '{project_name}' → {out}");
-    console.print(
-        f"  {len(walkers)} walker endpoint(s), {len(functions)} function endpoint(s)",
-        style="muted"
-    );
-    console.print();
-    console.print("Next steps:", style="bold");
-    console.print(f"  cd {out}");
-    console.print("  pip install -r requirements.txt");
-    console.print("  uvicorn main:app --reload");
-    console.print();
+    _emit_osp_runtime(backend_dir);
+    _emit_main_py(backend_dir, project_name, walkers_full, functions_full);
+    _emit_requirements(backend_dir);
     return 0;
 }
 
 
-"""Rewrite a compiled module's imports for the standalone output.
-
-Maps the single `from jaclang.jac0core.jaclib import ...` line to the vendored
-`_osp` runtime, then renames any references to remapped sibling modules (a Jac
-module whose stem collided with one of our generated files)."""
+"""Rewrite a compiled module's imports for the standalone output."""
 def _rewrite_imports(py_code: str, remap: dict) -> str {
     jaclib_prefix = "from jaclang.jac0core.jaclib import ";
     out_lines: list[str] = [];
@@ -374,9 +258,8 @@ def _rewrite_imports(py_code: str, remap: dict) -> str {
 
 """Extract each walker's request fields from the compiled Python.
 
-Reads the top-level `name: type` annotations of every class whose name is a
-known walker. Skips private names and the runtime-injected `reports` field.
-Returns {walker_name: [{name, type, has_default, default}]}.
+Skips private names and the runtime-managed `reports` field. Returns
+{walker_name: [{name, type, has_default, default}]}.
 """
 def _extract_walker_fields(py_code: str, walker_names: set) -> dict {
     result: dict = {};
@@ -416,9 +299,7 @@ def _extract_walker_fields(py_code: str, walker_names: set) -> dict {
 }
 
 
-"""Extract each public function's parameters from the compiled Python.
-
-Returns {func_name: [{name, type}]}, skipping `self`."""
+"""Extract each public function's parameters from the compiled Python."""
 def _extract_func_params(py_code: str, func_names: set) -> dict {
     result: dict = {};
     try {
@@ -444,56 +325,84 @@ def _extract_func_params(py_code: str, func_names: set) -> dict {
 }
 
 
-"""Write the vendored micro-runtime to <out>/_osp.py."""
-def _emit_osp_runtime(out: Path) {
-    (out / "_osp.py").write_text("\n".join(_OSP_RUNTIME_LINES), encoding="utf-8");
+"""Write the vendored micro-runtime to backend/_osp.py."""
+def _emit_osp_runtime(backend_dir: Path) {
+    (backend_dir / "_osp.py").write_text(
+        "\n".join(_OSP_RUNTIME_LINES), encoding="utf-8"
+    );
 }
 
 
-"""Pydantic request-model name for a walker / function (greeter -> GreeterIn)."""
+"""Pydantic request-model name for a walker / function (Square -> SquareIn)."""
 def _model_class_name(name: str) -> str {
     return name[:1].upper() + name[1:] + "In";
 }
 
 
-"""Write main.py: the FastAPI app exposing each walker and function."""
-def _emit_main_py(out: Path, project_name: str, walkers: list, functions: list) {
+"""Write main.py: the FastAPI app implementing the @jac/runtime HTTP contract."""
+def _emit_main_py(backend_dir: Path, project_name: str, walkers: list, functions: list) {
     lines: list[str] = [
         f'"""Auto-generated FastAPI app for the ejected Jac project {project_name!r}.',
         '',
-        'Standalone: depends only on fastapi + uvicorn (no jaclang). Each Jac',
-        'walker is exposed as POST /walker/<name> with its fields as the request',
-        'body; each public function as POST /function/<name>. Run with:',
-        '    uvicorn main:app --reload',
+        'Standalone (fastapi + uvicorn, no jaclang). Implements the @jac/runtime',
+        'client contract: POST /walker/<Name> -> {"data": {...reports...}},',
+        'POST /function/<name> -> {"ok": true, "data": {"result": ...}}. Also',
+        'serves the built frontend (../frontend/dist) when present, so one',
+        '`uvicorn main:app` serves the whole app.',
         '"""',
+        'import os',
+        'import dataclasses',
+        '',
         'from fastapi import FastAPI',
+        'from fastapi.middleware.cors import CORSMiddleware',
         'from pydantic import BaseModel',
         '',
         'from _osp import spawn, root'
     ];
 
-    seen: set = set();
+    # Group walker/function imports by their source module.
+    by_module: dict = {};
+    order: list = [];
     for w in walkers {
-        imp = "from " + str(w["module"]) + " import " + str(w["name"]);
-        if imp not in seen {
-            lines.append(imp);
-            seen.add(imp);
+        m = str(w["module"]);
+        if m not in by_module {
+            by_module[m] = [];
+            order.append(m);
         }
+        by_module[m].append(str(w["name"]));
     }
     for f in functions {
-        imp = "from " + str(f["module"]) + " import " + str(f["name"]);
-        if imp not in seen {
-            lines.append(imp);
-            seen.add(imp);
+        m = str(f["module"]);
+        if m not in by_module {
+            by_module[m] = [];
+            order.append(m);
         }
+        by_module[m].append(str(f["name"]));
+    }
+    for m in order {
+        names_here = [str(x) for x in by_module[m]];
+        lines.append("from " + str(m) + " import " + ", ".join(names_here));
     }
 
     lines.append("");
-    lines.append('app = FastAPI(title=' + repr(project_name) + ')');
+    lines.append("app = FastAPI(title=" + repr(project_name) + ")");
+    lines.append("app.add_middleware(");
+    lines.append("    CORSMiddleware,");
+    lines.append('    allow_origins=["*"],');
+    lines.append('    allow_methods=["*"],');
+    lines.append('    allow_headers=["*"],');
+    lines.append(")");
+    lines.append("");
+    lines.append("");
+    lines.append("def _walker_data(w):");
+    lines.append('    """Serialize a spawned walker for the client `{data}` envelope."""');
+    lines.append("    data = {f.name: getattr(w, f.name) for f in dataclasses.fields(w)}");
+    lines.append('    data["reports"] = list(getattr(w, "reports", []))');
+    lines.append("    return data");
 
     for w in walkers {
-        wnm = str(w["name"]);
-        model = _model_class_name(wnm);
+        wn = str(w["name"]);
+        model = _model_class_name(wn);
         lines.append("");
         lines.append("");
         lines.append("class " + model + "(BaseModel):");
@@ -512,15 +421,16 @@ def _emit_main_py(out: Path, project_name: str, walkers: list, functions: list) 
         }
         lines.append("");
         lines.append("");
-        lines.append('@app.post("/walker/' + wnm + '")');
-        lines.append("def run_" + wnm + "(body: " + model + ") -> dict:");
-        lines.append("    walker = spawn(root(), " + wnm + "(**body.model_dump()))");
-        lines.append('    return {"reports": getattr(walker, "reports", [])}');
+        lines.append('@app.post("/walker/' + wn + '")');
+        lines.append('@app.post("/walker/' + wn + '/{node_id}")');
+        lines.append("def run_" + wn + "(body: " + model + ", node_id: str = \"\") -> dict:");
+        lines.append("    walker = spawn(root(), " + wn + "(**body.model_dump()))");
+        lines.append('    return {"data": _walker_data(walker)}');
     }
 
     for f in functions {
-        fnm = str(f["name"]);
-        model = _model_class_name(fnm);
+        fn = str(f["name"]);
+        model = _model_class_name(fn);
         lines.append("");
         lines.append("");
         lines.append("class " + model + "(BaseModel):");
@@ -533,17 +443,17 @@ def _emit_main_py(out: Path, project_name: str, walkers: list, functions: list) 
         }
         lines.append("");
         lines.append("");
-        lines.append('@app.post("/function/' + fnm + '")');
-        lines.append("def call_" + fnm + "(body: " + model + ") -> dict:");
-        lines.append('    return {"result": ' + fnm + "(**body.model_dump())}");
+        lines.append('@app.post("/function/' + fn + '")');
+        lines.append("def call_" + fn + "(body: " + model + ") -> dict:");
+        lines.append("    return {\"ok\": True, \"data\": {\"result\": " + fn + "(**body.model_dump())}}");
     }
 
-    walker_list_lit = "[" + ", ".join([repr(w["name"]) for w in walkers]) + "]";
-    func_list_lit = "[" + ", ".join([repr(f["name"]) for f in functions]) + "]";
+    walker_list_lit = "[" + ", ".join([repr(str(w["name"])) for w in walkers]) + "]";
+    func_list_lit = "[" + ", ".join([repr(str(f["name"])) for f in functions]) + "]";
     lines.append("");
     lines.append("");
-    lines.append('@app.get("/")');
-    lines.append("def index() -> dict:");
+    lines.append('@app.get("/__health")');
+    lines.append("def __health() -> dict:");
     lines.append(
         '    return {"project": ' + repr(project_name)
         + ', "walkers": ' + walker_list_lit
@@ -551,58 +461,30 @@ def _emit_main_py(out: Path, project_name: str, walkers: list, functions: list) 
     );
     lines.append("");
     lines.append("");
+    lines.append("# Serve the built frontend (../frontend/dist) when present so a single");
+    lines.append("# `uvicorn main:app` serves API + UI on one origin. Mounted last so the");
+    lines.append("# API routes above take precedence.");
+    lines.append("_FRONTEND_DIST = os.path.join(");
+    lines.append('    os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "dist"');
+    lines.append(")");
+    lines.append("if os.path.isdir(_FRONTEND_DIST):");
+    lines.append("    from fastapi.staticfiles import StaticFiles");
+    lines.append('    app.mount("/", StaticFiles(directory=_FRONTEND_DIST, html=True), name="frontend")');
+    lines.append("");
+    lines.append("");
     lines.append('if __name__ == "__main__":');
     lines.append("    import uvicorn");
     lines.append('    uvicorn.run(app, host="0.0.0.0", port=8000)');
     lines.append("");
 
-    (out / "main.py").write_text("\n".join(lines), encoding="utf-8");
+    (backend_dir / "main.py").write_text("\n".join(lines), encoding="utf-8");
 }
 
 
-"""Write requirements.txt: only fastapi + uvicorn (no jaclang)."""
-def _emit_requirements(out: Path) {
+"""Write backend/requirements.txt: only fastapi + uvicorn (no jaclang)."""
+def _emit_requirements(backend_dir: Path) {
     lines: list[str] = ["fastapi>=0.110", "uvicorn[standard]>=0.27"];
-    (out / "requirements.txt").write_text(
+    (backend_dir / "requirements.txt").write_text(
         "\n".join(lines) + "\n", encoding="utf-8"
     );
-}
-
-
-"""Write a short README for the standalone backend."""
-def _emit_readme(out: Path, project_name: str) {
-    lines: list[str] = [
-        f"# {project_name} (ejected standalone backend)",
-        "",
-        "Generated by `jac eject` with `[eject].target = \"backend\"`. Contains zero",
-        "`.jac` files and no dependency on `jaclang`: every walker was compiled to",
-        "Python whose runtime imports were rewritten to the vendored `_osp.py`, and",
-        "each walker is exposed as a FastAPI endpoint.",
-        "",
-        "## Run it",
-        "",
-        "```bash",
-        "pip install -r requirements.txt",
-        "uvicorn main:app --reload",
-        "```",
-        "",
-        "## Layout",
-        "",
-        "```",
-        "main.py            FastAPI app, one POST /walker/<name> per walker",
-        "_osp.py            standalone Object-Spatial micro-runtime",
-        "<module>.py        compiled Jac modules (jaclib import rewritten to _osp)",
-        "requirements.txt   fastapi + uvicorn",
-        "```",
-        "",
-        "## Caveats (stage 1)",
-        "",
-        "- In-memory only: a fresh root node is created per request, with no",
-        "  persistence between calls.",
-        "- Walkers run their entry abilities on the spawn root; multi-node",
-        "  traversal (`visit`/`connect`), permissions, and `by llm()` abilities",
-        "  are not supported yet.",
-        ""
-    ];
-    (out / "README.md").write_text("\n".join(lines), encoding="utf-8");
 }

@@ -109,7 +109,13 @@ def load_eject_project_metadata(src: Path) -> dict {
 }
 
 
-"""Eject a Jac project to standalone Python + JavaScript."""
+"""Eject a Jac project to a standalone, zero-jaclang app.
+
+Produces a project-internal `ejected/` folder split into `backend/` (a FastAPI
+app compiled from the Jac walkers/functions, importing a vendored `_osp.py`
+runtime instead of jaclang) and `frontend/` (the `.cl.jac` UI compiled to
+JavaScript). Re-runnable without `--force` when the output carries our marker.
+"""
 impl eject(source: str = ".", output: str = "", force: bool = False) -> int {
     src = Path(source).resolve();
     if not src.exists() or not src.is_dir() {
@@ -135,102 +141,72 @@ impl eject(source: str = ".", output: str = "", force: bool = False) -> int {
     entry_module: str = metadata["entry_module"];
     toml_data: dict = metadata["toml_data"];
 
-    entry_path = src / entry_point;
-    if not entry_path.exists() {
-        console.warning(
-            f"Entry point '{entry_point}' not found; serve.py will need manual editing."
-        );
+    # Output lives inside the project (default `ejected/`, overridable via
+    # `[eject].output` in jac.toml or the -o flag).
+    eject_cfg = toml_data.get("eject", {});
+    if output {
+        out = Path(output).resolve();
+    } else {
+        out = (src / str(eject_cfg.get("output", "ejected"))).resolve();
     }
-
-    out = resolve_eject_output(src, output);
     if out == src {
         console.error("Output directory cannot be the same as the source directory.");
         return 1;
     }
 
-    # Dispatch on the eject target declared in jac.toml BEFORE the default-path
-    # overwrite handling: absent (or "default") keeps the original
-    # jaclang-coupled Python+JS eject below; the standalone targets emit into a
-    # project-internal folder and manage their own (re-runnable) output.
-    eject_cfg = toml_data.get("eject", {});
-    target = eject_cfg.get("target", "default");
-    if target == "backend" {
-        if output {
-            b_out = Path(output).resolve();
-        } else {
-            b_out = (src / str(eject_cfg.get("output", "ejected"))).resolve();
-        }
-        if b_out == src {
-            console.error(
-                "Eject output directory cannot be the same as the source directory."
-            );
-            return 1;
-        }
-        import from jaclang.cli.commands.eject_targets.backend { eject_backend }
-        return eject_backend(src, b_out, force, metadata);
-    } elif target in ("frontend", "fullstack") {
-        console.error(
-            f"eject target '{target}' is not supported yet (only 'backend')."
-        );
-        return 1;
-    } elif target != "default" {
-        console.error(
-            f"unknown eject target '{target}' (expected: default, backend)."
-        );
-        return 1;
-    }
-
+    # Re-runnable: regenerate freely when the directory is ours (carries the
+    # marker) or --force is given; never clobber a directory we did not create.
+    marker = out / ".jac-ejected";
     if out.exists() {
-        if not force {
+        if force or marker.exists() {
+            try {
+                shutil.rmtree(out);
+            } except Exception as e {
+                console.error(f"Failed to remove existing output directory: {e}");
+                return 1;
+            }
+        } else {
             console.error(f"Output directory already exists: {out}");
-            console.print("  Use --force to overwrite.", style="muted");
-            return 1;
-        }
-        try {
-            shutil.rmtree(out);
-        } except Exception as e {
-            console.error(f"Failed to remove existing output directory: {e}");
+            console.print(
+                "  It was not created by eject. Use --force to overwrite.",
+                style="muted"
+            );
             return 1;
         }
     }
 
     out.mkdir(parents=True);
     backend_dir = out / "backend";
-    frontend_src_dir = out / "frontend" / "src";
+    frontend_dir = out / "frontend";
+    frontend_src_dir = frontend_dir / "src";
     backend_dir.mkdir(parents=True);
     frontend_src_dir.mkdir(parents=True);
 
-    console.print(f"\n📦 Ejecting Jac project '{project_name}'", style="bold cyan");
+    console.print(f"\n📦 Ejecting '{project_name}' → standalone app", style="bold cyan");
     console.print(f"  Source: {src}");
     console.print(f"  Output: {out}\n");
 
-    # Collect every .jac file we should compile (skip impl/test files and
-    # vendored / build directories).
-    jac_files = _collect_jac_files(src);
+    # Collect sources, skipping anything inside the (project-internal) output.
+    jac_files = [f for f in _collect_jac_files(src) if out not in Path(str(f)).parents];
     if not jac_files {
         console.error("No .jac source files found to eject.");
         return 1;
     }
 
-    # Lazily import the compiler — eject is rarely invoked, so we avoid the
-    # import cost during normal CLI startup.
+    # Lazily import the compiler and AST surface — expensive at CLI startup.
     import from jaclang.jac0core.program { JacProgram }
-
-    # Imports needed to classify walkers/defs as public vs private from the
-    # AST. These modules are expensive to pull in at CLI-startup time, so
-    # we defer them to the eject path.
     import jaclang.jac0core.unitree as uni;
-    import from jaclang.jac0core.constant { Tokens as Tok, SymbolType }
+    import from jaclang.jac0core.constant { SymbolType }
 
-    py_count = 0;
     js_count = 0;
     error_count = 0;
-    entry_rel = Path(entry_point);
-    emitted_py_files: list[Path] = [];
-    public_walkers: set[str] = set();
-    public_functions: set[str] = set();
+    reserved: set = {"main", "_osp"};
+    compiled: list = [];
+    remap: dict = {};
+    walkers: list = [];
+    functions: list = [];
     for jac_file in jac_files {
-        rel = jac_file.relative_to(src);
+        rel = Path(str(jac_file)).relative_to(src);
         try {
             prog = JacProgram();
             ir = prog.compile(file_path=str(jac_file));
@@ -250,53 +226,45 @@ impl eject(source: str = ".", output: str = "", force: bool = False) -> int {
         py_code = ir.gen.py or "";
         js_code = ir.gen.js or "";
 
-        # The entry module must always be emitted even when its Python body
-        # is nothing but imports (e.g. a root main.jac that only pulls in
-        # walkers from sub-packages and declares a cl {} block): serve.py
-        # imports it by name to register those walkers/functions.
-        is_entry = rel == entry_rel;
-
-        # Harvest access modifiers (`:pub` / default) for every walker and
-        # module-level ability the file declares. The runtime's access-check
-        # path (ModuleIntrospector._extract_access_levels) normally reads
-        # these straight off the Jac AST at request time — but the ejected
-        # backend only ships compiled Python, so we seed the sets here and
-        # wire them into serve.py below.
-        for item in ir.body {
-            if isinstance(item, uni.Archetype)
-            and item.sym_category == SymbolType.WALKER_ARCH
-            and _has_pub_access(item) {
-                public_walkers.add(item.name.sym_name);
-            } elif isinstance(item, uni.Ability)
-            and item.name_ref is not None
-            and _has_pub_access(item) {
-                public_functions.add(item.name_ref.sym_name);
-            }
-        }
-
-        wrote_any = False;
-        if _is_meaningful_python(py_code) or (is_entry and py_code.strip()) {
-            py_rel = _to_py_rel_path(rel);
-            py_out = backend_dir / py_rel;
-            py_out.parent.mkdir(parents=True, exist_ok=True);
-            py_out.write_text(py_code, encoding="utf-8");
-            py_count += 1;
-            emitted_py_files.append(py_out);
-            wrote_any = True;
-        }
+        # Frontend half: compiled JavaScript (.cl.jac and cl {} blocks).
         if js_code.strip() {
             js_rel = _to_js_rel_path(rel);
             js_out = frontend_src_dir / js_rel;
             js_out.parent.mkdir(parents=True, exist_ok=True);
             js_out.write_text(_inject_runtime_imports(js_code), encoding="utf-8");
             js_count += 1;
-            wrote_any = True;
         }
-        if wrote_any {
-            console.print(f"  ✔ {rel}", style="success");
-        } else {
-            console.print(f"  · {rel} (no output)", style="muted");
+
+        # Backend half: server-side Python only. A `.cl.jac` file is
+        # client-only — the compiler still emits Python for it, but that is a
+        # frontend artifact (its `app`/components are not API endpoints), so it
+        # never goes to the backend. Pick the emitted module name, renaming any
+        # collision with a generated file (main/_osp).
+        stem = str(_strip_jac_suffix(rel.name));
+        bmod = stem;
+        if stem in reserved {
+            bmod = f"_jac_{stem}";
+            remap[stem] = bmod;
         }
+        is_client = rel.name.endswith(_CL_SUFFIX);
+        server = _is_meaningful_python(py_code) and (not is_client);
+
+        if server {
+            for item in ir.body {
+                if isinstance(item, uni.Archetype)
+                and item.sym_category == SymbolType.WALKER_ARCH {
+                    walkers.append({
+                        "name": str(item.name.sym_name), "module": bmod
+                    });
+                } elif isinstance(item, uni.Ability) and item.name_ref is not None {
+                    functions.append({
+                        "name": str(item.name_ref.sym_name), "module": bmod
+                    });
+                }
+            }
+        }
+        compiled.append({"module": bmod, "py": py_code, "server": server});
+        console.print(f"  ✔ {rel}", style="success");
     }
 
     if error_count > 0 {
@@ -306,38 +274,37 @@ impl eject(source: str = ".", output: str = "", force: bool = False) -> int {
         return 1;
     }
 
-    # Copy every non-.jac source file into both backend/ and frontend/src/
-    # so paths referenced by the compiled Python (e.g. services/config/*.json,
-    # services/docs/*.md) and by the compiled JavaScript (e.g. ./global.css,
-    # ../styles/*.css) resolve at runtime without per-project bookkeeping.
-    _copy_data_files(src, backend_dir, frontend_src_dir, out / "frontend");
+    # Backend: FastAPI app + vendored runtime (delegated to the target emitter).
+    import from jaclang.cli.commands.eject_targets.backend { emit_backend }
+    rc = emit_backend(backend_dir, project_name, compiled, walkers, functions, remap);
+    if rc != 0 {
+        return rc;
+    }
 
-    # Copy the client runtime emitted by the Jac client build so the ejected
-    # frontend can resolve imports from "@jac/runtime" without depending on
-    # the external `jac-client-node` meta-package or the Jac build toolchain.
-    runtime_copied = _copy_client_runtime(src, out / "frontend");
-
-    # Generate boilerplate.
-    _emit_requirements_txt(backend_dir, toml_data, emitted_py_files);
-    _emit_serve_py(backend_dir, entry_module, public_walkers, public_functions);
-    _emit_package_json(out / "frontend", project_name, toml_data);
-    _emit_vite_config(out / "frontend", runtime_copied);
+    # Frontend: vendor the client runtime and emit the Vite/React boilerplate
+    # (the Vite dev server proxies /walker and /function to the FastAPI backend).
+    runtime_copied = _copy_client_runtime(src, frontend_dir);
+    _emit_package_json(frontend_dir, project_name, toml_data);
+    _emit_vite_config(frontend_dir, runtime_copied);
     _emit_entry_js(frontend_src_dir, entry_module);
-    _emit_index_html(out / "frontend", project_name);
-    _emit_run_script(out);
-    _emit_readme(out, project_name, entry_module);
+    _emit_index_html(frontend_dir, project_name);
+
+    marker.write_text(
+        "Generated by `jac eject`. Safe to delete.\n", encoding="utf-8"
+    );
 
     console.print();
     console.success(f"Ejected '{project_name}' → {out}");
     console.print(
-        f"  {py_count} Python file(s), {js_count} JavaScript file(s)", style="muted"
+        f"  backend: {len(walkers)} walker(s), {len(functions)} function(s)"
+        f"   frontend: {js_count} JS module(s)",
+        style="muted"
     );
     console.print();
     console.print("Next steps:", style="bold");
     console.print(f"  cd {out}");
-    console.print("  pip install -r backend/requirements.txt");
-    console.print("  (cd frontend && npm install)");
-    console.print("  ./run.sh");
+    console.print("  (cd frontend && npm install && npm run build)");
+    console.print("  cd backend && pip install -r requirements.txt && uvicorn main:app");
     console.print();
     return 0;
 }
