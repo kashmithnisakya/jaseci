@@ -9,7 +9,15 @@ import from jaclang.cli.console { console }
 
 # Modules we generate ourselves; a compiled module whose stem collides is
 # renamed and references to it are rewritten across the other modules.
-glob _RESERVED_MODULES: set = {"main"};
+glob _RESERVED_MODULES: set = {"main"},
+     # jaclang companion packages a compiled module may import implicitly (not in
+     # jac.toml). Detected in the emitted Python and added to requirements.txt so
+     # `pip install` produces a runnable backend.
+     _IMPLICIT_PY_DEPS: dict = {
+         "byllm": "byllm",
+         "jac_cloud": "jac-cloud",
+         "jac_client": "jac-client"
+     };
 
 
 """Emit the FastAPI backend into `backend_dir` from the orchestrator's
@@ -36,6 +44,7 @@ def emit_backend(
 
     walker_fields: dict = {};
     func_params: dict = {};
+    emitted_codes: list = [];
     written = 0;
     for unit in compiled {
         if not unit["server"] {
@@ -44,12 +53,32 @@ def emit_backend(
         module = str(unit["module"]);
         code = _rewrite_imports(str(unit["py"]), remap);
         (backend_dir / f"{module}.py").write_text(code, encoding="utf-8");
+        emitted_codes.append(code);
         written += 1;
         walker_fields.update(_extract_walker_fields(code, walker_names));
         func_params.update(_extract_func_params(code, func_names));
     }
     if written == 0 {
         console.error("  backend: no server-side Python to emit.");
+        return 1;
+    }
+
+    # Each walker/function name maps 1:1 to an HTTP route and a main.py import,
+    # so a name reused across modules would shadow the import and collide routes.
+    dup = _first_duplicate([str(w["name"]) for w in walkers]);
+    if dup {
+        console.error(
+            f"  backend: duplicate walker name '{dup}' across modules; "
+            "walker names must be unique to expose them as endpoints."
+        );
+        return 1;
+    }
+    dup = _first_duplicate([str(f["name"]) for f in functions]);
+    if dup {
+        console.error(
+            f"  backend: duplicate function name '{dup}' across modules; "
+            "function names must be unique to expose them as endpoints."
+        );
         return 1;
     }
 
@@ -79,8 +108,45 @@ def emit_backend(
     }
 
     _emit_main_py(backend_dir, project_name, walkers_full, functions_full);
-    _emit_requirements(backend_dir);
+    _emit_requirements(backend_dir, _detect_plugins(emitted_codes));
     return 0;
+}
+
+
+"""Return the first name that repeats in `names`, or "" if all are unique."""
+def _first_duplicate(names: list) -> str {
+    seen: set = set();
+    for n in names {
+        s = str(n);
+        if s in seen {
+            return s;
+        }
+        seen.add(s);
+    }
+    return "";
+}
+
+
+"""Scan emitted backend Python for imports of known jaclang companion
+packages (byllm, jac-cloud, ...) and return the pip names to add."""
+def _detect_plugins(codes: list) -> list {
+    found: set = set();
+    for code in codes {
+        for raw in str(code).splitlines() {
+            line = raw.strip();
+            for (mod, pkg) in _IMPLICIT_PY_DEPS.items() {
+                m = str(mod);
+                if (line == "import " + m)
+                or line.startswith("import " + m + " ")
+                or line.startswith("import " + m + ".")
+                or line.startswith("from " + m + " ")
+                or line.startswith("from " + m + ".") {
+                    found.add(str(pkg));
+                }
+            }
+        }
+    }
+    return sorted(list(found));
 }
 
 
@@ -469,9 +535,13 @@ def _jaclang_req -> str {
 }
 
 
-"""Write backend/requirements.txt: jaclang runtime + fastapi + uvicorn."""
-def _emit_requirements(backend_dir: Path) {
+"""Write backend/requirements.txt: jaclang + fastapi + uvicorn, plus any
+implicit jaclang companion packages detected in the emitted Python."""
+def _emit_requirements(backend_dir: Path, plugins: list) {
     lines: list[str] = [_jaclang_req(), "fastapi>=0.110", "uvicorn[standard]>=0.27"];
+    for p in plugins {
+        lines.append(str(p));
+    }
     (backend_dir / "requirements.txt").write_text(
         "\n".join(lines) + "\n", encoding="utf-8"
     );
