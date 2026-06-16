@@ -156,7 +156,8 @@ def _extract_walker_fields(py_code: str, walker_names: set) -> dict {
 }
 
 
-"""Extract each public function's parameters from the compiled Python."""
+"""Extract each public function's parameters (with defaults) from the
+compiled Python. Returns {func_name: [{name, type, has_default, default}]}."""
 def _extract_func_params(py_code: str, func_names: set) -> dict {
     result: dict = {};
     try {
@@ -167,15 +168,31 @@ def _extract_func_params(py_code: str, func_names: set) -> dict {
     for node in tree.body {
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         and (node.name in func_names) {
+            all_args = node.args.args;
+            defaults = node.args.defaults;
+            # Python aligns the defaults list to the LAST len(defaults) args.
+            first_default = len(all_args) - len(defaults);
             params: list = [];
-            for arg in node.args.args {
+            for i in range(len(all_args)) {
+                arg = all_args[i];
                 if arg.arg == "self" {
                     continue;
                 }
                 ptype = ast.unparse(arg.annotation)
                     if arg.annotation is not None
                     else "object";
-                params.append({"name": arg.arg, "type": ptype});
+                has_default = i >= first_default;
+                default_src = ast.unparse(defaults[i - first_default])
+                    if has_default
+                    else None;
+                params.append(
+                    {
+                        "name": arg.arg,
+                        "type": ptype,
+                        "has_default": has_default,
+                        "default": default_src
+                    }
+                );
             }
             result[node.name] = params;
         }
@@ -375,7 +392,15 @@ def _emit_main_py(
         lines.append("class " + model + "(BaseModel):");
         if f["params"] {
             for p in f["params"] {
-                lines.append("    " + str(p["name"]) + ": " + str(p["type"]));
+                pname = str(p["name"]);
+                ptype = str(p["type"]);
+                if p["has_default"] {
+                    lines.append(
+                        "    " + pname + ": " + ptype + " = " + str(p["default"])
+                    );
+                } else {
+                    lines.append("    " + pname + ": " + ptype);
+                }
             }
         } else {
             lines.append("    pass");
