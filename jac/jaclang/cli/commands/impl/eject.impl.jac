@@ -37,8 +37,7 @@ Returns a dict with the keys eject needs to drive its emit pipeline:
 - `entry_point`: the raw entry-point filename from jac.toml (default
   `"main.jac"`).
 - `entry_module`: the entry-point stem with `.sv.jac` / `.cl.jac` / `.jac`
-  suffixes stripped (e.g. `"main"`), suitable for use as a Python module
-  name in the generated `serve.py`.
+  suffixes stripped (e.g. `"main"`), used as the frontend entry module name.
 - `toml_data`: the raw parsed jac.toml so plugins can read other sections
   (e.g. `[plugins.scale]`, `[dependencies.npm]`) without re-parsing.
 
@@ -245,7 +244,7 @@ impl eject(source: str = ".", output: str = "", force: bool = False) -> int {
         return 1;
     }
 
-    # Backend: FastAPI app + vendored runtime (delegated to the target emitter).
+    # Backend: FastAPI app over the jaclang runtime (delegated to the emitter).
     import from jaclang.cli.commands.eject_targets.backend { emit_backend }
     rc = emit_backend(backend_dir, project_name, compiled, walkers, functions, remap);
     if rc != 0 {
@@ -426,8 +425,8 @@ def _emit_package_json(frontend_dir: Path, project_name: str, toml_data: dict) {
 
 Vite serves the static frontend on its dev server port; all requests under
 /walker, /function, /user, /cl, /functions, /walkers are forwarded to the
-backend so the SPA can talk to the ejected serve.py without any CORS
-plumbing in the user's code.
+FastAPI backend so the SPA can call the API without any CORS plumbing during
+local dev.
 
 When `runtime_copied` is True, also emits a resolve.alias mapping the
 "@jac/runtime" bare specifier (hardcoded throughout the compiled frontend
@@ -436,10 +435,9 @@ This is what allows the ejected SPA to load in the browser without
 depending on the `jac-client-node` meta-package or the Jac build.
 """
 def _emit_vite_config(frontend_dir: Path, runtime_copied: bool) {
-    # Proxy target honours $BACKEND_PORT (set by run.sh from $PORT) so a
-    # custom backend port flows through to the Vite proxy without the user
-    # having to edit vite.config.js. Falls back to 8000 for parity with
-    # run.sh's own default when neither env var is set.
+    # Proxy target honours $BACKEND_PORT so a custom backend port flows through
+    # to the Vite proxy without editing vite.config.js; falls back to the
+    # backend's own default of 8000 when the env var is not set.
     header: list[str] = [
         'import path from "path";',
         'import { fileURLToPath } from "url";',

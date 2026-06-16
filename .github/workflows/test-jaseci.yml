@@ -606,8 +606,8 @@ jobs:
         fi
 
     # ========== fullstack eject smoke ==========
-    # End-to-end: the ejected zero-jaclang FastAPI backend must install with
-    # only fastapi + uvicorn and serve HTTP. Codegen unit tests: test_eject.jac.
+    # End-to-end: the ejected FastAPI backend (jaclang + fastapi + uvicorn) must
+    # install and serve HTTP. Codegen unit tests live in test_eject.jac.
     - name: Create fullstack project and eject it
       run: |
         jac create --use fullstack fs-smoke
