@@ -52,7 +52,19 @@ def emit_backend(
         }
         module = str(unit["module"]);
         code = _rewrite_imports(str(unit["py"]), remap);
-        (backend_dir / f"{module}.py").write_text(code, encoding="utf-8");
+        # Dotted module (pkg.util) -> pkg/util.py, with __init__.py in each
+        # package dir so the compiler's dotted imports resolve at runtime.
+        dest = backend_dir / (module.replace(".", "/") + ".py");
+        dest.parent.mkdir(parents=True, exist_ok=True);
+        pkg_dir = dest.parent;
+        while pkg_dir != backend_dir {
+            init_file = pkg_dir / "__init__.py";
+            if not init_file.exists() {
+                init_file.write_text("", encoding="utf-8");
+            }
+            pkg_dir = pkg_dir.parent;
+        }
+        dest.write_text(code, encoding="utf-8");
         emitted_codes.append(code);
         written += 1;
         walker_fields.update(_extract_walker_fields(code, walker_names));

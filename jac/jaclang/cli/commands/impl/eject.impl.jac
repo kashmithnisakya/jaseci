@@ -202,13 +202,17 @@ impl eject(source: str = ".", output: str = "", force: bool = False) -> int {
         }
 
         # Backend half: server-side Python only — `.cl.jac` output is a
-        # frontend artifact and never goes to the backend. A module stem that
-        # collides with the generated main.py is renamed via remap.
+        # frontend artifact and never goes to the backend. The module keeps its
+        # dotted path (pkg/util.sv.jac -> pkg.util) so nested modules don't
+        # collide on filename and the compiler's dotted imports resolve; a
+        # top-level stem that collides with the generated main.py is remapped.
         stem = str(_strip_jac_suffix(rel.name));
-        bmod = stem;
-        if stem in reserved {
+        parent_parts = [str(p) for p in rel.parent.parts];
+        if (len(parent_parts) == 0) and (stem in reserved) {
             bmod = f"_jac_{stem}";
             remap[stem] = bmod;
+        } else {
+            bmod = ".".join(parent_parts + [stem]);
         }
         is_client = rel.name.endswith(_CL_SUFFIX);
         server = _is_meaningful_python(py_code) and (not is_client);
