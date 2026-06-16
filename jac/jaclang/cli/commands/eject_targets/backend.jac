@@ -10,9 +10,7 @@ import from jaclang.cli.console { console }
 # jaclang companion packages a compiled module may import implicitly (not in
 # jac.toml). Detected in the emitted Python and added to requirements.txt so
 # `pip install` produces a runnable backend.
-glob _IMPLICIT_PY_DEPS: dict = {
-         "byllm": "byllm"
-     };
+glob _IMPLICIT_PY_DEPS: dict = {"byllm": "byllm"};
 
 
 """Emit the FastAPI backend into `backend_dir` from the orchestrator's
