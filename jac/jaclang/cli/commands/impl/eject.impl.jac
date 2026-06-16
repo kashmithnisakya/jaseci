@@ -253,8 +253,13 @@ impl eject(source: str = ".", output: str = "", force: bool = False) -> int {
     }
 
     # Backend: FastAPI app over the jaclang runtime (delegated to the emitter).
+    # `[eject.db]` (e.g. `driver = "sqlalchemy"`) selects the persistence
+    # backend; default (empty) keeps the runtime's built-in zero-dep SQLite.
+    db_cfg = dict(eject_cfg.get("db", {}));
     import from jaclang.cli.commands.eject_targets.backend { emit_backend }
-    rc = emit_backend(backend_dir, project_name, compiled, walkers, functions, remap);
+    rc = emit_backend(
+        backend_dir, project_name, compiled, walkers, functions, remap, db_cfg
+    );
     if rc != 0 {
         return rc;
     }
