@@ -308,21 +308,7 @@ def _collect_jac_files(src: Path) -> list[Path] {
             continue;
         }
         rel = path.relative_to(src);
-        rel_parts = list(rel.parts);
-        excluded = False;
-        # Check parent directory parts (everything except the filename itself).
-        for i in range(len(rel_parts) - 1) {
-            part = rel_parts[i];
-            if part in _SKIP_DIRS {
-                excluded = True;
-                break;
-            }
-            if part.startswith(".") {
-                excluded = True;
-                break;
-            }
-        }
-        if excluded {
+        if _dir_excluded(rel) {
             continue;
         }
         name = path.name;
@@ -332,6 +318,20 @@ def _collect_jac_files(src: Path) -> list[Path] {
         results.append(path);
     }
     return results;
+}
+
+
+"""True iff any parent directory of `rel` is a build/vendor dir (_SKIP_DIRS)
+or hidden (dot-prefixed). The filename itself is not checked."""
+def _dir_excluded(rel: Path) -> bool {
+    rel_parts = list(rel.parts);
+    for i in range(len(rel_parts) - 1) {
+        part = rel_parts[i];
+        if (part in _SKIP_DIRS) or part.startswith(".") {
+            return True;
+        }
+    }
+    return False;
 }
 
 
@@ -546,18 +546,10 @@ def _copy_data_files(
             continue;
         }
         rel = path.relative_to(src);
-        rel_parts = list(rel.parts);
-        excluded = False;
-        for i in range(len(rel_parts) - 1) {
-            part = rel_parts[i];
-            if (part in _SKIP_DIRS) or part.startswith(".") {
-                excluded = True;
-                break;
-            }
-        }
-        if excluded {
+        if _dir_excluded(rel) {
             continue;
         }
+        rel_parts = list(rel.parts);
         if path.name.startswith(".") {
             continue;
         }

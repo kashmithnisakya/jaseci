@@ -7,13 +7,10 @@ import from pathlib { Path }
 import from jaclang.cli.console { console }
 
 
-# Modules we generate ourselves; a compiled module whose stem collides is
-# renamed and references to it are rewritten across the other modules.
-glob _RESERVED_MODULES: set = {"main"},
-     # jaclang companion packages a compiled module may import implicitly (not in
-     # jac.toml). Detected in the emitted Python and added to requirements.txt so
-     # `pip install` produces a runnable backend.
-     _IMPLICIT_PY_DEPS: dict = {
+# jaclang companion packages a compiled module may import implicitly (not in
+# jac.toml). Detected in the emitted Python and added to requirements.txt so
+# `pip install` produces a runnable backend.
+glob _IMPLICIT_PY_DEPS: dict = {
          "byllm": "byllm",
          "jac_cloud": "jac-cloud",
          "jac_client": "jac-client"
