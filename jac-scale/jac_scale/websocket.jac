@@ -51,6 +51,7 @@ obj WebSocketConnectionManager {
         _by_user: dict[str, int] = {},
         _anon_by_target: dict[str, int] = {},
         _lock: (Lock | None) = None,
+        _sub_lock: (Lock | None) = None,
         max_per_target: int = 5000,
         max_per_user: int = 10,
         max_anonymous_per_target: int = 100,
@@ -73,6 +74,18 @@ obj WebSocketConnectionManager {
             self._lock = Lock();
         }
         return self._lock;
+    }
+
+    def _get_sub_lock -> Lock {
+        if self._sub_lock is None {
+            self._sub_lock = Lock();
+        }
+        return self._sub_lock;
+    }
+
+    def _target_has_connections(target_key: str) -> bool {
+        per_target = self._by_target.get(target_key);
+        return per_target is not None and len(per_target) > 0;
     }
 
     def _get_backplane -> BaseBackplane {
@@ -225,28 +238,53 @@ impl WebSocketConnectionManager.shutdown -> None {
 }
 
 impl WebSocketConnectionManager.ensure_subscribed(target_key: str) -> None {
-    if target_key in self._subscribed {
-        return;
+    # `_sub_lock` serializes the check/await/mutate sequence with
+    # `maybe_unsubscribe` so a reconnect can't slip past a concurrent
+    # unsubscribe and end up registered with no backplane subscription.
+    sub_lock = self._get_sub_lock();
+    await sub_lock.acquire();
+    try {
+        if target_key in self._subscribed {
+            return;
+        }
+        await self.ensure_backplane_started();
+        # Re-check liveness right before subscribing (no await in between):
+        # the connection that triggered this may already be gone.
+        if not self._target_has_connections(target_key) {
+            return;
+        }
+        backplane = self._get_backplane();
+        channel = f"ws:{target_key}";
+        await backplane.subscribe(channel, self._on_backplane_message);
+        self._subscribed.add(target_key);
+    } finally {
+        sub_lock.release();
     }
-    await self.ensure_backplane_started();
-    backplane = self._get_backplane();
-    channel = f"ws:{target_key}";
-    await backplane.subscribe(channel, self._on_backplane_message);
-    self._subscribed.add(target_key);
 }
 
 impl WebSocketConnectionManager.maybe_unsubscribe(target_key: str) -> None {
-    if target_key not in self._subscribed {
-        return;
-    }
-    backplane = self._get_backplane();
-    channel = f"ws:{target_key}";
+    sub_lock = self._get_sub_lock();
+    await sub_lock.acquire();
     try {
-        await backplane.unsubscribe(channel, self._on_backplane_message);
-    } except Exception as e {
-        logger.debug(f"WS unsubscribe {channel} failed: {e}");
+        if target_key not in self._subscribed {
+            return;
+        }
+        # A reconnect may have re-populated this target after unregister
+        # released the connection lock; keep the subscription if so.
+        if self._target_has_connections(target_key) {
+            return;
+        }
+        backplane = self._get_backplane();
+        channel = f"ws:{target_key}";
+        try {
+            await backplane.unsubscribe(channel, self._on_backplane_message);
+        } except Exception as e {
+            logger.debug(f"WS unsubscribe {channel} failed: {e}");
+        }
+        self._subscribed.discard(target_key);
+    } finally {
+        sub_lock.release();
     }
-    self._subscribed.discard(target_key);
 }
 
 impl WebSocketConnectionManager._on_backplane_message(

@@ -76,7 +76,10 @@ obj JacScaleUserManager(UserManager) {
     # JWT methods (use user_id as claim)
     def create_jwt_token(user_id: str, include_role: bool = True) -> str;
     def validate_jwt_token(token: str) -> str | None;
-    def validate_jwt_token_detail(token: str | None) -> dict[str, Any];
+    def validate_jwt_token_detail(
+        token: str | None, check_existence: bool = True
+    ) -> dict[str, Any];
+
     def refresh_jwt_token(token: str) -> str | None;
     def get_jwt_claims(token: str) -> dict | None;
     # SSO methods

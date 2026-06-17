@@ -852,6 +852,17 @@ async def _ws_handle_control(
             await websocket.close(code=WS_CLOSE_UNAUTHORIZED, reason=detail['status']);
             return 'break';
         }
+        if detail.get('user_id') != ctx.user_id {
+            await websocket.send_json(
+                _ws_error_frame(
+                    'UNAUTHORIZED', 'Token refresh failed', 'identity_mismatch'
+                )
+            );
+            await websocket.close(
+                code=WS_CLOSE_UNAUTHORIZED, reason='identity_mismatch'
+            );
+            return 'break';
+        }
         ctx.user_id = detail.get('user_id');
         ctx.exp = detail.get('exp');
         await websocket.send_json({'type': 'refreshed', 'ok': True});
@@ -989,7 +1000,10 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
         }
         try {
             while True {
-                if first_data is not None {
+                if first_data {
+                    # Truthy (not just `is not None`): a bare `{"token": ...}`
+                    # handshake leaves an empty dict, which must not be replayed
+                    # as a phantom walker spawn.
                     data = first_data;
                     first_data = None;
                 } else {
@@ -1129,7 +1143,10 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
         }
         try {
             while True {
-                if first_data is not None {
+                if first_data {
+                    # Truthy (not just `is not None`): a bare `{"token": ...}`
+                    # handshake leaves an empty dict, which must not be replayed
+                    # as a phantom function call.
                     data = first_data;
                     first_data = None;
                 } else {

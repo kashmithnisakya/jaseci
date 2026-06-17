@@ -237,7 +237,7 @@ impl JacScaleUserManager.get_jwt_claims(token: str) -> dict | None {
 
 """Validate a JWT token and return structured detail."""
 impl JacScaleUserManager.validate_jwt_token_detail(
-    token: str | None
+    token: str | None, check_existence: bool = True
 ) -> dict[str, Any] {
     if not token {
         return {
@@ -284,7 +284,7 @@ impl JacScaleUserManager.validate_jwt_token_detail(
             'reason': 'Token missing user_id claim'
         };
     }
-    if not self.user_exists(user_id) {
+    if check_existence and not self.user_exists(user_id) {
         return {
             'status': 'unknown_user',
             'user_id': None,
@@ -300,9 +300,12 @@ impl JacScaleUserManager.validate_jwt_token_detail(
     };
 }
 
-"""Thin wrapper returning just user_id if valid, None otherwise."""
+"""Thin wrapper returning just user_id if valid, None otherwise.
+
+Signature-only (`check_existence=False`): this is the shared per-request HTTP
+auth path, so it must not add a DB lookup to every authenticated request."""
 impl JacScaleUserManager.validate_jwt_token(token: str) -> str | None {
-    result = self.validate_jwt_token_detail(token);
+    result = self.validate_jwt_token_detail(token, check_existence=False);
     return result.get('user_id') if result.get('status') == 'ok' else None;
 }
 
