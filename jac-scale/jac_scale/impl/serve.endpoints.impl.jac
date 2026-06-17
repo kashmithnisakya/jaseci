@@ -1190,6 +1190,11 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
                     target_timeout
                 );
                 if not ok {
+                    if is_streaming {
+                        await send_result(
+                            {'type': MessageType.DONE.value, 'ok': False}
+                        );
+                    }
                     continue;
                 }
                 if is_streaming {
