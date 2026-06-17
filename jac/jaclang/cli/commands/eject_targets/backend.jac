@@ -185,8 +185,19 @@ class SqlAlchemyMemory(PersistentMemory):
         return None
 
     def query(self, filter=None):
+        seen = set()
         for anchor in list(self._mem.values()):
+            seen.add(anchor.id)
             if filter is None or filter(anchor):
+                yield anchor
+        with self._engine.connect() as conn:
+            rows = conn.execute(select(_anchors.c.id)).fetchall()
+        for (rid,) in rows:
+            uid = UUID(rid)
+            if uid in seen:
+                continue
+            anchor = self.get(uid)
+            if anchor is not None and (filter is None or filter(anchor)):
                 yield anchor
 
     # ---- write path ----
