@@ -268,7 +268,7 @@ impl eject(source: str = ".", output: str = "", force: bool = False) -> int {
     if has_frontend {
         runtime_copied = _copy_client_runtime(src, frontend_dir);
         _emit_package_json(frontend_dir, project_name, toml_data);
-        _emit_vite_config(frontend_dir, runtime_copied);
+        _emit_vite_config(frontend_dir, runtime_copied, toml_data);
         _emit_entry_js(frontend_src_dir, entry_module);
         _emit_index_html(frontend_dir, project_name);
     } else {
@@ -483,13 +483,27 @@ def _emit_package_json(frontend_dir: Path, project_name: str, toml_data: dict) {
 """Write frontend/vite.config.js: dev-server proxy forwarding API routes
 (/walker, /function, /user, ...) to the FastAPI backend, and (when
 `runtime_copied`) a resolve.alias for "@jac/runtime" -> src/__jac_runtime.js."""
-def _emit_vite_config(frontend_dir: Path, runtime_copied: bool) {
+def _emit_vite_config(frontend_dir: Path, runtime_copied: bool, toml_data: dict) {
+    # Carry over the project's Vite plugins/imports from `[plugins.client.vite]`
+    # (jac.toml) so plugin-driven tooling like Tailwind v4's `@tailwindcss/vite`
+    # still runs; without it `@import "tailwindcss"` emits no utilities and the
+    # ejected site renders unstyled.
+    vite_cfg = dict(toml_data.get("plugins", {}).get("client", {}).get("vite", {}));
+    lib_imports = [str(i) for i in vite_cfg.get("lib_imports", [])];
+    plugins = [str(p) for p in vite_cfg.get("plugins", [])];
+
     # Proxy target honours $BACKEND_PORT so a custom backend port flows through
     # to the Vite proxy without editing vite.config.js; falls back to the
     # backend's own default of 8000 when the env var is not set.
     header: list[str] = [
         'import path from "path";',
-        'import { fileURLToPath } from "url";',
+        'import { fileURLToPath } from "url";'
+    ];
+    for lib_import in lib_imports {
+        line = lib_import if lib_import.rstrip().endswith(";") else (lib_import + ";");
+        header.append(line);
+    }
+    header += [
         '',
         'const __dirname = path.dirname(fileURLToPath(import.meta.url));',
         'const _backendPort = process.env.BACKEND_PORT || "8000";',
@@ -499,6 +513,14 @@ def _emit_vite_config(frontend_dir: Path, runtime_copied: bool) {
         'export default {',
 
     ];
+    plugins_block: list[str] = [];
+    if plugins {
+        plugins_block.append('  plugins: [');
+        for plugin in plugins {
+            plugins_block.append('    ' + plugin + ',');
+        }
+        plugins_block.append('  ],');
+    }
     resolve_block: list[str] = [];
     if runtime_copied {
         resolve_block = [
@@ -524,7 +546,7 @@ def _emit_vite_config(frontend_dir: Path, runtime_copied: bool) {
         '};',
         ''
     ];
-    lines: list[str] = header + resolve_block + server_block;
+    lines: list[str] = header + plugins_block + resolve_block + server_block;
     (frontend_dir / "vite.config.js").write_text("\n".join(lines), encoding="utf-8");
 }
 
