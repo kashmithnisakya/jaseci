@@ -742,8 +742,8 @@ def _emit_main_py(
         'import json',
         'import os',
         'from typing import '
-            'Any, Dict, Iterable, List, Literal, Mapping, '
-            'Optional, Sequence, Set, Tuple, Union',
+        'Any, Dict, Iterable, List, Literal, Mapping, '
+        'Optional, Sequence, Set, Tuple, Union',
         '',
         'from fastapi import FastAPI, Header, HTTPException',
         'from fastapi.middleware.cors import CORSMiddleware',
