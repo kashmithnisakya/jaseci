@@ -636,9 +636,12 @@ def _copy_data_files(
             copied = True;
             continue;
         }
-        dest_b = backend_dir / rel;
-        dest_b.parent.mkdir(parents=True, exist_ok=True);
-        shutil.copy2(path, dest_b);
+        is_frontend_only = path.suffix == ".css";
+        if not (has_frontend and is_frontend_only) {
+            dest_b = backend_dir / rel;
+            dest_b.parent.mkdir(parents=True, exist_ok=True);
+            shutil.copy2(path, dest_b);
+        }
         if has_frontend {
             dest_f = frontend_src_dir / rel;
             dest_f.parent.mkdir(parents=True, exist_ok=True);
