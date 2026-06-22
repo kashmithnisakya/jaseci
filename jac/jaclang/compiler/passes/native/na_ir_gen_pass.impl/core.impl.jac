@@ -24,7 +24,16 @@ impl NaIRGenPass.postinit -> None {
         _llvm_bind.initialize_native_target();
         _target = _llvm_bind.Target.from_default_triple();
     }
-    _tm = _target.create_target_machine();
+    # codemodel="large" (not the default "jitdefault"): llvmlite appends
+    # "-elf" to the triple when os.name == "nt" and codemodel == "jitdefault",
+    # which would stamp a bogus "...-windows-msvc-elf" triple onto the module
+    # on a Windows host. This site only reads the triple/data layout, so any
+    # non-"jitdefault" model keeps the triple intact (the code model does not
+    # otherwise affect it here). "large" mirrors nacompile's executable branch;
+    # its shared branch uses "small", but the data layout is identical across
+    # code models on x86_64, so the stamped module metadata stays valid for
+    # either emit path. The relocation-model coupling lives at that emit site.
+    _tm = _target.create_target_machine(codemodel="large");
     self.llvm_module.data_layout = str(_tm.target_data);
     self.llvm_module.triple = _tm.triple;
     # DWARF debug metadata — populated below when JAC_NATIVE_DEBUG=1
@@ -77,6 +86,10 @@ impl NaIRGenPass.postinit -> None {
         self.type_map["bool"] = _spec_map["i1"];
         self.type_map["str"] = _spec_map["i8*"];
     }
+    # `LiteralString` (the checker's type for string literals) is `str` at
+    # runtime — alias it so literal-typed values lower like any other string
+    # (e.g. the element of `iter("hi")` -> Iterator[LiteralString]).
+    self.type_map["LiteralString"] = self.type_map.get("str", _spec_map["i8*"]);
 
     # Initialize LLVM struct types that depend on llvm_module.context
     self.complex_struct_type = self.llvm_module.context.get_identified_type(
@@ -103,11 +116,11 @@ impl NaIRGenPass.transform(ir_in: uni.Module) -> uni.Module {
     if (self.prog._auto_promote_native and self.ir_in.gen.native_compat) {
         mod_path = self.ir_in.loc.mod_path if self.ir_in.loc else "";
         main_target = self.prog._auto_promote_target;
+        import from jaclang.jac0core.ext_registry { is_native_module, is_annex }
         if (
             mod_path == main_target
-            and not mod_path.endswith('.na.jac')
-            and not mod_path.endswith('.impl.jac')
-            and not mod_path.endswith('.test.jac')
+            and not is_native_module(mod_path)
+            and not is_annex(mod_path)
         ) {
             import from jaclang.jac0core.compiler { _coerce_native_module }
             _coerce_native_module(self.ir_in);
@@ -578,15 +591,12 @@ impl NaIRGenPass._register_imported_struct_types -> None {
     for (_, imported_mod) in imported_mods {
         self._register_imported_hierarchy(imported_mod);
     }
-    # ── Phase 1a.5: mark imported OSP archetypes (issue #6642 Blocker 2) ──────
-    # Before bodies are laid out, so an imported node/walker/edge reserves the
-    # OSP header (vtable + __type_tag) matching its defining module and gets its
-    # globally-stable tag. Tags are content hashes (see _register_osp_tags), so
-    # a library and any importer agree regardless of what else either defines --
-    # no sorted-order fragility, materialization is always sound.
-    for (_, imported_mod) in imported_mods {
-        self._register_imported_osp_archetypes(imported_mod);
-    }
+    # Imported OSP archetypes need no separate registration: their ASTs are
+    # already in `arch_ast_map` (Phase 1a), OSP-ness is read straight off each
+    # archetype (`arch.arch_kind`) where layout reserves the header, and
+    # `_compute_osp_model` folds them into the single OSP store with their
+    # globally-stable content-hash tags so a library and any importer agree
+    # (#6642 Blocker 2, #6659).
     # ── Phase 1b: fill ALL struct bodies, enums, globals ─────────────────────
     for (_, imported_mod) in imported_mods {
         self._walk_imported_module_types(imported_mod);
@@ -714,7 +724,7 @@ impl NaIRGenPass._forward_declare_archetype_methods(arch: uni.Archetype) -> None
             and isinstance(stmt.signature, uni.FuncSignature) {
                 self._forward_declare_method(aname, stmt);
             } elif isinstance(stmt.signature, uni.EventSignature)
-            and (aname in self.osp_arch_kind) {
+            and (arch.arch_kind is not None) {
                 # An imported OSP event ability (`can ... with T entry`): the
                 # body is linked from the defining module, but the consumer must
                 # forward-declare it and build its kernel dispatch thunk so its

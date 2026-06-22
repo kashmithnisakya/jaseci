@@ -9,6 +9,7 @@ import sys;
 import types;
 import from jaclang.cli.console { console }
 import from jaclang.cli.commands.cli_helpers { proc_file as _proc_file }
+import from jaclang.jac0core.ext_registry { is_native_module }
 
 """Discover jac.toml from the file's directory when an absolute/relative path is given.
 
@@ -94,7 +95,7 @@ def _print_plan(plan: object) {
     }
 }
 
-"""True if an optional plugin package (e.g. 'jac-client') is importable."""
+"""True if an optional plugin package (e.g. 'jac-scale') is importable."""
 def _plugin_available(pkg: str) -> bool {
     import importlib.util;
     try {
@@ -145,7 +146,7 @@ def _execute_plan(
             );
             return 1;
         }
-        # api-service / microservices / fullstack / wasm are valid core `start`
+        # api-service / microservices / fullstack / client are valid core `start`
         # invocations; the client plugin (when present) hooks in during start.
         # The plan carries the project's [serve] port (from jac.toml) in flags.
         return start(
@@ -271,17 +272,10 @@ impl run(
     }
     # Re-discover config from the file's directory (handles absolute paths)
     _discover_config_from_file(filename);
-    # --no-cache: wipe all .jac_ir/ cache directories under the file's source tree.
+    # --no-cache: wipe cached compilation artifacts under the file's source tree.
     if not cache {
-        import glob as _glob;
-        import shutil;
-        _src_root = os.path.dirname(os.path.abspath(filename)) or ".";
-        cache_dirs = _glob.glob(
-            os.path.join(_src_root, "**", ".jac_ir"), recursive=True
-        );
-        for cache_dir in cache_dirs {
-            shutil.rmtree(cache_dir, ignore_errors=True);
-        }
+        import from jaclang.jac0core.jir { scrub_cache_dirs }
+        scrub_cache_dirs(os.path.dirname(os.path.abspath(filename)) or ".");
     }
     # Resolve diagnostics level: CLI flag > jac.toml > default ("error")
     if not diagnostics {
@@ -294,7 +288,7 @@ impl run(
     (base, mod, mach) = _proc_file(filename);
     lng = filename.split('.')[-1];
     try {
-        if filename.endswith('.na.jac') {
+        if is_native_module(filename) {
             # Native files: compile directly and call jac_entry.
             # Skip jac_import to avoid resolving a .jac file with the same name.
             import ctypes;
@@ -842,7 +836,7 @@ def _start_vite_dev_server(base_path: str, vite_port: int, api_port: int) -> any
         return (process, bundler.dev_server_port or vite_port);
     } except ImportError as e {
         console.error(
-            f"[Vite] Warning: jac-client not installed, skipping Vite dev server: {e}"
+            f"[Vite] Warning: client bundler unavailable, skipping Vite dev server: {e}"
         );
         return (None, vite_port);
     } except Exception as e {

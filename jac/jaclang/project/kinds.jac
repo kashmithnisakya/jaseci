@@ -14,22 +14,41 @@ happen. The CLI `run` command consumes the plan and either prints it
 
 import os;
 import from jaclang.project.config { JacConfig }
+import from jaclang.jac0core.ext_registry { base_stem, codespace_of, MODULE_SUFFIXES }
 
-# The canonical set of project kinds. Mirrors the jac-project-kinds skill.
-glob VALID_KINDS: list[str] = [
-         "cli",
-         "native-app",
-         "native-binary",
-         "shared-library",
-         "api-service",
-         "microservices",
-         "pypi-package",
-         "npm-package",
-         "fullstack",
-         "wasm",
-         "desktop",
-         "mobile"
-     ];
+# The canonical project-kind table: the single source of truth shared by
+# `jac create` (which template/entry-point to scaffold, which plugin a kind
+# needs) and `jac run` (which plugin a kind needs to dispatch). Each entry:
+#   entry  -- the scaffolded entry-point filename (its codespace suffix)
+#   plugin -- the pip package that must be installed for the kind ("" = core)
+# Insertion order is the canonical kind order (used in error messages).
+glob KIND_SPECS: dict[str, dict[str, str]] = {
+         "cli": {"entry": "main.jac", "plugin": ""},
+         "native-app": {"entry": "main.na.jac", "plugin": ""},
+         "native-binary": {"entry": "main.na.jac", "plugin": ""},
+         "shared-library": {"entry": "main.na.jac", "plugin": ""},
+         "api-service": {"entry": "main.sv.jac", "plugin": ""},
+         "microservices": {"entry": "main.sv.jac", "plugin": ""},
+         "pypi-package": {"entry": "lib.jac", "plugin": ""},
+         "npm-package": {"entry": "lib.jac", "plugin": ""},
+         "fullstack": {"entry": "main.jac", "plugin": ""},
+         "client": {"entry": "main.jac", "plugin": ""},
+         "desktop": {"entry": "main.jac", "plugin": ""},
+         "mobile": {"entry": "main.jac", "plugin": ""}
+     },
+     # The canonical set of project kinds, derived from KIND_SPECS so the two never
+     # drift. Mirrors the jac-project-kinds skill.
+     VALID_KINDS: list[str] = list(KIND_SPECS.keys());
+
+"""The pip package a kind requires to run/scaffold ("" when core-supported)."""
+def kind_required_plugin(kind: str) -> str {
+    return KIND_SPECS.get(kind, {}).get("plugin", "");
+}
+
+"""The canonical entry-point filename `jac create` scaffolds for a kind."""
+def kind_entry(kind: str) -> str {
+    return KIND_SPECS.get(kind, {}).get("entry", "main.jac");
+}
 
 """A resolved plan describing what `jac run` should do for a project.
 
@@ -76,13 +95,7 @@ def is_valid_kind(kind: str) -> bool {
 
 """Strip the codespace suffix from an entry filename, leaving the bare stem."""
 def _entry_stem(path: str) -> str {
-    name = os.path.basename(path);
-    for suf in [".na.jac", ".sv.jac", ".cl.jac", ".jac", ".py"] {
-        if name.endswith(suf) {
-            return name[:-len(suf)];
-        }
-    }
-    return name;
+    return base_stem(path);
 }
 
 """True when the project opts into the client (cl) codespace via plugin/deps."""
@@ -127,7 +140,7 @@ def resolve_entry(config: JacConfig, project_root: str) -> str {
     # which is the intended behavior: an absolute entry-point is searched at its
     # own location, while a relative one stays anchored under the project root.
     base = os.path.join(project_root, os.path.dirname(ep), stem);
-    for suf in [".jac", ".na.jac", ".sv.jac", ".cl.jac", ".py"] {
+    for suf in list(MODULE_SUFFIXES) + [".py"] {
         cand = base + suf;
         if os.path.isfile(cand) {
             return os.path.abspath(cand);
@@ -147,13 +160,14 @@ def resolve_project_kind(config: JacConfig, entry_path: str) -> str {
     if explicit {
         return explicit;
     }
-    if entry_path.endswith(".na.jac") {
+    entry_codespace = codespace_of(entry_path);
+    if (entry_codespace == 'native') {
         return "native-app";
     }
-    if entry_path.endswith(".sv.jac") {
+    if (entry_codespace == 'server') {
         return "api-service";
     }
-    if entry_path.endswith(".cl.jac") {
+    if (entry_codespace == 'client') {
         return "fullstack";
     }
     if _has_client(config) {
@@ -247,18 +261,18 @@ def plan_project_run(config: JacConfig, project_root: str) -> (RunPlan | None) {
             entry_path=entry_path,
             flags=_serve_flags(config, {"dev": True}),
             summary="Serve full-stack app with client (dev mode)",
-            requires_plugin="jac-client"
+            requires_plugin=kind_required_plugin(kind)
         );
     }
-    if kind == "wasm" {
+    if kind == "client" {
         return RunPlan(
             kind=kind,
             action="serve",
             verb="start",
             entry_path=entry_path,
             flags=_serve_flags(config, {}),
-            summary="Serve wasm page (emits /static/main.wasm)",
-            requires_plugin="jac-client"
+            summary="Serve client-only app as a static page (no backend)",
+            requires_plugin=kind_required_plugin(kind)
         );
     }
     if kind == "desktop" {
@@ -269,7 +283,7 @@ def plan_project_run(config: JacConfig, project_root: str) -> (RunPlan | None) {
             entry_path=entry_path,
             flags={"client": "desktop"},
             summary="Run desktop app (OS webview)",
-            requires_plugin="jac-desktop"
+            requires_plugin=kind_required_plugin(kind)
         );
     }
     if kind == "pypi-package" {
@@ -300,7 +314,7 @@ def plan_project_run(config: JacConfig, project_root: str) -> (RunPlan | None) {
             entry_path=entry_path,
             flags={"client": "mobile"},
             summary="Build mobile app bundle",
-            requires_plugin="jac-client"
+            requires_plugin=kind_required_plugin(kind)
         );
     }
     return None;

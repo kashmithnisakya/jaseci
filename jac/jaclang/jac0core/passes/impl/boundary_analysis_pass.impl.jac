@@ -84,6 +84,11 @@ impl BoundaryAnalysisPass._resolve_native_module(
 impl BoundaryAnalysisPass.enter_import(
     self: BoundaryAnalysisPass, nd: uni.Import
 ) -> None {
+    import from jaclang.jac0core.ext_registry {
+        is_server_module,
+        is_client_module,
+        is_native_module
+    }
     import_context = self._get_context(nd);
     if (nd.from_loc and isinstance(nd.from_loc, uni.ModulePath)) {
         module_name = nd.from_loc?.dot_path_str;
@@ -100,18 +105,13 @@ impl BoundaryAnalysisPass.enter_import(
             mod_path_str = self.ir_in.loc.mod_path
                 if (self.ir_in and self.ir_in.loc)
                 else '';
-            in_server_module = (
-                mod_path_str.endswith('.jac')
-                and not mod_path_str.endswith('.cl.jac')
-                and not mod_path_str.endswith('.na.jac')
-                and not mod_path_str.endswith('.impl.jac')
-            );
+            in_server_module = is_server_module(mod_path_str);
             # A `sv import` inside a client module is the client->server RPC
             # edge (the #6221 case). Because this pass now runs in the shared
             # front-end on .cl.jac modules too, we record that binding here from
             # resolved symbols instead of leaving EsastGen to re-resolve it.
             in_client_module = (
-                mod_path_str.endswith('.cl.jac')
+                is_client_module(mod_path_str)
                 or (nd?.in_client_context and nd.in_client_context())
             );
             sv_token = nd._source_context_token()
@@ -148,7 +148,7 @@ impl BoundaryAnalysisPass.enter_import(
                             or (
                                 self.ir_in
                                 and self.ir_in.loc
-                                and self.ir_in.loc.mod_path.endswith('.na.jac')
+                                and is_native_module(self.ir_in.loc.mod_path)
                             )
                         );
                         if (is_native_ctx and func_name not in manifest.bindings) {
@@ -709,16 +709,29 @@ impl BoundaryAnalysisPass._collect_boundary_type(
     for mod in search_mods {
         sym = mod.sym_tab.lookup(type_name, deep=True) if mod.sym_tab else None;
         if sym and sym.defn {
-            arch_node = sym.defn[0];
-            if isinstance(arch_node, uni.NameAtom) and arch_node.parent {
-                arch_node = arch_node.parent;
+            candidate = sym.defn[0];
+            if isinstance(candidate, uni.NameAtom) and candidate.parent {
+                candidate = candidate.parent;
             }
-            break;
+            # Only accept a symbol that actually resolves to a type
+            # definition. An `sv import`ed type name resolves, in the
+            # consumer's own symtab, to the import binding (a NameAtom/Token)
+            # rather than the Archetype -- accepting that would set arch_node
+            # to a non-type node, short-circuit the AST-walk fallback below,
+            # and leave the type uncollected. The return value of the sv->sv
+            # call then never gets a `_from_wire` stub and arrives as a raw
+            # `_jac_type` dict (#6710). Keep looking past such bindings so the
+            # fallback can find the real definition in the provider module.
+            if isinstance(candidate, (uni.Archetype, uni.Enum)) {
+                arch_node = candidate;
+                break;
+            }
         }
     }
     # AST-walk fallback for modules without a built sym_tab (e.g., a source
     # module that's already in prog.mod.hub but for which boundary type
-    # collection runs before symtab build).
+    # collection runs before symtab build), or whose only matching symbol was
+    # a non-type binding rejected above.
     if arch_node is None {
         for mod in search_mods {
             try {

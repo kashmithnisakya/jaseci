@@ -42,7 +42,7 @@ import from jac_scale.factories.registry_factory { ImageRegistryFactory }
 import from jac_scale.targets.kubernetes.monitoring { MonitoringDeployer }
 import from jac_scale.targets.kubernetes.ingress { IngressDeployer }
 import from jac_scale.factories.autoscaler_factory { AutoscalerFactory }
-import from jac_scale.abstractions.autoscaler { AutoscalerSpec, Trigger }
+import from jac_scale.abstractions.autoscaler { AutoscalerSpec, Trigger, TriggerAuth }
 import time;
 
 """Kubernetes deployment target implementation."""
@@ -222,7 +222,7 @@ obj KubernetesTarget(DeploymentTarget) {
         }
         commands.append(f"apt-get install -y {' '.join(base_packages)}");
 
-        # Install Bun (required for jac-client frontend builds), pinned to the
+        # Install Bun (required for client framework frontend builds), pinned to the
         # same version jac auto-installs locally (BUN_VERSION is the single
         # source of truth in jaclang.runtimelib.client.bun_installer).
         commands.append(
@@ -254,9 +254,17 @@ obj KubernetesTarget(DeploymentTarget) {
             }
             commands.append('git submodule update --init --recursive');
             commands.append('pip install pluggy');
-            commands.append('pip install -e ./jac');
+            # The image pre-installs jaclang from PyPI; if that released version
+            # is newer than this branch, a plain `pip install -e ./jac` is a
+            # no-op (pip sees the requirement already satisfied) and the pod runs
+            # released jaclang instead of the local checkout. --force-reinstall
+            # makes the local editable win regardless of version; --no-deps
+            # keeps it from re-resolving the already-installed dependency tree.
+            commands.append('pip install --force-reinstall --no-deps -e ./jac');
             commands.append('jac install -e ./jac-scale --extras all');
-            commands.append('jac install -e ./jac-client');
+            # Only when the checkout still ships jac-client (older forks pre-#6840):
+            # skip-when-absent. The client framework now lives in jaclang core.
+            commands.append('[ ! -d ./jac-client ] || jac install -e ./jac-client');
             commands.append('jac install -e ./jac-byllm');
             commands.append('jac install -e ./jac-mcp');
             commands.append('cd ..');
@@ -264,7 +272,6 @@ obj KubernetesTarget(DeploymentTarget) {
             packages = config.plugin_versions or {};
             jaclang_v = packages.get('jaclang', 'latest');
             scale_v = packages.get('jac_scale', 'latest');
-            client_v = packages.get('jac_client', 'latest');
             byllm_v = packages.get('jac_byllm', 'latest');
             mcp_v = packages.get('jac_mcp', 'latest');
             if jaclang_v == 'latest' {
@@ -276,11 +283,6 @@ obj KubernetesTarget(DeploymentTarget) {
                 commands.append('pip install "jac-scale[all]"');
             } else {
                 commands.append(f'pip install "jac-scale[all]=={scale_v}"');
-            }
-            if client_v == 'latest' {
-                commands.append('pip install jac-client');
-            } else {
-                commands.append(f'pip install jac-client=={client_v}');
             }
             if byllm_v and byllm_v != 'none' {
                 if byllm_v == 'latest' {
@@ -1556,7 +1558,34 @@ obj KubernetesTarget(DeploymentTarget) {
             }
             details["create_jaseci_application_service"] = "Successful";
             # 16. Enable horizontal pod autoscaling
-            AutoscalerFactory.create(
+            triggers = [];
+            if not self.k8s_config.extra_triggers {
+                triggers = [
+                    Trigger(
+                        type="cpu",
+                        metadata={
+                            "averageUtilization": str(
+                                self.k8s_config.cpu_utilization_target
+                            )
+                        }
+                    )
+                ];
+            }
+            for raw in self.k8s_config.extra_triggers {
+                t = Trigger(
+                    type=str(raw.get("type", "")),
+                    metadata=dict(raw.get("metadata", {})),
+                    name=raw.get("name")
+                );
+                raw_auth = raw.get("auth");
+                if raw_auth {
+                    t.auth = TriggerAuth(
+                        secret_refs=dict(raw_auth.get("secret_refs", {}))
+                    );
+                }
+                triggers.append(t);
+            }
+            autoscaler_applied = AutoscalerFactory.create(
                 self.k8s_config.autoscaler_engine,
                 self.k8s_config.to_dict(),
                 self.logger
@@ -1566,19 +1595,18 @@ obj KubernetesTarget(DeploymentTarget) {
                     namespace=namespace,
                     min_replicas=self.k8s_config.min_replicas,
                     max_replicas=self.k8s_config.max_replicas,
-                    triggers=[
-                        Trigger(
-                            type="cpu",
-                            metadata={
-                                "averageUtilization": str(
-                                    self.k8s_config.cpu_utilization_target
-                                )
-                            }
-                        )
-                    ]
+                    idle_replicas=self.k8s_config.idle_replicas,
+                    polling_interval=self.k8s_config.autoscaler_polling_interval,
+                    cooldown_period=self.k8s_config.autoscaler_cooldown,
+                    initial_cooldown_period=self.k8s_config.autoscaler_initial_cooldown,
+                    triggers=triggers
                 )
             );
-            details["create_horizontal_auto_scaler"] = "Successful";
+            # apply() returns False when preflight bailed (e.g. KEDA not installed);
+            # stamping "Successful" in that case would misreport the deploy state.
+            details["create_horizontal_auto_scaler"] = "Successful"
+                if autoscaler_applied
+                else "Skipped: autoscaler engine not available on cluster";
             # 15. Deploy monitoring stack (Prometheus / Grafana) if enabled
             monitoring = MonitoringDeployer(self.k8s_config, self.logger);
             monitoring.deploy(app_name, namespace, apps_v1, core_v1, provider);
@@ -1865,11 +1893,10 @@ obj KubernetesTarget(DeploymentTarget) {
     def _destroy_application(
         app_name: str, namespace: str, apps_v1: any, core_v1: any
     ) {
-        AutoscalerFactory.create(
+        autoscaler = AutoscalerFactory.create(
             self.k8s_config.autoscaler_engine, self.k8s_config.to_dict(), self.logger
-        ).destroy(
-            f"{app_name}-hpa", namespace
         );
+        autoscaler.destroy(autoscaler.resource_name_for(app_name), namespace);
         delete_if_exists(
             apps_v1.delete_namespaced_deployment, app_name, namespace, 'Deployment'
         );
