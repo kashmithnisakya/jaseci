@@ -40,6 +40,9 @@ class MetricsCollector {
     """Get the handler for the metrics endpoint."""
     def get_endpoint_handler(self: MetricsCollector) -> Callable[..., any];
 
+    """Render the Prometheus exposition for this collector's own registry."""
+    def expose(self: MetricsCollector) -> bytes;
+
     """Check if metrics collection is enabled."""
     def is_enabled(self: MetricsCollector) -> bool;
 }
@@ -71,6 +74,10 @@ class NoOpMetricsCollector(MetricsCollector) {
     def get_endpoint_handler(self: NoOpMetricsCollector) -> Callable[..., any] {
         def noop { }
         return noop;
+    }
+
+    def expose(self: NoOpMetricsCollector) -> bytes {
+        return b"";
     }
 
     def is_enabled(self: NoOpMetricsCollector) -> bool {

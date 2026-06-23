@@ -156,6 +156,10 @@ obj PrometheusMetricsCollector(MetricsCollector) {
         return metrics_endpoint;
     }
 
+    def expose -> bytes {
+        return generate_latest(self._registry);
+    }
+
     def is_enabled -> bool {
         return self._enabled;
     }

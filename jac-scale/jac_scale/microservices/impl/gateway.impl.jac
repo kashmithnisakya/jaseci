@@ -660,6 +660,14 @@ impl MicroserviceGateway.setup -> FastAPI {
         )
     );
 
+    # HTTP MetricsCollector backing the admin "Metrics" page. The gateway is
+    # the ingress reverse proxy, so it is the right place to collect
+    # cluster-wide request rate / latency / status. The admin endpoint reads
+    # this collector's own registry (via expose()); the dispatcher feeds it
+    # per request alongside the gateway's Prometheus middleware.
+    import from jac_scale.factories.utility_factory { UtilityFactory }
+    self._metrics = UtilityFactory.create_metrics('prometheus', mon_cfg);
+
     # O-02: configure tracing once per process (no-op when disabled /
     # jac-scale[tracing] absent); the dispatcher opens a span per request.
     import from jac_scale.microservices.runtime.tracing {
@@ -794,6 +802,14 @@ impl MicroserviceGateway.setup -> FastAPI {
                     service=svc_label, method=request.method
                 ).observe(
                     time.time() - start
+                );
+            }
+            # Feed the admin "Metrics" page collector (HTTP request/latency
+            # by method + status). Separate registry from the gateway's own
+            # Prometheus middleware above; this one backs /admin/metrics.
+            if gw._metrics is not None and gw._metrics.is_enabled() {
+                gw._metrics.record_request(
+                    request.method, path, resp.status_code, time.time() - start
                 );
             }
             return resp;
