@@ -458,7 +458,7 @@ cl {
                                         <td
                                             className="px-4 py-2 text-muted tabular-nums"
                                         >
-                                            {p["cpu_cores"]}{" cores"}
+                                            {formatCores(p["cpu_cores"] or 0)}
                                         </td>
                                         <td
                                             className="px-4 py-2 text-muted tabular-nums"
