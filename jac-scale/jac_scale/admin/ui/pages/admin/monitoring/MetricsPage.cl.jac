@@ -92,11 +92,16 @@ def:pub MetricsPage -> JsxElement {
         [autoRefresh]
     );
 
-    def getBarHeight(value: float, maxVal: float) -> str {
+    def getBarHeight(value: float, maxVal: float, minPct: int = 0) -> str {
         if maxVal == 0 {
             return "0%";
         }
         pct = min(100, (value / maxVal) * 100);
+        # Floor any non-zero value to a visible sliver so a busy interval
+        # never rounds away to 0% when a single tall bar dominates the scale.
+        if value > 0 and pct < minPct {
+            pct = minPct;
+        }
         return str(int(pct)) + "%";
     }
 
@@ -404,7 +409,8 @@ def:pub MetricsPage -> JsxElement {
                                     key={str(h["time"])}
                                     className="flex-1 bg-accent rounded-t opacity-80 hover:opacity-100 transition-opacity"
                                     style={{
-                                        "height": getBarHeight(h["delta"] or 0, maxReqs)
+                                        "minHeight": "2px",
+                                        "height": getBarHeight(h["delta"] or 0, maxReqs, 14)
                                     }}
                                     title={str(h["delta"] or 0) + " req / interval"}
                                 ></div> for h in history
