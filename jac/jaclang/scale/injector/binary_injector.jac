@@ -31,7 +31,14 @@ obj BinaryInjector(PvcInjector) {
         }
 
         precompile_plugins(repo_root);
-        raw = pack_toolchain(repo_root, binary);
+        try {
+            raw = pack_toolchain(repo_root, binary);
+        } finally {
+            if self._used_prebuilt {
+                import shutil;
+                shutil.rmtree(binary.parent, ignore_errors=True);
+            }
+        }
         self._toolchain_object_key = toolchain_object_key(
             app_name, content_address(raw)
         );

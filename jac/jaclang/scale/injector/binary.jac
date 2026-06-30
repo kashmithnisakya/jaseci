@@ -34,6 +34,7 @@ def pod_arch -> (str | None) {
     import from jaclang.scale._optdeps.kubernetes { client }
     try {
         nodes = client.CoreV1Api().list_node();
+        arches = set();
         for nd in (nodes.items or []) {
             arch = "";
             info = nd.status?.node_info if nd.status else None;
@@ -45,8 +46,11 @@ def pod_arch -> (str | None) {
                 arch = labels.get("kubernetes.io/arch", "");
             }
             if arch {
-                return arch;
+                arches.add(arch);
             }
+        }
+        if len(arches) == 1 {
+            return arches.pop();
         }
     } except Exception {
         return None;
