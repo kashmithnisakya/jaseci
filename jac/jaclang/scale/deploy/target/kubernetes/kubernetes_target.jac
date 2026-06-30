@@ -1012,7 +1012,10 @@ obj KubernetesTarget(DeploymentTarget) {
                 self.k8s_config.bundle_storage_class,
                 app_name,
                 namespace,
-                app_config.code_folder
+                app_config.code_folder,
+                jaseci_repo_url=self.k8s_config.jaseci_repo_url,
+                jaseci_branch=self.k8s_config.jaseci_branch,
+                jaseci_commit=self.k8s_config.jaseci_commit
             );
             ensure_pvc_exists(
                 core_v1,

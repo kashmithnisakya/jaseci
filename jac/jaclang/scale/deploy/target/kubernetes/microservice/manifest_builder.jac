@@ -55,7 +55,10 @@ obj MicroserviceManifestBuilder {
             self.k8s_config.bundle_storage_class,
             k8s_safe_name(self.k8s_config.app_name),
             self.k8s_config.namespace,
-            self.project_dir or app_config.code_folder
+            self.project_dir or app_config.code_folder,
+            jaseci_repo_url=self.k8s_config.jaseci_repo_url,
+            jaseci_branch=self.k8s_config.jaseci_branch,
+            jaseci_commit=self.k8s_config.jaseci_commit
         );
         injector: PvcInjector = selection[0];
         self._ship_binary = bool(selection[1]);

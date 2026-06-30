@@ -3,7 +3,11 @@ import io;
 import tarfile;
 import tempfile;
 import from pathlib { Path }
-import from jaclang.scale.injector.binary { pack_toolchain }
+import from jaclang.scale.injector.binary {
+    pack_toolchain,
+    resolve_prebuilt_binary,
+    _parse_owner_repo
+}
 import from jaclang.scale.injector.binary_injector { BinaryInjector }
 import from jaclang.scale.injector.bundle { TOOLCHAIN_SUBDIR }
 import from jaclang.scale.deploy.target.kubernetes.runtime_bootstrap {
@@ -69,6 +73,37 @@ test "pack_toolchain ships the binary + plugin source, drops build artifacts" {
         assert f"{TOOLCHAIN_SUBDIR}/jac-scale/jac.toml" in names;
         assert not any(["node_modules" in name for name in names]);
     }
+}
+
+
+test "_parse_owner_repo handles https, .git suffix, and ssh forms" {
+    assert _parse_owner_repo("https://github.com/jaseci-labs/jaseci.git") == "jaseci-labs/jaseci";
+    assert _parse_owner_repo("https://github.com/jaseci-labs/jaseci") == "jaseci-labs/jaseci";
+    assert _parse_owner_repo("git@github.com:jaseci-labs/jaseci.git") == "jaseci-labs/jaseci";
+    assert _parse_owner_repo("nonsense") is None;
+}
+
+
+test "resolve_prebuilt_binary refuses non-canonical repo/branch/commit/arch" {
+    # a fork has no dev release -> host-build
+    assert resolve_prebuilt_binary(
+        "https://github.com/me/jaseci.git", "main", None, "amd64"
+    ) is None;
+    # a non-rolling branch has no asset
+    assert resolve_prebuilt_binary(
+        "https://github.com/jaseci-labs/jaseci.git", "feature-x", None, "amd64"
+    ) is None;
+    # a pinned commit cannot match the rolling asset
+    assert resolve_prebuilt_binary(
+        "https://github.com/jaseci-labs/jaseci.git", "main", "abc123", "amd64"
+    ) is None;
+    # an undetected / unsupported arch
+    assert resolve_prebuilt_binary(
+        "https://github.com/jaseci-labs/jaseci.git", "main", None, None
+    ) is None;
+    assert resolve_prebuilt_binary(
+        "https://github.com/jaseci-labs/jaseci.git", "main", None, "riscv64"
+    ) is None;
 }
 
 

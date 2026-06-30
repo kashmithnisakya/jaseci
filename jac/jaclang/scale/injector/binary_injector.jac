@@ -2,6 +2,8 @@ import from jaclang.scale.injector.pvc_injector { PvcInjector, bundle_pvc_path }
 import from jaclang.scale.injector.binary {
     host_repo_root,
     build_release_binary,
+    resolve_prebuilt_binary,
+    pod_arch,
     precompile_plugins,
     pack_toolchain,
     toolchain_object_key
@@ -11,12 +13,22 @@ import from jaclang.scale.injector.bundle { content_address }
 
 obj BinaryInjector(PvcInjector) {
     has _toolchain_object_key: str = "",
-        _toolchain_bytes: bytes = b"";
+        _toolchain_bytes: bytes = b"",
+        _jaseci_repo_url: str = "",
+        _jaseci_branch: str = "",
+        _jaseci_commit: (str | None) = None,
+        _used_prebuilt: bool = False;
 
     def prepare(app_name: str, namespace: str, project_dir: str) {
         super.prepare(app_name, namespace, project_dir);
         repo_root = host_repo_root();
-        binary = build_release_binary(repo_root);
+        binary = resolve_prebuilt_binary(
+            self._jaseci_repo_url, self._jaseci_branch, self._jaseci_commit, pod_arch()
+        );
+        self._used_prebuilt = binary is not None;
+        if binary is None {
+            binary = build_release_binary(repo_root);
+        }
 
         precompile_plugins(repo_root);
         raw = pack_toolchain(repo_root, binary);
@@ -45,22 +57,34 @@ def select_injector(
     storage_class: str,
     app_name: str,
     namespace: str,
-    project_dir: str
+    project_dir: str,
+    jaseci_repo_url: str = "",
+    jaseci_branch: str = "",
+    jaseci_commit: (str | None) = None
 ) -> tuple[PvcInjector, bool, str] {
     if experimental {
         import from jaclang.cli.console { console }
         import logging;
         try {
             console.print(
-                "Building the jac binary on the host to ship into pods "
-                "(--experimental) - one-time (cached after), a few minutes on the "
-                "first run. The faster, OOM-free alternative to the in-pod build."
+                "Resolving the jac binary to ship into pods (--experimental): a "
+                "matching prebuilt release is downloaded when available, otherwise "
+                "built on the host. The faster, OOM-free alternative to the in-pod "
+                "build."
             );
-            binary_injector = BinaryInjector(storage_class=storage_class);
+            binary_injector = BinaryInjector(
+                storage_class=storage_class,
+                _jaseci_repo_url=jaseci_repo_url,
+                _jaseci_branch=jaseci_branch,
+                _jaseci_commit=jaseci_commit
+            );
             binary_injector.prepare(app_name, namespace, project_dir);
             console.print(
-                "Built jac binary; shipping your local code to pods (pods skip "
-                "the in-pod build)."
+                "Downloaded prebuilt jac binary; shipping to pods (pods skip the "
+                "in-pod build)."
+                    if binary_injector._used_prebuilt
+                    else "Built jac binary on the host; shipping your local code to "
+                    "pods (pods skip the in-pod build)."
             );
             return (binary_injector, True, binary_injector._toolchain_object_key);
         } except Exception as exc {
