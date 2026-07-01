@@ -41,6 +41,25 @@ def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
     ).name
 ''';
 
+def _transpile_jac_to_py(source_path: Path | None) -> bytes {
+    import from jaclang.jac0core.program { JacProgram }
+
+    if source_path is None {
+        raise ValueError("Cannot transpile Jac source: source path is not set.");
+    }
+    prog = JacProgram();
+    ir = prog.compile(file_path=str(source_path));
+    if prog.errors_had {
+        details = "\n".join(f"  {err}" for err in prog.errors_had);
+        raise ValueError(f"Transpilation failed for {source_path}:\n{details}");
+    }
+    code = ir.gen.py;
+    if not code {
+        raise ValueError(f"Transpilation produced no Python for {source_path}.");
+    }
+    return code.encode("utf-8");
+}
+
 impl WheelBuilder.postinit -> None {
     if self.project_root is None {
         self.project_root = self.config.project_root;
@@ -75,9 +94,15 @@ impl WheelBuilder.build -> bytes {
     top_level_bytes = (pkg_name + "\n").encode("utf-8");
 
     source_files = collect_source_files(self.config, project_root=proj_root);
-    src_data: dict[str, bytes] = {
-        sf.wheel_path: read_source_file(sf) for sf in source_files
-    };
+    src_data: dict[str, bytes] = {};
+    for sf in source_files {
+        if self.transpile_jac and sf.wheel_path.endswith(".jac") {
+            py_path = sf.wheel_path[:-len(".jac")] + ".py";
+            src_data[py_path] = _transpile_jac_to_py(sf.source_path);
+        } else {
+            src_data[sf.wheel_path] = read_source_file(sf);
+        }
+    }
 
     entries: list[RecordEntry] = [
         record_entry_from_bytes(path, data) for (path, data) in src_data.items()
@@ -149,9 +174,15 @@ impl WheelBuilder.build_sdist -> bytes {
     jac_toml_path = proj_root / "jac.toml";
 
     source_files = collect_source_files(self.config, project_root=proj_root);
-    src_data: dict[str, bytes] = {
-        sf.wheel_path: read_source_file(sf) for sf in source_files
-    };
+    src_data: dict[str, bytes] = {};
+    for sf in source_files {
+        if self.transpile_jac and sf.wheel_path.endswith(".jac") {
+            py_path = sf.wheel_path[:-len(".jac")] + ".py";
+            src_data[py_path] = _transpile_jac_to_py(sf.source_path);
+        } else {
+            src_data[sf.wheel_path] = read_source_file(sf);
+        }
+    }
 
     buf = io.BytesIO();
     with gzip.GzipFile(fileobj=buf, mode="wb", mtime=_SDIST_MTIME) as gz {

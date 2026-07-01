@@ -10,7 +10,8 @@ obj WheelBuilder {
         pure_python: bool = True,
         python_tag: str = "py3",
         abi_tag: str = "none",
-        platform_tag: str = "any";
+        platform_tag: str = "any",
+        transpile_jac: bool = True;
 
     def postinit -> None;
     def build -> bytes;

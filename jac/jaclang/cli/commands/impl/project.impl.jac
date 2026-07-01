@@ -1304,7 +1304,7 @@ def _bundle_wheel(config: any, output: str) -> int {
     out_dir.mkdir(parents=True, exist_ok=True);
     builder = WheelBuilder(config=config, project_root=config.project_root);
 
-    console.print("\n  Building wheel...", style="muted");
+    console.print("\n  Transpiling Jac → Python and building wheel...", style="muted");
     try {
         whl_path = builder.build_to(out_dir);
     } except Exception as e {

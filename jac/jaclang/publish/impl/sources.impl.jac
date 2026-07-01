@@ -128,5 +128,32 @@ impl collect_source_files(
         }
     }
 
+    if not result {
+        pkg_name = config.project.name.replace("-", "_");
+        for pattern in global_patterns {
+            effective = _make_recursive(pattern);
+            for file_path in sorted(proj_root.glob(effective)) {
+                if not file_path.is_file() {
+                    continue;
+                }
+                if _is_excluded(file_path, proj_root) {
+                    continue;
+                }
+                rel = str(file_path.relative_to(proj_root)).replace("\\", "/");
+                wheel_path = f"{pkg_name}/{rel}";
+                if wheel_path in seen {
+                    continue;
+                }
+                seen.add(wheel_path);
+                result.append(SourceFile(wheel_path=wheel_path, source_path=file_path));
+            }
+        }
+        init_path = f"{pkg_name}/__init__.py";
+        if result and init_path not in seen {
+            seen.add(init_path);
+            result.append(SourceFile(wheel_path=init_path, content=b""));
+        }
+    }
+
     return result;
 }
