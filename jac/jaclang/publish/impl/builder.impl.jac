@@ -63,7 +63,7 @@ def _transpile_jac_to_py(program: any, source_path: Path | None) -> bytes {
     }
     code = ir.gen.py;
     if not code {
-        raise ValueError(f"Transpilation produced no Python for {source_path}.");
+        raise ValueError(f"{source_path} produced no Python (not a valid Jac module).");
     }
     return code.encode("utf-8");
 }

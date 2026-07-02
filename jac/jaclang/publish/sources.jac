@@ -21,6 +21,7 @@ glob DEFAULT_INCLUDE_PATTERNS: list[str] = [
          ".git",
          ".hg",
          "node_modules",
+         "tests",
 
      ],
      EXCLUDED_SUFFIXES: list[str] = [".pyc"];

@@ -221,6 +221,27 @@ test "collect_source_files gathers jac files and excludes build artifacts" {
     }
 }
 
+test "collect_source_files excludes tests directory from the package" {
+    tmpdir = tempfile.mkdtemp();
+    try {
+        proj = Path(tmpdir);
+        pkg = proj / "mypkg";
+        pkg.mkdir();
+        (pkg / "main.jac").write_text("# main");
+        testsdir = pkg / "tests";
+        testsdir.mkdir();
+        (testsdir / "fixture.jac").write_text("# fixture");
+        cfg = pkg_config_with_include(proj, "mypkg");
+        files = collect_source_files(cfg, project_root=proj);
+        paths = [sf.wheel_path for sf in files];
+        assert any("main.jac" in p for p in paths);
+        assert not any("tests/" in p for p in paths);
+        assert not any("fixture.jac" in p for p in paths);
+    } finally {
+        shutil.rmtree(tmpdir, ignore_errors=True);
+    }
+}
+
 test "collect_source_files raises without project root or package section" {
     cfg_no_root = JacConfig.from_toml_str(
         "[project]\nname = \"p\"\nversion = \"1.0.0\"\n"
