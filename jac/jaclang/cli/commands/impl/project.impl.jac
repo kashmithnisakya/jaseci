@@ -1311,6 +1311,20 @@ def _bundle_wheel(config: any, output: str) -> int {
         console.error(f"Wheel build failed: {e}");
         return 1;
     }
+    if builder.skipped_codespace {
+        console.print(
+            f"  ⚠ skipped {len(builder.skipped_codespace)} client/native "
+            "codespace file(s) (.cl.jac/.na.jac) — not part of a Python wheel",
+            style="warning"
+        );
+    }
+    if builder.vendored_runtime_modules {
+        console.print(
+            f"  ✔ vendored jac runtime ({builder.vendored_runtime_modules} modules) "
+            "— wheel runs without jaclang installed",
+            style="success"
+        );
+    }
     console.print(
         f"  ✔ Built {whl_path.name} ({whl_path.stat().st_size:,} bytes)",
         style="success"
