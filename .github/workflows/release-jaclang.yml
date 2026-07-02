@@ -152,7 +152,7 @@ jobs:
           [ -f "$SHIM" ] || SHIM="zig-out/lib/libjacllvm.so"
           check "$SHIM"
 
-      - name: Package asset (+ checksum, ad-hoc codesign on macOS)
+      - name: Package asset (+ checksum)
         id: pkg
         working-directory: jac
         run: |
@@ -160,7 +160,13 @@ jobs:
           ASSET="jac-${{ steps.ver.outputs.version }}-${{ matrix.platform }}"
           mkdir -p dist
           cp zig-out/bin/jac "dist/$ASSET"
-          if [ "$RUNNER_OS" = "macOS" ]; then codesign --force --sign - "dist/$ASSET" || true; fi
+          # No codesign on macOS, deliberately: the binary is a Mach-O stub
+          # with the payload tarball appended (launcher/pack.zig), and codesign
+          # rejects any file with data past the Mach-O end ("main executable
+          # failed strict validation") -- the old `codesign ... || true` here
+          # failed on every run. The zig linker's ad-hoc signature on the stub
+          # is content-based and survives cp, and the smoke test above already
+          # executed these exact bytes on this runner.
           ( cd dist && shasum -a 256 "$ASSET" > "$ASSET.sha256" )
           echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
 
