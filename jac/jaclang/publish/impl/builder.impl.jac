@@ -168,6 +168,7 @@ impl WheelBuilder._assemble_src_data -> dict[str, bytes] {
     texts: dict[str, str] = {};
     origins: dict[str, Path] = {};
     raw: dict[str, bytes] = {};
+    transpiled: set[str] = set();
     program: JacProgram | None = None;
 
     def _claim(target: str) {
@@ -201,6 +202,7 @@ impl WheelBuilder._assemble_src_data -> dict[str, bytes] {
             _claim(target);
             texts[target] = _transpile_jac_to_py(program, src_path);
             origins[target] = src_path;
+            transpiled.add(target);
         } elif self.transpile_jac and wp.endswith(".py") and (src_path is not None) {
             _claim(wp);
             texts[wp] = read_source_file(sf).decode("utf-8");
@@ -222,7 +224,14 @@ impl WheelBuilder._assemble_src_data -> dict[str, bytes] {
     for (target, text) in texts.items() {
         try {
             texts[target] = rewrite_imports(text, origins[target], module_map);
-        } except SyntaxError {
+        } except SyntaxError as e {
+            if target in transpiled {
+                raise ValueError(
+                    f"Transpiled output for '{target}' is not valid Python "
+                    f"({e}); refusing to ship a broken wheel."
+                );
+            }
+
             texts[target] = text;
         }
         src_data[target] = texts[target].encode("utf-8");

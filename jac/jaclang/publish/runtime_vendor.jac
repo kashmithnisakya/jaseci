@@ -199,6 +199,12 @@ def _compile_runtime_module(pkg_root: Path, path: Path) -> str {
         details = "\n".join(f"  {err}" for err in prog.errors_had);
         raise ValueError(f"runtime vendor: {path.name} failed to compile:\n{details}");
     }
+    if ir is None {
+        raise ValueError(
+            f"runtime vendor: {path.name}: compiler returned no module "
+            "(and reported no errors)."
+        );
+    }
     py_out = str(ir.gen.py or "");
     if not py_out.strip() {
         raise ValueError(

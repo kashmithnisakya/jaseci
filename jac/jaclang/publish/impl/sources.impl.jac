@@ -139,6 +139,9 @@ impl collect_source_files(
                     continue;
                 }
                 rel = str(file_path.relative_to(proj_root)).replace("\\", "/");
+                if rel.split("/")[0] in FLAT_EXCLUDED_DIRS {
+                    continue;
+                }
                 wheel_path = f"{pkg_name}/{rel}";
                 if wheel_path in seen {
                     continue;

@@ -26,6 +26,8 @@ glob DEFAULT_INCLUDE_PATTERNS: list[str] = [
      ],
      EXCLUDED_SUFFIXES: list[str] = [".pyc"];
 
+glob FLAT_EXCLUDED_DIRS: list[str] = ["docs", "examples", "scripts", ];
+
 obj SourceFile {
     has wheel_path: str = "",
         source_path: Path | None = None,

@@ -770,6 +770,11 @@ test "collect_source_files flat layout collects subdirectories recursively" {
         sub = proj / "utils";
         sub.mkdir();
         (sub / "tools.jac").write_text("# tools\n");
+        for nonpkg in ["docs", "examples", "scripts"] {
+            d = proj / nonpkg;
+            d.mkdir();
+            (d / "extra.jac").write_text("# extra\n");
+        }
         cfg = JacConfig.from_toml_str(
             '[project]\nname = "flatdeep"\nversion = "1.0.0"\n'
         );
@@ -778,6 +783,7 @@ test "collect_source_files flat layout collects subdirectories recursively" {
         paths = [sf.wheel_path for sf in files];
         assert "flatdeep/main.jac" in paths;
         assert "flatdeep/utils/tools.jac" in paths;
+        assert not any("extra.jac" in p for p in paths);
     } finally {
         shutil.rmtree(tmpdir, ignore_errors=True);
     }
