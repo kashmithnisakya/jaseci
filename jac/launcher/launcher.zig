@@ -120,6 +120,11 @@ fn boot(emb: *const embed.Embed, exe_z: [*:0]const u8, init: std.process.Init) u
 
     Py_Initialize();
 
+    // sys.path is now frozen in memory; drop PYTHONHOME/PYTHONPATH from the env
+    // so python-based children this app spawns do not inherit our runtime home
+    // (see Embed.sealHermeticEnv). Worker mode above never reaches here.
+    emb.sealHermeticEnv();
+
     // sys.argv: decode each process arg to wchar_t* and hand CPython the vector.
     // updatepath=0 keeps the script dir off sys.path (isolation).
     var wargv: [4096]?*anyopaque = undefined;

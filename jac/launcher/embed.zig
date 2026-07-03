@@ -31,6 +31,9 @@ const Io = std.Io;
 
 /// libc env mutation (not surfaced by std); must run before Py init reads env.
 extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
+/// Counterpart used to drop the hermetic vars from the process env post-init
+/// (see `sealHermeticEnv`).
+extern "c" fn unsetenv(name: [*:0]const u8) c_int;
 
 /// Bundled CPython minor version. Must stay in lockstep with payload.zig
 /// (PBS_PY / py_ver) staging; it names the dlopened libpython and the
@@ -97,6 +100,36 @@ pub const Embed = struct {
         const wexe = Py_DecodeLocale(exe_z, null) orelse return Error.EnvSetupFailed;
         Py_SetProgramName(wexe);
     }
+
+    /// Drop PYTHONHOME/PYTHONPATH once the interpreter is up, so they do not leak
+    /// into child processes the app later spawns. They are load-bearing only up
+    /// to Py_Initialize, which reads them to build sys.path and then freezes it in
+    /// memory; afterwards a python-based child (aws/gcloud/kubelogin exec
+    /// credentials, agent-browser, a plain python3) that inherits them adopts our
+    /// bundled CPython tree as its own home and dies importing `encodings`.
+    ///
+    /// Two layers must be cleared. `unsetenv` scrubs the C `environ`, covering
+    /// children spawned with `env=None` (execv inherits `environ` directly). But
+    /// `os.environ` is a dict CPython snapshotted from `environ` during
+    /// Py_Initialize, so `unsetenv` does not reach it; a child spawned with
+    /// `env=os.environ.copy()` -- which the kubernetes exec-credential provider
+    /// does -- would re-leak the stale values. Popping through `os.environ` clears
+    /// that dict (and calls `unsetenv` again under the hood), closing both paths.
+    ///
+    /// Best-effort: callers invoke it right after their Py_Initialize (the CLI
+    /// frontend and the desktop host). Worker mode (Py_BytesMain) skips it -- it
+    /// consumes the env itself and is short-lived. Only these two vars matter; the
+    /// other PYTHON*/JAC_* markers are harmless to inherit.
+    pub fn sealHermeticEnv(self: *const Embed) void {
+        _ = unsetenv("PYTHONHOME");
+        _ = unsetenv("PYTHONPATH");
+        const run = self.sym(PyRun_SimpleString_t, "PyRun_SimpleString") orelse return;
+        _ = run(
+            "import os\n" ++
+                "os.environ.pop('PYTHONHOME', None)\n" ++
+                "os.environ.pop('PYTHONPATH', None)\n",
+        );
+    }
 };
 
 /// Materialize the runtime, set the hermetic env, and dlopen the bundled
@@ -136,6 +169,8 @@ pub fn open(
     // 2. Hermetic env. PYTHONHOME/PYTHONPATH are load-bearing: without them
     //    Py_Initialize would adopt a foreign/absent interpreter. The lib-dynload
     //    entry guards pbs flavors that ship stdlib C-extensions as shared .so.
+    //    These two are dropped again right after Py_Initialize (sealHermeticEnv)
+    //    so they do not leak into child processes the app later spawns.
     var b_home: [MAX_PATH]u8 = undefined;
     var b_pp: [2 * MAX_PATH]u8 = undefined;
     var b_lib: [MAX_PATH]u8 = undefined;
