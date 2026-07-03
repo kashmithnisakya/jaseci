@@ -1,5 +1,3 @@
-"""Shared Node/Bun tooling helpers for client targets."""
-
 import json;
 import subprocess;
 import from pathlib { Path }
@@ -7,7 +5,6 @@ import from jaclang.cli.console { console }
 import from jaclang.runtimelib.client { get_bun }
 import from jaclang.runtimelib.client.targets.build_common { SUBPROCESS_TIMEOUT_SHORT }
 
-"""Check if a command is available and optionally return its version."""
 def check_command_available(
     cmd: list[str], timeout: int = SUBPROCESS_TIMEOUT_SHORT
 ) -> tuple[bool, str | None] {
@@ -20,50 +17,32 @@ def check_command_available(
     return (False, None);
 }
 
-"""Resolve npx command prefix (npx preferred, bunx fallback)."""
-def resolve_npx_or_bunx -> str {
-    (ok, _) = check_command_available(["npx", "--version"]);
-    if ok {
-        return "npx";
-    }
-    (ok, _) = check_command_available(["bunx", "--version"]);
-    if ok {
-        return "bunx";
-    }
-    raise RuntimeError(
-        "npx or bunx not found. Install Node.js (https://nodejs.org) "
-        "or Bun (https://bun.sh)."
-    );
+def resolve_node_runner -> list[str] {
+    return [_require_bundled_bun(), "x"];
 }
 
-"""Resolve the package manager command name, preferring npm and falling back to bun.
-
-When bun is selected, get_bun() ensures the binary exists and prepends its
-parent directory to PATH, so subprocesses can invoke it as plain `bun`.
-"""
 def resolve_package_manager -> str {
-    (npm_ok, _) = check_command_available(["npm", "--version"]);
-    if npm_ok {
-        return "npm";
-    }
-    bun_path = get_bun();
-    if bun_path is not None {
-        return "bun";
-    }
-    raise RuntimeError(
-        "npm or bun not found. Install Node.js (https://nodejs.org) "
-        "or Bun (https://bun.sh)."
-    );
+    return _require_bundled_bun();
 }
 
-"""Install all dependencies from an existing package.json manifest."""
+def _require_bundled_bun -> str {
+    bun_path = get_bun();
+    if bun_path is None {
+        raise RuntimeError(
+            "Bundled bun is missing. Shipped jac binaries include it (a "
+            "missing copy indicates a broken build); for a source checkout "
+            "run `zig build fetch-bun`, or set JAC_BUN to a bun binary."
+        );
+    }
+    return bun_path;
+}
+
 def run_manifest_install(project_dir: Path) {
     cmd = [resolve_package_manager(), "install"];
     console.print(f"  Installing dependencies in {project_dir.name}...", style="muted");
     subprocess.run(cmd, cwd=project_dir, check=True, capture_output=False);
 }
 
-"""Run an npm/bun install command."""
 def run_install_cmd(
     project_dir: Path,
     packages: list[str],
@@ -85,18 +64,9 @@ def run_install_cmd(
         run_manifest_install(project_dir);
         return;
     }
-    pkg_mgr = resolve_package_manager();
-    cmd: list[str];
-    if pkg_mgr == "npm" {
-        cmd = ["npm", "install"];
-        if dev {
-            cmd.append("--save-dev");
-        }
-    } else {
-        cmd = ["bun", "add"];
-        if dev {
-            cmd.append("--dev");
-        }
+    cmd = [resolve_package_manager(), "add"];
+    if dev {
+        cmd.append("--dev");
     }
     cmd.extend(packages);
     console.print(f"  Installing: {' '.join(packages)}", style="muted");
