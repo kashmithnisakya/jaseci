@@ -20,7 +20,6 @@ class MetricsCollector {
     ) -> None;
 
     def get_endpoint_handler(self: MetricsCollector) -> Callable[..., any];
-
     """Render the Prometheus exposition for this collector's own registry."""
     def expose(self: MetricsCollector) -> bytes;
 
