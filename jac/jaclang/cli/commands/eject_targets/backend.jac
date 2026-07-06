@@ -12,7 +12,8 @@ def emit_backend(
     remap: dict,
     db: dict,
     project_deps: (list | None) = None,
-    has_env: bool = False
+    has_env: bool = False,
+    entry_module: str = ""
 ) -> int {
     backend_dir.mkdir(parents=True, exist_ok=True);
 
@@ -114,7 +115,8 @@ def emit_backend(
         functions_full,
         sql,
         db_basename,
-        has_env
+        has_env,
+        entry_module
     );
 
     import from jaclang.publish.runtime_vendor { vendor_runtime, llm_requirements }
@@ -438,7 +440,8 @@ def _emit_main_py(
     functions: list,
     sql: bool,
     db_basename: str,
-    has_env: bool
+    has_env: bool,
+    entry_module: str
 ) {
     lines: list[str] = [
         f'"""Auto-generated FastAPI app for the ejected Jac project {project_name!r}:',
@@ -456,25 +459,14 @@ def _emit_main_py(
         'from fastapi.responses import StreamingResponse',
         'from pydantic import BaseModel',
         '',
-        'from jaclang.runtimelib.server import UserManager, ExecutionManager'
+        '_BASE = os.path.dirname(os.path.abspath(__file__))'
     ];
-
-    for w in walkers {
-        wn = str(w["name"]);
-        lines.append("from " + str(w["module"]) + " import " + wn + " as _W_" + wn);
-    }
-    for f in functions {
-        fn = str(f["name"]);
-        lines.append("from " + str(f["module"]) + " import " + fn + " as _F_" + fn);
-    }
-
-    lines += ['', '_BASE = os.path.dirname(os.path.abspath(__file__))'];
 
     if has_env {
         lines += [
             '',
-            '# Load .env (backend/.env first, then the project root) before',
-            '# anything reads os.environ.',
+            '# Load .env (backend/.env first, then the project root) before the',
+            '# project modules import: they may read os.environ at import time.',
             'try:',
             '    from dotenv import load_dotenv',
             'except ImportError:',
@@ -487,6 +479,29 @@ def _emit_main_py(
             '        if os.path.isfile(_env_file):',
             '            load_dotenv(_env_file)'
         ];
+    }
+
+    lines += [
+        '',
+        'from jaclang.runtimelib.server import UserManager, ExecutionManager'
+    ];
+
+    if entry_module {
+        lines += [
+            '',
+            '# Import the entry module for its side effects: its `with entry`',
+            '# code runs at server boot, as it would under `jac start`.',
+            'import ' + entry_module
+        ];
+    }
+
+    for w in walkers {
+        wn = str(w["name"]);
+        lines.append("from " + str(w["module"]) + " import " + wn + " as _W_" + wn);
+    }
+    for f in functions {
+        fn = str(f["name"]);
+        lines.append("from " + str(f["module"]) + " import " + fn + " as _F_" + fn);
     }
 
     if sql {
@@ -721,6 +736,42 @@ def _emit_main_py(
         lines.append(
             "    return _respond_fn(await _em.execute_function(_F_" + fn + ", dict(body.model_dump()), user))"
         );
+    }
+
+    if functions {
+        triples = ", ".join(
+            [
+                "(_F_" + str(f["name"]) + ", call_" + str(f["name"]) + ", " + _model_class_name(
+                    str(f["name"]), "FnIn"
+                ) + ")" for f in functions
+            ]
+        );
+        lines += [
+            '',
+            '',
+            '# Functions decorated with @restspec(path=...) are also mounted at',
+            '# their declared paths (parity with `jac start` custom REST routes).',
+            '# GET/HEAD routes carry no body: call the handler with the model',
+            "# defaults instead of FastAPI's required JSON body.",
+            'def _mount_restspec(fn, handler, model):',
+            '    spec = getattr(fn, "restspec", None)',
+            '    path = str(getattr(spec, "path", "") or "")',
+            '    if not path:',
+            '        return',
+            '    if not path.startswith("/"):',
+            '        path = "/" + path',
+            '    method = str(getattr(spec, "method", "") or "POST").upper()',
+            '    if method in ("GET", "HEAD"):',
+            '        async def _bodyless(authorization: str = Header(default=None)):',
+            '            return await handler(model(), authorization=authorization)',
+            '        app.add_api_route(path, _bodyless, methods=[method])',
+            '    else:',
+            '        app.add_api_route(path, handler, methods=[method])',
+            '',
+            '',
+            'for _fn, _handler, _model in [' + triples + ']:',
+            '    _mount_restspec(_fn, _handler, _model)'
+        ];
     }
 
     walker_list_lit = "[" + ", ".join([repr(str(w["name"])) for w in walkers]) + "]";

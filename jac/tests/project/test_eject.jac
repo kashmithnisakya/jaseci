@@ -609,3 +609,143 @@ test "backend-only Makefile has no frontend targets" {
         assert "frontend" not in readme;
     }
 }
+
+
+# ==================== entry-module reachability ====================
+test "script modules not imported by the entry module get no endpoints" {
+    with TemporaryDirectory() as td {
+        src = Path(td) / "scriptapp";
+        _write_project(src, "scriptapp");
+        # A standalone CLI script: module-level `with entry` side effects
+        # must never run inside the generated server.
+        (src / "tool.jac").write_text(
+            'def cli_main() {\n' + '    print("cli");\n' + '}\n\n' + 'with entry {\n' + '    cli_main();\n' + '}\n'
+        );
+        rc = _silent_eject(str(src));
+        assert rc == 0;
+        main_py = _backend(src, "main.py").read_text();
+        assert "from tool import" not in main_py;
+        assert "/function/cli_main" not in main_py;
+        # The module is still emitted for standalone use (python tool.py).
+        assert _backend(src, "tool.py").exists();
+        # Reachable modules keep their endpoints.
+        assert '@app.post("/walker/Greet")' in main_py;
+    }
+}
+
+
+test "modules transitively imported by the entry module keep endpoints" {
+    with TemporaryDirectory() as td {
+        src = Path(td) / "chainapp";
+        src.mkdir(parents=True, exist_ok=True);
+        (src / "jac.toml").write_text(
+            '[project]\nname = "chainapp"\nentry-point = "main.jac"\n'
+        );
+        (src / "main.jac").write_text('import from api { ping }\n');
+        (src / "api.jac").write_text(
+            'import from util { double }\n\n' + 'def:pub ping(x: int) -> int {\n' + '    return double(x);\n' + '}\n'
+        );
+        (src / "util.jac").write_text(
+            'def double(x: int) -> int {\n' + '    return x * 2;\n' + '}\n'
+        );
+        rc = _silent_eject(str(src));
+        assert rc == 0;
+        main_py = _backend(src, "main.py").read_text();
+        assert '@app.post("/function/ping")' in main_py;
+        # util is reachable through api, so its functions stay exposed.
+        assert '@app.post("/function/double")' in main_py;
+    }
+}
+
+
+test "entry module with server-side entry code is imported by main.py" {
+    with TemporaryDirectory() as td {
+        src = Path(td) / "bootapp";
+        _write_project(src, "bootapp");
+        (src / "main.jac").write_text(
+            'import from server { Greet }\n\n' + 'with entry {\n' + '    print("boot");\n' + '}\n\n' + 'cl {\n' + '    import from .frontend { app as ClientApp }\n' + '    def:pub app -> JsxElement {\n' + '        return <ClientApp/>;\n' + '    }\n' + '}\n'
+        );
+        rc = _silent_eject(str(src));
+        assert rc == 0;
+        main_py = _backend(src, "main.py").read_text();
+        # main.jac is remapped to _jac_main; its entry side effects must run
+        # at server boot like they would under `jac start`.
+        assert "import _jac_main" in main_py;
+    }
+}
+
+
+# ==================== client runtime chunks + compiled entry ====================
+test "client runtime sibling chunks are copied alongside __jac_runtime.js" {
+    with TemporaryDirectory() as td {
+        src = Path(td) / "chunkapp";
+        _write_project(src, "chunkapp");
+        compiled = src / ".jac" / "client" / "compiled";
+        compiled.mkdir(parents=True, exist_ok=True);
+        (compiled / "client_runtime.js").write_text(
+            'import { x } from "./client_runtime_core.js";\n' + 'export const runtime = x;\n'
+        );
+        (compiled / "client_runtime_core.js").write_text("export const x = 1;\n");
+        rc = _silent_eject(str(src));
+        assert rc == 0;
+        assert _frontend(src, "src/__jac_runtime.js").exists();
+        assert _frontend(src, "src/client_runtime_core.js").exists();
+    }
+}
+
+
+test "compiled _entry.js and _routes.js are preferred over the synthesized entry" {
+    with TemporaryDirectory() as td {
+        src = Path(td) / "routedapp";
+        _write_project(src, "routedapp");
+        compiled = src / ".jac" / "client" / "compiled";
+        compiled.mkdir(parents=True, exist_ok=True);
+        (compiled / "client_runtime.js").write_text("export const runtime = 1;\n");
+        (compiled / "_entry.js").write_text(
+            'import { routes } from "./_routes.js";\nexport const boot = routes;\n'
+        );
+        (compiled / "_routes.js").write_text("export const routes = [];\n");
+        rc = _silent_eject(str(src));
+        assert rc == 0;
+        assert _frontend(src, "src/_entry.js").exists();
+        assert _frontend(src, "src/_routes.js").exists();
+        html = _frontend(src, "index.html").read_text();
+        assert "/src/_entry.js" in html;
+        assert "__jac_entry.js" not in html;
+    }
+}
+
+
+test "index.html falls back to the synthesized entry without a compiled entry" {
+    with TemporaryDirectory() as td {
+        src = Path(td) / "fallbackapp";
+        _write_project(src, "fallbackapp");
+        rc = _silent_eject(str(src));
+        assert rc == 0;
+        assert _frontend(src, "src/__jac_entry.js").exists();
+        html = _frontend(src, "index.html").read_text();
+        assert "/src/__jac_entry.js" in html;
+    }
+}
+
+
+# ==================== @restspec custom paths ====================
+test "@restspec functions get their declared paths mounted" {
+    with TemporaryDirectory() as td {
+        src = Path(td) / "restapp";
+        src.mkdir(parents=True, exist_ok=True);
+        (src / "jac.toml").write_text(
+            '[project]\nname = "restapp"\nentry-point = "main.jac"\n'
+        );
+        (src / "main.jac").write_text(
+            'import from jaclang.runtimelib.builtin { restspec }\n' + 'import from jaclang.scale.jserver.jserver { HTTPMethod }\n\n' + '@restspec(method=HTTPMethod.POST, path="/api/v1/hello")\n' + 'def:pub hello(name: str = "") -> dict {\n' + '    return {"hi": name};\n' + '}\n'
+        );
+        rc = _silent_eject(str(src));
+        assert rc == 0;
+        main_py = _backend(src, "main.py").read_text();
+        assert "add_api_route" in main_py;
+        # The module jserver (HTTPMethod's home) must be vendored so the
+        # compiled module imports cleanly without jac-scale installed.
+        assert _backend(src, "jaclang/scale/jserver/jserver.py").exists();
+    }
+}

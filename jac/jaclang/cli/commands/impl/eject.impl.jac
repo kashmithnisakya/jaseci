@@ -1,3 +1,4 @@
+import ast;
 import shutil;
 import json;
 import from pathlib { Path }
@@ -214,7 +215,14 @@ impl eject(source: str = ".", output: str = "", force: bool = False) -> int {
                 }
             }
         }
-        compiled.append({"module": bmod, "py": py_code, "server": server});
+        compiled.append(
+            {
+                "module": bmod,
+                "orig": ".".join(parent_parts + [stem]),
+                "py": py_code,
+                "server": server
+            }
+        );
         console.print(f"  ✔ {rel}", style="success");
     }
 
@@ -232,6 +240,51 @@ impl eject(source: str = ".", output: str = "", force: bool = False) -> int {
         for name in [".env", ".env.example"]
         if (src / name).is_file()
     ];
+
+    entry_bmod = "";
+    reach = _entry_reachable_modules(compiled, entry_module);
+    if reach is None {
+        console.warning(
+            f"  entry module '{entry_module}' not found among compiled "
+            "modules; exposing endpoints from every module."
+        );
+    } else {
+        reachable = reach["reachable"];
+        orig_by_bmod: dict = {};
+        for unit in compiled {
+            orig_by_bmod[str(unit["module"])] = str(unit["orig"]);
+            if (str(unit["orig"]) == str(reach["entry"])) and unit["server"] {
+                entry_bmod = str(unit["module"]);
+            }
+        }
+        dropped: set = set();
+        kept_walkers: list = [];
+        for w in walkers {
+            if orig_by_bmod.get(str(w["module"])) in reachable {
+                kept_walkers.append(w);
+            } else {
+                dropped.add(str(orig_by_bmod.get(str(w["module"]))));
+            }
+        }
+        walkers = kept_walkers;
+        kept_functions: list = [];
+        for f in functions {
+            if orig_by_bmod.get(str(f["module"])) in reachable {
+                kept_functions.append(f);
+            } else {
+                dropped.add(str(orig_by_bmod.get(str(f["module"]))));
+            }
+        }
+        functions = kept_functions;
+        if dropped {
+            console.print(
+                "  ○ not imported by the entry module (kept as plain modules, "
+                "no endpoints): " + ", ".join(sorted(dropped)),
+                style="muted"
+            );
+        }
+    }
+
     import from jaclang.cli.commands.eject_targets.backend { emit_backend }
     rc = emit_backend(
         backend_dir,
@@ -242,7 +295,8 @@ impl eject(source: str = ".", output: str = "", force: bool = False) -> int {
         remap,
         db_cfg,
         project_deps,
-        len(env_files) > 0
+        len(env_files) > 0,
+        entry_bmod
     );
     if rc != 0 {
         return rc;
@@ -253,8 +307,11 @@ impl eject(source: str = ".", output: str = "", force: bool = False) -> int {
         runtime_copied = _copy_client_runtime(src, frontend_dir);
         _emit_package_json(frontend_dir, project_name, toml_data);
         _emit_vite_config(frontend_dir, runtime_copied, toml_data);
-        _emit_entry_js(frontend_src_dir, entry_module);
-        _emit_index_html(frontend_dir, project_name);
+        entry_copied = _copy_compiled_entry(src, frontend_src_dir);
+        if not entry_copied {
+            _emit_entry_js(frontend_src_dir, entry_module);
+        }
+        _emit_index_html(frontend_dir, project_name, entry_copied);
     } else {
         console.warning(
             f"  No client `app` component in entry module '{entry_module}'; "
@@ -537,7 +594,37 @@ def _copy_client_runtime(src: Path, frontend_root: Path) -> bool {
             _ = 0;
         }
     }
+
+    for sibling in sorted(runtime_src.parent.glob("client_runtime*")) {
+        if sibling.name in ["client_runtime.js", "client_runtime.js.map"] {
+            continue;
+        }
+        try {
+            shutil.copy2(sibling, dest.parent / sibling.name);
+        } except Exception {
+            _ = 0;
+        }
+    }
     console.print("  ✔ @jac/runtime", style="success");
+    return True;
+}
+
+
+def _copy_compiled_entry(src: Path, frontend_src_dir: Path) -> bool {
+    compiled_dir = src / ".jac" / "client" / "compiled";
+    entry_src = compiled_dir / "_entry.js";
+    routes_src = compiled_dir / "_routes.js";
+    if not entry_src.exists() or not routes_src.exists() {
+        return False;
+    }
+    try {
+        shutil.copy2(entry_src, frontend_src_dir / "_entry.js");
+        shutil.copy2(routes_src, frontend_src_dir / "_routes.js");
+    } except Exception as e {
+        console.warning(f"  Failed to copy the compiled client entry: {e}");
+        return False;
+    }
+    console.print("  ✔ client entry + pages routing", style="success");
     return True;
 }
 
@@ -625,7 +712,10 @@ def _fix_sourcemap_ref(js_code: str, map_name: str, has_map: bool) -> str {
 }
 
 
-def _emit_index_html(frontend_dir: Path, project_name: str) {
+def _emit_index_html(
+    frontend_dir: Path, project_name: str, entry_copied: bool = False
+) {
+    entry_src = "/src/_entry.js" if entry_copied else "/src/__jac_entry.js";
     lines: list[str] = [
         '<!doctype html>',
         '<html lang="en">',
@@ -636,7 +726,7 @@ def _emit_index_html(frontend_dir: Path, project_name: str) {
         '  </head>',
         '  <body>',
         '    <div id="root"></div>',
-        '    <script type="module" src="/src/__jac_entry.js"></script>',
+        f'    <script type="module" src="{entry_src}"></script>',
         '  </body>',
         '</html>',
         ''
@@ -653,6 +743,93 @@ def _emit_entry_js(frontend_src_dir: Path, entry_module: str) {
     (frontend_src_dir / "__jac_entry.js").write_text(
         backend.build_entry_script(entry_module), encoding="utf-8"
     );
+}
+
+
+def _entry_reachable_modules(compiled: list, entry_module: str) -> (dict | None) {
+    units_by_orig: dict = {};
+    for unit in compiled {
+        units_by_orig[str(unit["orig"])] = unit;
+    }
+    entry = "";
+    if entry_module in units_by_orig {
+        entry = entry_module;
+    } else {
+        for name in sorted(units_by_orig.keys()) {
+            if name.endswith("." + entry_module) {
+                entry = name;
+                break;
+            }
+        }
+    }
+    if not entry {
+        return None;
+    }
+    known: set = set(units_by_orig.keys());
+    reachable: set = set();
+    queue: list = [entry];
+    while queue {
+        cur = str(queue.pop(0));
+        if cur in reachable {
+            continue;
+        }
+        reachable.add(cur);
+        deps = _py_import_targets(str(units_by_orig[cur]["py"]), cur, known);
+        for dep in sorted(deps) {
+            if dep not in reachable {
+                queue.append(dep);
+            }
+        }
+    }
+    return {"reachable": reachable, "entry": entry};
+}
+
+
+def _py_import_targets(py_code: str, mod_name: str, known: set) -> set {
+    targets: set = set();
+    try {
+        tree = ast.parse(py_code);
+    } except Exception {
+        return targets;
+    }
+    pkg_parts = mod_name.split(".")[:-1];
+    for node in ast.walk(tree) {
+        if isinstance(node, ast.ImportFrom) {
+            if node.level > 0 {
+                keep = len(pkg_parts) - (node.level - 1);
+                if keep < 0 {
+                    continue;
+                }
+                base_parts = list(pkg_parts[:keep]);
+                if node.module {
+                    base_parts.append(str(node.module));
+                }
+                base = ".".join(base_parts);
+            } else {
+                base = str(node.module or "");
+            }
+            if base in known {
+                targets.add(base);
+            }
+            for alias in node.names {
+                cand = (base + "." + str(alias.name)) if base else str(alias.name);
+                if cand in known {
+                    targets.add(cand);
+                }
+            }
+        } elif isinstance(node, ast.Import) {
+            for alias in node.names {
+                parts = str(alias.name).split(".");
+                for i in range(1, len(parts) + 1) {
+                    prefix = ".".join(parts[:i]);
+                    if prefix in known {
+                        targets.add(prefix);
+                    }
+                }
+            }
+        }
+    }
+    return targets;
 }
 
 
