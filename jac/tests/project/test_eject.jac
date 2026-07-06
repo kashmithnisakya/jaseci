@@ -873,3 +873,42 @@ test "a prior eject output is excluded from a re-eject to a different dir" {
         assert not (dest / "frontend" / "src" / "ejected").exists();
     }
 }
+
+
+# ==================== byLLM config (backend/jac.toml) ====================
+test "byLLM plugin config is emitted into backend/jac.toml" {
+    with TemporaryDirectory() as td {
+        src = Path(td) / "llmcfg";
+        src.mkdir(parents=True, exist_ok=True);
+        (src / "jac.toml").write_text(
+            '[project]\nname = "llmcfg"\nversion = "0.2.0"\nentry-point = "main.jac"\n' + '\n[plugins.byllm.model]\n' + 'default_model = "${BYLLM_MODEL:-openai/google/gemma-4-12B-it}"\n' + 'api_key = "${BYLLM_API_KEY:-EMPTY}"\n' + '\n[plugins.byllm.call_params]\ntemperature = 0.0\nmax_tokens = 1024\n'
+        );
+        (src / "main.jac").write_text(
+            'import from jaclang.byllm.lib { Model }\n\n' + 'def:pub ask(q: str) -> str by Model()(query=q);\n'
+        );
+        rc = _silent_eject(str(src));
+        assert rc == 0;
+        toml_out = _backend(src, "jac.toml");
+        assert toml_out.exists();
+        text = toml_out.read_text();
+        # The byLLM model section is carried over, interpolation preserved so
+        # the runtime resolves it from .env (not baked at eject time).
+        assert "[plugins.byllm.model]" in text;
+        assert "${BYLLM_MODEL:-openai/google/gemma-4-12B-it}" in text;
+        assert "[plugins.byllm.call_params]" in text;
+        assert "max_tokens = 1024" in text;
+        # The project section is present so the config loader finds the root.
+        assert 'name = "llmcfg"' in text;
+    }
+}
+
+
+test "projects without byLLM config get no backend jac.toml" {
+    with TemporaryDirectory() as td {
+        src = Path(td) / "nollm";
+        _write_project(src, "nollm");
+        rc = _silent_eject(str(src));
+        assert rc == 0;
+        assert not _backend(src, "jac.toml").exists();
+    }
+}

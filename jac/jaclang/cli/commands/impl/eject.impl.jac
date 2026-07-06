@@ -288,6 +288,8 @@ impl eject(source: str = ".", output: str = "", force: bool = False) -> int {
         return rc;
     }
 
+    _emit_backend_jac_toml(backend_dir, project_name, toml_data);
+
     has_frontend = entry_has_app;
     if has_frontend {
         runtime_copied = _copy_client_runtime(src, frontend_dir);
@@ -921,6 +923,65 @@ def _harvest_python_deps(toml_data: dict) -> list[str] {
         reqs.append(make_pip_spec(pkg, rng));
     }
     return sorted(reqs);
+}
+
+
+def _emit_backend_jac_toml(backend_dir: Path, project_name: str, toml_data: dict) {
+    byllm_cfg = toml_data.get("plugins", {}).get("byllm", {});
+    if (not isinstance(byllm_cfg, dict)) or (not byllm_cfg) {
+        return;
+    }
+    project_cfg = toml_data.get("project", {});
+    version = str(project_cfg.get("version", "0.1.0"));
+    lines: list[str] = [];
+    _emit_toml_table(lines, "project", {"name": project_name, "version": version});
+    _emit_toml_table(lines, "plugins.byllm", dict(byllm_cfg));
+    (backend_dir / "jac.toml").write_text("\n".join(lines), encoding="utf-8");
+    console.print("  ✔ byLLM config (jac.toml)", style="success");
+}
+
+
+def _emit_toml_table(lines: list, header: str, table: dict) {
+    scalars: list = [];
+    subs: list = [];
+    for (k, v) in table.items() {
+        if isinstance(v, dict) {
+            subs.append((k, v));
+        } else {
+            scalars.append((k, v));
+        }
+    }
+    if scalars {
+        if header {
+            lines.append("[" + header + "]");
+        }
+        for (k, v) in scalars {
+            lines.append(str(k) + " = " + _toml_scalar(v));
+        }
+        lines.append("");
+    }
+    for (k, sub) in subs {
+        child = (header + "." + str(k)) if header else str(k);
+        _emit_toml_table(lines, child, dict(sub));
+    }
+}
+
+
+def _toml_scalar(v: any) -> str {
+    if isinstance(v, bool) {
+        return "true" if v else "false";
+    }
+    if isinstance(v, str) {
+        esc = v.replace("\\", "\\\\").replace('"', '\\"');
+        return '"' + esc + '"';
+    }
+    if isinstance(v, (int, float)) {
+        return str(v);
+    }
+    if isinstance(v, list) {
+        return "[" + ", ".join([_toml_scalar(x) for x in v]) + "]";
+    }
+    return '"' + str(v).replace('"', '\\"') + '"';
 }
 
 
