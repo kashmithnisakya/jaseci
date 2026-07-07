@@ -914,3 +914,36 @@ test "projects without byLLM config get no backend jac.toml" {
         assert not _backend(src, "jac.toml").exists();
     }
 }
+
+
+# ==================== test annexes stripped from backend modules ====================
+test "compiled test code and dev-path decorators are stripped from the backend" {
+    with TemporaryDirectory() as td {
+        src = Path(td) / "tst";
+        src.mkdir(parents=True, exist_ok=True);
+        (src / "jac.toml").write_text(
+            '[project]\nname = "tst"\nentry-point = "main.jac"\n'
+        );
+        (src / "main.jac").write_text('import from core { compute }\n');
+        (src / "core.jac").write_text('def:pub compute(x: int) -> int;\n');
+        # An impl annex: its function carries an @impl_patch_filename decorator
+        # naming the annex's absolute path.
+        (src / "core.impl.jac").write_text(
+            'impl compute(x: int) -> int {\n    return x * 2;\n}\n'
+        );
+        # A test annex: compiles to an @jac_test function merged into core.
+        (src / "core.test.jac").write_text(
+            'test "doubles" {\n    assert compute(2) == 4;\n}\n'
+        );
+        rc = _silent_eject(str(src));
+        assert rc == 0;
+        core_py = _backend(src, "core.py").read_text();
+        # Real code survives.
+        assert "def compute" in core_py;
+        # Test code and the dev-path decorators do not.
+        assert "def test_" not in core_py;
+        assert "jac_test" not in core_py;
+        assert "impl_patch_filename" not in core_py;
+        assert str(src) not in core_py;
+    }
+}
