@@ -947,3 +947,26 @@ test "compiled test code and dev-path decorators are stripped from the backend" 
         assert str(src) not in core_py;
     }
 }
+
+
+test "a user import named jac_test is not stripped (only jaclib imports are)" {
+    with TemporaryDirectory() as td {
+        src = Path(td) / "uimp";
+        src.mkdir(parents=True, exist_ok=True);
+        (src / "jac.toml").write_text(
+            '[project]\nname = "uimp"\nentry-point = "main.jac"\n'
+        );
+        (src / "main.jac").write_text('import from helper { run }\n');
+        (src / "userlib.jac").write_text(
+            'def jac_test() -> str {\n    return "custom";\n}\n'
+        );
+        (src / "helper.jac").write_text(
+            'import from userlib { jac_test }\n\n' + 'def:pub run() -> str {\n    return jac_test();\n}\n'
+        );
+        rc = _silent_eject(str(src));
+        assert rc == 0;
+        helper_py = _backend(src, "helper.py").read_text();
+        # The project's own jac_test import must survive; only jaclib's is pruned.
+        assert "from userlib import jac_test" in helper_py;
+    }
+}

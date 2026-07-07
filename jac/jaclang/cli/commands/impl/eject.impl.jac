@@ -466,6 +466,11 @@ def _filtered_body(body: list) -> list {
     kept: list = [];
     for node in body {
         if isinstance(node, ast.ImportFrom) {
+            mod = str(node?.module or "");
+            if not mod.startswith("jaclang") {
+                kept.append(node);
+                continue;
+            }
             aliases = getattr(node, "names", []);
             new_names: list = [];
             for alias in aliases {
