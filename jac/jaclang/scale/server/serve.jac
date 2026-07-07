@@ -1,4 +1,5 @@
 import time;
+import asyncio;
 import logging;
 import mimetypes;
 import from collections.abc { Callable }
@@ -31,7 +32,27 @@ import from jaclang.scale.config.config_loader { get_scale_config }
 import from jaclang.scale.webhook.webhook { ApiKeyManager, WebhookUtils }
 import from jaclang.scale.observability.metrics { MetricsCollector }
 import from jaclang.scale.events.broker { EventStreamBroker }
-import from jaclang.scale.server.ws_support { WebSocketConnectionManager }
+import from jaclang.scale.server.ws_support {
+    WebSocketConnectionManager,
+    ConnectionContext
+}
+import from jaclang.scale.server.ws_backplane { build_backplane }
+import from jaclang.scale.server.ws_protocol {
+    HEARTBEAT_SECONDS,
+    HEARTBEAT_MISSED_ALLOWED,
+    SEND_TIMEOUT_SECONDS,
+    AUTH_HANDSHAKE_TIMEOUT_SECONDS,
+    ws_error_frame,
+    ws_pre_accept_auth,
+    ws_reject_pre_accept,
+    ws_authenticate,
+    ws_heartbeat_loop,
+    ws_reject_auth,
+    ws_reject_capacity,
+    ws_receive_frame,
+    ws_handle_control,
+    ws_execute_target
+}
 import from typing { AsyncGenerator }
 import from inspect { isgenerator }
 import from fastapi.responses { StreamingResponse }

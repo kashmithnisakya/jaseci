@@ -580,131 +580,211 @@ impl JacAPIServerEndpoints.register_webhook_endpoints -> None {
     }
 }
 
-"""Stream a generator target result over the socket as `chunk` frames followed
-by a terminating `done` frame. Mirrors the HTTP SSE frame semantics so a walker
-or function that returns a generator streams identically over both transports."""
-async def _ws_stream_result(
-    websocket: WebSocket,
-    ws_manager: WebSocketConnectionManager,
-    target_name: str,
-    is_broadcast: bool,
-    result: any
-) {
-    async def emit(frame: dict) {
-        if is_broadcast {
-            await ws_manager.broadcast(target_name, frame);
-        } else {
-            await websocket.send_json(frame);
-        }
-    }
+"""Stream a generator target result as `chunk` frames followed by a terminating
+`done` frame, each emitted through `send_result`. Mirrors the HTTP SSE frame
+semantics so a walker or function that returns a generator streams identically
+over both transports."""
+async def _ws_stream_result(send_result: any, result: any) {
     if isgenerator(result) {
         for item in result {
-            await emit({'ok': True, 'type': 'chunk', 'data': item});
+            await send_result({'ok': True, 'type': 'chunk', 'data': item});
         }
     } else {
         async for item in result {
-            await emit({'ok': True, 'type': 'chunk', 'data': item});
+            await send_result({'ok': True, 'type': 'chunk', 'data': item});
         }
     }
-    await emit({'ok': True, 'type': 'done'});
+    await send_result({'ok': True, 'type': 'done'});
 }
 
 impl JacAPIServerEndpoints.get_ws_manager -> WebSocketConnectionManager {
     if not self._ws_manager {
-        self._ws_manager = WebSocketConnectionManager();
+        ws_cfg = get_scale_config().get_websocket_config();
+        backplane = build_backplane(ws_cfg);
+        self._ws_manager = WebSocketConnectionManager(
+            max_per_target=ws_cfg['max_connections_per_target'],
+            max_per_user=ws_cfg['max_connections_per_user'],
+            max_anonymous_per_target=ws_cfg['max_anonymous_per_target'],
+            send_timeout=SEND_TIMEOUT_SECONDS,
+            backplane=backplane,
+            metrics=self._metrics
+        );
     }
     return self._ws_manager;
 }
 
+"""Drive one hardened WebSocket connection lifecycle.
+
+Handles the auth handshake (pre-accept query token with a first-frame fallback,
+tagged reject reasons and token refresh), connection-cap registration, the
+heartbeat/idle-close loop, per-message size and rate limits, target execution
+under a timeout, and streamed or single-result delivery. `make_awaitable(data,
+user)` returns the coroutine that runs the target for one request."""
+async def _ws_serve_connection(
+    websocket: WebSocket,
+    ws_manager: WebSocketConnectionManager,
+    user_manager: any,
+    requires_auth: bool,
+    target_kind: str,
+    target_name: str,
+    is_broadcast: bool,
+    label: str,
+    max_bytes: int,
+    target_timeout: float,
+    msgs_per_sec: float,
+    make_awaitable: any
+) {
+    rate_capacity = max(msgs_per_sec, 1.0);
+    user_id: (str | None) = None;
+    token_exp: (float | None) = None;
+    first_data: (dict | None) = None;
+    pre_auth: (dict | None) = None;
+    if requires_auth {
+        pre_auth = ws_pre_accept_auth(websocket, user_manager);
+        if pre_auth is not None and pre_auth['status'] != 'ok' {
+            await ws_reject_pre_accept(websocket, pre_auth);
+            return;
+        }
+    }
+    await websocket.accept();
+    if requires_auth {
+        if pre_auth is not None {
+            user_id = pre_auth.get('user_id');
+            token_exp = pre_auth.get('exp');
+        } else {
+            (auth_detail, first_data) = await ws_authenticate(
+                websocket, user_manager, AUTH_HANDSHAKE_TIMEOUT_SECONDS
+            );
+            if auth_detail['status'] != 'ok' {
+                await ws_reject_auth(websocket, auth_detail);
+                return;
+            }
+            user_id = auth_detail.get('user_id');
+            token_exp = auth_detail.get('exp');
+        }
+    }
+    ctx = ConnectionContext(
+        websocket=websocket,
+        target_kind=target_kind,
+        target_name=target_name,
+        user_id=user_id,
+        exp=token_exp,
+        rate_tokens=rate_capacity
+    );
+    rejection = await ws_manager.register(ctx);
+    if rejection {
+        await ws_reject_capacity(websocket, rejection);
+        return;
+    }
+    heartbeat_task = asyncio.create_task(
+        ws_heartbeat_loop(ctx, HEARTBEAT_SECONDS, HEARTBEAT_MISSED_ALLOWED)
+    );
+    async def send_result(payload: dict) {
+        if is_broadcast {
+            await ws_manager.broadcast_target(target_kind, target_name, payload);
+        } else {
+            await websocket.send_json(payload);
+        }
+    }
+    try {
+        while True {
+            if first_data {
+                data = first_data;
+                first_data = None;
+            } else {
+                (status, data) = await ws_receive_frame(websocket, max_bytes);
+                if status == 'close' {
+                    break;
+                }
+                if status == 'skip' {
+                    continue;
+                }
+            }
+            ctx.last_seen = time.monotonic();
+            control = await ws_handle_control(
+                websocket,
+                ctx,
+                data,
+                user_manager,
+                requires_auth,
+                msgs_per_sec,
+                rate_capacity
+            );
+            if control == 'break' {
+                break;
+            }
+            if control == 'continue' {
+                continue;
+            }
+            (ok, result) = await ws_execute_target(
+                websocket,
+                label,
+                target_name,
+                make_awaitable(data, (ctx.user_id or Con.GUEST.value)),
+                target_timeout
+            );
+            if not ok {
+                continue;
+            }
+            if (isgenerator(result) or isinstance(result, AsyncGenerator)) {
+                await _ws_stream_result(send_result, result);
+            } elif isinstance(result, dict) and 'error' in result {
+                await websocket.send_json(
+                    ws_error_frame(
+                        'EXECUTION_ERROR',
+                        result.get('error', f"{label} execution failed")
+                    )
+                );
+            } else {
+                await send_result({'ok': True, 'data': result});
+            }
+        }
+    } except WebSocketDisconnect {
+        logger.debug(f"WS client disconnected conn_id={ctx.conn_id}");
+    } except Exception as e {
+        logger.error(
+            f"WS error {label.lower()}='{target_name}' conn_id={ctx.conn_id}: {e}"
+        );
+    } finally {
+        heartbeat_task.cancel();
+        try {
+            await heartbeat_task;
+        } except Exception as e {
+            logger.debug(f"WS heartbeat cleanup exception: {e}");
+        }
+        await ws_manager.unregister(ctx);
+    }
+}
+
 impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callable {
     ws_manager = self.get_ws_manager();
+    ws_cfg = get_scale_config().get_websocket_config();
     requires_auth = self.introspector.is_auth_required_for_walker(walker_name);
-
     walker_cls = self.get_walkers()[walker_name];
     restspec = walker_cls.restspec
         if walker_cls?.restspec and walker_cls.restspec
         else None;
     is_broadcast = restspec.broadcast if restspec and restspec?.broadcast else False;
+    user_manager = self.user_manager;
+    execution_manager = self.execution_manager;
     async def websocket_handler(websocket: WebSocket) {
-        await ws_manager.connect(websocket, walker_name);
-        try {
-            while True {
-                data = await websocket.receive_json();
-
-                username: (str | None) = None;
-                if requires_auth {
-                    token = data.pop('token', None)
-                    or websocket.query_params.get('token');
-                    if token {
-                        username = self.user_manager.validate_jwt_token(token);
-                    }
-                    if not username {
-                        await websocket.send_json(
-                            {
-                                'ok': False,
-                                'error': {
-                                    'code': 'UNAUTHORIZED',
-                                    'message': 'Invalid or missing token'
-                                }
-                            }
-                        );
-                        continue;
-                    }
-                }
-
-                try {
-                    result = await self.execution_manager.spawn_walker(
-                        self.get_walkers()[walker_name],
-                        data,
-                        (username or Con.GUEST.value)
-                    );
-                    if (isgenerator(result) or isinstance(result, AsyncGenerator)) {
-                        await _ws_stream_result(
-                            websocket,
-                            ws_manager,
-                            walker_name,
-                            bool(is_broadcast),
-                            result
-                        );
-                    } elif isinstance(result, dict) and 'error' in result {
-                        await websocket.send_json(
-                            {
-                                'ok': False,
-                                'error': {
-                                    'code': 'EXECUTION_ERROR',
-                                    'message': result.get(
-                                        'error', 'Walker execution failed'
-                                    )
-                                }
-                            }
-                        );
-                    } else {
-                        response = {'ok': True, 'data': result};
-                        if is_broadcast {
-                            await ws_manager.broadcast(walker_name, response);
-                        } else {
-                            await websocket.send_json(response);
-                        }
-                    }
-                } except Exception as e {
-                    logger.error(
-                        f"WebSocket walker execution error for '{walker_name}': {e}"
-                    );
-
-                    await websocket.send_json(
-                        {
-                            'ok': False,
-                            'error': {'code': 'INTERNAL_ERROR', 'message': str(e)}
-                        }
-                    );
-                }
-            }
-        } except WebSocketDisconnect {
-            ws_manager.disconnect(websocket, walker_name);
-        } except Exception as e {
-            logger.error(f"WebSocket error for walker '{walker_name}': {e}");
-            ws_manager.disconnect(websocket, walker_name);
+        def make_awaitable(data: dict, user: str) -> any {
+            return execution_manager.spawn_walker(walker_cls, data, user);
         }
+        await _ws_serve_connection(
+            websocket,
+            ws_manager,
+            user_manager,
+            requires_auth,
+            'walker',
+            walker_name,
+            bool(is_broadcast),
+            'Walker',
+            int(ws_cfg['max_message_bytes']),
+            float(ws_cfg['target_timeout_seconds']),
+            float(ws_cfg['messages_per_second']),
+            make_awaitable
+        );
     }
     return websocket_handler;
 }
@@ -714,86 +794,31 @@ impl JacAPIServerEndpoints.create_websocket_function_handler(
     func_name: str
 ) -> Callable {
     ws_manager = self.get_ws_manager();
+    ws_cfg = get_scale_config().get_websocket_config();
     requires_auth = self.introspector.is_auth_required_for_function(func_name);
     func_obj = self.get_functions()[func_name];
     restspec = func_obj.restspec if func_obj?.restspec and func_obj.restspec else None;
     is_broadcast = restspec.broadcast if restspec and restspec?.broadcast else False;
+    user_manager = self.user_manager;
+    execution_manager = self.execution_manager;
     async def websocket_handler(websocket: WebSocket) {
-        await ws_manager.connect(websocket, func_name);
-        try {
-            while True {
-                data = await websocket.receive_json();
-
-                username: (str | None) = None;
-                if requires_auth {
-                    token = data.pop('token', None)
-                    or websocket.query_params.get('token');
-                    if token {
-                        username = self.user_manager.validate_jwt_token(token);
-                    }
-                    if not username {
-                        await websocket.send_json(
-                            {
-                                'ok': False,
-                                'error': {
-                                    'code': 'UNAUTHORIZED',
-                                    'message': 'Invalid or missing token'
-                                }
-                            }
-                        );
-                        continue;
-                    }
-                }
-
-                try {
-                    result = await self.execution_manager.execute_function(
-                        self.get_functions()[func_name],
-                        data,
-                        (username or Con.GUEST.value)
-                    );
-                    if (isgenerator(result) or isinstance(result, AsyncGenerator)) {
-                        await _ws_stream_result(
-                            websocket, ws_manager, func_name, bool(is_broadcast), result
-                        );
-                    } elif isinstance(result, dict) and 'error' in result {
-                        await websocket.send_json(
-                            {
-                                'ok': False,
-                                'error': {
-                                    'code': 'EXECUTION_ERROR',
-                                    'message': result.get(
-                                        'error', 'Function execution failed'
-                                    )
-                                }
-                            }
-                        );
-                    } else {
-                        response = {'ok': True, 'data': result};
-                        if is_broadcast {
-                            await ws_manager.broadcast(func_name, response);
-                        } else {
-                            await websocket.send_json(response);
-                        }
-                    }
-                } except Exception as e {
-                    logger.error(
-                        f"WebSocket function execution error for '{func_name}': {e}"
-                    );
-
-                    await websocket.send_json(
-                        {
-                            'ok': False,
-                            'error': {'code': 'INTERNAL_ERROR', 'message': str(e)}
-                        }
-                    );
-                }
-            }
-        } except WebSocketDisconnect {
-            ws_manager.disconnect(websocket, func_name);
-        } except Exception as e {
-            logger.error(f"WebSocket error for function '{func_name}': {e}");
-            ws_manager.disconnect(websocket, func_name);
+        def make_awaitable(data: dict, user: str) -> any {
+            return execution_manager.execute_function(func_obj, data, user);
         }
+        await _ws_serve_connection(
+            websocket,
+            ws_manager,
+            user_manager,
+            requires_auth,
+            'function',
+            func_name,
+            bool(is_broadcast),
+            'Function',
+            int(ws_cfg['max_message_bytes']),
+            float(ws_cfg['target_timeout_seconds']),
+            float(ws_cfg['messages_per_second']),
+            make_awaitable
+        );
     }
     return websocket_handler;
 }

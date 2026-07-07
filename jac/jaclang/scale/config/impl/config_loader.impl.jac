@@ -32,6 +32,16 @@ impl JacScaleConfig.get_default_config(self: JacScaleConfig) -> dict[str, any] {
             'redis_l1_invalidation_enabled': True,
             'redis_l1_invalidation_channel': 'jac:anchor:invalidate'
         },
+        'websocket': {
+            'backplane': None,
+            'redis_url': None,
+            'max_message_bytes': 65536,
+            'max_connections_per_target': 5000,
+            'max_connections_per_user': 10,
+            'max_anonymous_per_target': 100,
+            'target_timeout_seconds': 30,
+            'messages_per_second': 20
+        },
         'kubernetes': {
             'app_name': 'jaseci',
             'namespace': 'default',
@@ -359,6 +369,29 @@ impl JacScaleConfig.get_events_config(self: JacScaleConfig) -> dict[str, any] {
                 'dead_letter_suffix', retry_defaults.dead_letter_suffix
             )
         }
+    };
+}
+
+impl JacScaleConfig.get_websocket_config(self: JacScaleConfig) -> dict[str, any] {
+    config = self.load();
+    ws_config = config.get('websocket', {});
+    backplane = ws_config.get('backplane');
+    if backplane is not None {
+        backplane = str(backplane).lower();
+    }
+    ws_redis_url = ws_config.get('redis_url')
+    or self.get_database_config().get('redis_url');
+    return {
+        'backplane': backplane,
+        'redis_url': ws_redis_url,
+        'max_message_bytes': int(ws_config.get('max_message_bytes', 65536)),
+        'max_connections_per_target': int(
+            ws_config.get('max_connections_per_target', 5000)
+        ),
+        'max_connections_per_user': int(ws_config.get('max_connections_per_user', 10)),
+        'max_anonymous_per_target': int(ws_config.get('max_anonymous_per_target', 100)),
+        'target_timeout_seconds': int(ws_config.get('target_timeout_seconds', 30)),
+        'messages_per_second': int(ws_config.get('messages_per_second', 20))
     };
 }
 

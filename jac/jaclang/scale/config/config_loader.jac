@@ -19,6 +19,7 @@ class JacScaleConfig(PluginConfigBase) {
     def get_secrets_config(self: JacScaleConfig) -> dict[str, str];
     def get_monitoring_config(self: JacScaleConfig) -> dict[str, any];
     def get_events_config(self: JacScaleConfig) -> dict[str, any];
+    def get_websocket_config(self: JacScaleConfig) -> dict[str, any];
     def get_admin_config(self: JacScaleConfig) -> dict[str, any];
     def get_scheduler_config(self: JacScaleConfig) -> dict[str, any];
     def get_telemetry_config(self: JacScaleConfig) -> dict[str, any];
