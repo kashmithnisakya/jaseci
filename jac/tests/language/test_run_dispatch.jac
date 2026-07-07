@@ -199,18 +199,8 @@ test "infer web-app from plain .jac when jac-client is a dependency" {
     assert p.kind == "web-app";
 }
 
-test "infer web-app from plain .jac when [plugins.client] is configured" {
-    p = _plan(
-        "entry-point = \"main.jac\"\n\n[plugins.client]\npaths = {}\n", "main.jac"
-    );
-    assert p.kind == "web-app";
-}
-
-test "infer web-app from plain .jac when jac-client is enabled (package:plugin id)" {
-    p = _plan(
-        "entry-point = \"main.jac\"\n\n[plugins]\nenabled = [\"jac-client:cli\"]\n",
-        "main.jac"
-    );
+test "infer web-app from plain .jac when [client] is configured" {
+    p = _plan("entry-point = \"main.jac\"\n\n[client]\npaths = {}\n", "main.jac");
     assert p.kind == "web-app";
 }
 

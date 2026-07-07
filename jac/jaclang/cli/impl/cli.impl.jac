@@ -23,8 +23,7 @@ glob TOMBSTONED_VERBS: dict[str, str] = {
      };
 
 impl start_cli -> None {
-    import from jaclang.jac0core.runtime { JacRuntime as Jac }
-    import from jaclang.cli.registry { get_registry }
+    import from jaclang.cli.registry { get_registry, extend_builtin_commands }
     import from jaclang.cli.executor { get_executor }
     import from jaclang.cli.help { get_help_formatter }
     import from jaclang.cli.console { console }
@@ -41,7 +40,7 @@ impl start_cli -> None {
 
     _load_project_config();
 
-    Jac.create_cmd();
+    extend_builtin_commands();
 
     registry = get_registry();
     parser = registry.finalize();

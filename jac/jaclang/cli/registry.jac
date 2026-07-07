@@ -55,3 +55,5 @@ obj CommandRegistry {
 glob _registry: CommandRegistry | None = None;
 
 def get_registry -> CommandRegistry;
+
+def extend_builtin_commands -> None;

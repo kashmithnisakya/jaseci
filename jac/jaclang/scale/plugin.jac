@@ -3,7 +3,6 @@ import pathlib;
 import from jaclang.cli.registry { get_registry }
 import from jaclang.cli.command { Arg, ArgKind, CommandPriority, HookContext }
 import from jaclang.cli.console { console }
-import from jaclang.jac0core.runtime { hookimpl, plugin_manager }
 import from jaclang.runtimelib.context { ExecutionContext }
 import from jaclang.runtimelib.server { JacAPIServer as JacServer }
 import from .config.config_loader { get_scale_config }
@@ -28,7 +27,7 @@ def _print_autodetect_banner(routes: dict[str, str]) {
     pairs = ", ".join([f"{n} -> {routes[n]}" for n in names]);
     console.print(f"  Default routes: {pairs}", style="muted");
     console.print(
-        "  Routes are auto-derived; set [plugins.scale.microservices] in jac.toml to customize.",
+        "  Routes are auto-derived; set [scale.microservices] in jac.toml to customize.",
         style="muted"
     );
 }
@@ -185,7 +184,6 @@ def _print_deployment_status(status_data: dict) -> None {
 }
 
 class JacCmd {
-    @hookimpl
     static def create_cmd {
         """Jac Scale functionality.""";
         registry = get_registry();
@@ -442,7 +440,7 @@ class JacCmd {
             } else {
                 console.print(
                     "No microservices found: no routes in "
-                    "[plugins.scale.microservices.routes] and no "
+                    "[scale.microservices.routes] and no "
                     "`sv import` / `to sv:` services detected in the "
                     "current directory.",
                     style="error"
@@ -536,7 +534,6 @@ class JacScalePlugin {
     # None -> core default) unless the process is actually a scale runtime. Only
     # then does graph state live in the scale tiered-memory context; otherwise a
     # plain `jac run` / `jac test` keeps core's local SQLite store.
-    @hookimpl
     static def create_j_context(
         user_root: (str | None),
         base_path_dir: (str | None) = None,
@@ -558,7 +555,6 @@ class JacScalePlugin {
     # back to core's zero-dependency stdlib server. This keeps non-scale serving
     # (e.g. a client app, or `jac start` in an env without the scale deps) working
     # now that scale is a built-in that is always registered.
-    @hookimpl
     static def create_server(jac_server: JacServer, host: str, port: int) {
         try {
             import from .jserver.jfast_api { JFastApiServer }
@@ -568,7 +564,6 @@ class JacScalePlugin {
         return JFastApiServer([]);
     }
 
-    @hookimpl
     static def get_api_server_class -> type | None {
         try {
             import from .server.serve { JacAPIServer }
@@ -583,7 +578,6 @@ class JacScalePlugin {
         return JacAPIServer;
     }
 
-    @hookimpl
     static def get_user_manager(base_path: str) -> UserManager | None {
         try {
             import from .identity.user_manager { JacScaleUserManager }
@@ -593,7 +587,6 @@ class JacScalePlugin {
         return JacScaleUserManager(base_path=base_path);
     }
 
-    @hookimpl
     static def store(
         base_path: str = "./storage", create_dirs: bool = True
     ) -> Storage {
@@ -601,7 +594,6 @@ class JacScalePlugin {
         return StorageFactory.get_default(base_path, create_dirs);
     }
 
-    @hookimpl
     static def ensure_sv_service(module_name: str, base_path: str) -> None {
         import os;
         import atexit;
@@ -702,7 +694,6 @@ class JacScalePlugin {
         atexit.register(_cleanup);
     }
 
-    @hookimpl
     static def get_sv_registry -> dict[str, str] {
         import os;
         import from jaclang.runtimelib { sv_client }
@@ -729,11 +720,10 @@ class JacScalePlugin {
         }
     }
 
-    # Like the server hooks above, the RPC hooks decline (return None) when
-    # scale's transport closure (httpx) is not installed, so pluggy falls back
-    # to core's stdlib http.client RPC and sv-to-sv keeps working with zero
+    # Like the server methods above, the RPC methods decline (return None) when
+    # scale's transport closure (httpx) is not installed, so core falls back to
+    # its stdlib http.client RPC and sv-to-sv keeps working with zero
     # third-party deps.
-    @hookimpl
     static def sv_service_call(module_name: str, func_name: str, args: dict) -> any {
         try {
             import httpx;
@@ -744,7 +734,6 @@ class JacScalePlugin {
         return http_transport().call_function(module_name, func_name, args);
     }
 
-    @hookimpl
     static def sv_walker_call(
         module_name: str, walker_name: str, args: dict, stub_cls: any
     ) -> any {
@@ -756,19 +745,4 @@ class JacScalePlugin {
         import from jaclang.scale.runtime.transport.transport { http_transport }
         return http_transport().call_walker(module_name, walker_name, args, stub_cls);
     }
-}
-
-
-import inspect;
-glob func = JacScalePlugin.create_j_context,
-     sig = inspect.signature(func),
-     sig_nodef = sig.replace(
-         parameters=[
-             p.replace(default=inspect.Parameter.empty) for p in sig.parameters.values()
-         ]
-     );
-
-with entry {
-    func.__signature__ = sig_nodef;
-    plugin_manager.register(JacScalePlugin());
 }
