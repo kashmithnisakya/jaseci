@@ -198,6 +198,10 @@ obj KubernetesRedisProvider(DatabaseProvider) {
         redis_enable_keyspace_notifications = db_config.get(
             'redis_enable_keyspace_notifications', False
         );
+        redis_cpu_request = str(db_config.get('redis_cpu_request', '250m'));
+        redis_cpu_limit = str(db_config.get('redis_cpu_limit', '1000m'));
+        redis_memory_request = str(db_config.get('redis_memory_request', '512Mi'));
+        redis_memory_limit = str(db_config.get('redis_memory_limit', '1Gi'));
         redis_username = str(k8s_config.get('redis_username', 'admin'));
         redis_password = str(k8s_config.get('redis_password', 'password'));
         connection_string = self._build_connection_string(
@@ -346,8 +350,14 @@ obj KubernetesRedisProvider(DatabaseProvider) {
                                     {'name': 'tmp', 'mountPath': '/tmp'}
                                 ],
                                 'resources': {
-                                    'requests': {'cpu': '100m', 'memory': '128Mi'},
-                                    'limits': {'cpu': '500m', 'memory': '256Mi'}
+                                    'requests': {
+                                        'cpu': redis_cpu_request,
+                                        'memory': redis_memory_request
+                                    },
+                                    'limits': {
+                                        'cpu': redis_cpu_limit,
+                                        'memory': redis_memory_limit
+                                    }
                                 },
                                 'livenessProbe': {
                                     'tcpSocket': {'port': redis_port},

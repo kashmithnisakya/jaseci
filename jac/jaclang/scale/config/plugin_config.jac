@@ -91,6 +91,26 @@ class JacScalePluginConfig {
                             "type": "string",
                             "default": ".jac/data/anchor_store.db",
                             "description": "File-based storage path for ShelfDB fallback"
+                        },
+                        "redis_cpu_request": {
+                            "type": "string",
+                            "default": "250m",
+                            "description": "K8s CPU request for the jac-scale provisioned Redis pod."
+                        },
+                        "redis_cpu_limit": {
+                            "type": "string",
+                            "default": "1000m",
+                            "description": "K8s CPU limit for the jac-scale provisioned Redis pod."
+                        },
+                        "redis_memory_request": {
+                            "type": "string",
+                            "default": "512Mi",
+                            "description": "K8s memory request for the jac-scale provisioned Redis pod."
+                        },
+                        "redis_memory_limit": {
+                            "type": "string",
+                            "default": "1Gi",
+                            "description": "K8s memory limit (cgroup) for the jac-scale provisioned Redis pod. Must exceed redis_max_memory with headroom for BGSAVE fork copy-on-write, fragmentation, and buffers, or the pod is OOMKilled."
                         }
                     }
                 },
