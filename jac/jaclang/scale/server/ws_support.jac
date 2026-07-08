@@ -149,6 +149,8 @@ impl WebSocketConnectionManager.register(ctx: ConnectionContext) -> (str | None)
                 await self.ensure_subscribed(target_key);
             } except Exception as e {
                 logger.error(f"WS ensure_subscribed failed for {target_key}: {e}");
+                await self.unregister(ctx);
+                return 'subscribe_unavailable';
             }
         }
         self._metric('record_ws_connection_opened');
