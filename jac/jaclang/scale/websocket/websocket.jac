@@ -58,7 +58,7 @@ the `_WS_STREAM_STOP` sentinel on exhaustion (StopIteration cannot cross an
 executor boundary, so it is converted to a sentinel)."""
 def _ws_stream_next(gen: any) -> any {
     try {
-        return next(gen);
+        return gen.__next__();
     } except StopIteration {
         return _WS_STREAM_STOP;
     }
