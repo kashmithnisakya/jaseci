@@ -686,7 +686,7 @@ async def _ws_serve_connection(
             token_exp = pre_auth.get('exp');
         } else {
             (auth_detail, first_data) = await ws_authenticate(
-                websocket, user_manager, AUTH_HANDSHAKE_TIMEOUT_SECONDS
+                websocket, user_manager, AUTH_HANDSHAKE_TIMEOUT_SECONDS, max_bytes
             );
             if auth_detail['status'] != 'ok' {
                 await ws_reject_auth(websocket, auth_detail);

@@ -145,7 +145,11 @@ impl WebSocketConnectionManager.register(ctx: ConnectionContext) -> (str | None)
     }
     if rejection is None {
         if newly_active {
-            await self.ensure_subscribed(target_key);
+            try {
+                await self.ensure_subscribed(target_key);
+            } except Exception as e {
+                logger.error(f"WS ensure_subscribed failed for {target_key}: {e}");
+            }
         }
         self._metric('record_ws_connection_opened');
         logger.info(

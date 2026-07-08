@@ -64,7 +64,7 @@ async def ws_reject_pre_accept(websocket: WebSocket, auth_detail: dict) {
 
 """Read auth from the first frame of an already-accepted WS connection."""
 async def ws_authenticate(
-    websocket: WebSocket, user_manager: Any, handshake_timeout: float
+    websocket: WebSocket, user_manager: Any, handshake_timeout: float, max_bytes: int
 ) -> (dict, dict | None) {
     try {
         raw = await asyncio.wait_for(
@@ -77,6 +77,17 @@ async def ws_authenticate(
                 'user_id': None,
                 'exp': None,
                 'reason': 'Auth handshake timed out'
+            },
+            None
+        );
+    }
+    if len(str(raw).encode()) > max_bytes {
+        return (
+            {
+                'status': 'invalid',
+                'user_id': None,
+                'exp': None,
+                'reason': 'Handshake payload too large'
             },
             None
         );
