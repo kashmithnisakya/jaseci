@@ -38,7 +38,11 @@ obj WebSocketConnectionManager {
 
     async def broadcast(walker_name: str, message: dict) {
         for ws in self.get_connections(walker_name) {
-            await ws.send_json(message);
+            try {
+                await ws.send_json(message);
+            } except Exception as e {
+                logger.debug(f"WS broadcast send failed for '{walker_name}': {e}");
+            }
         }
     }
 }
