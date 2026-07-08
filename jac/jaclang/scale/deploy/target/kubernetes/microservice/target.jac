@@ -138,11 +138,18 @@ obj KubernetesMicroserviceTarget(KubernetesTarget) {
 
     def _wait_for_fleet_rollout(bundle: dict[str, any], timeout: int = 1200) -> None {
         import time;
+        import sys;
         import from kubernetes { client }
         import from jaclang.cli.console { console }
         names: list[str] = [];
+        app_labels: list[str] = [];
         for dep in bundle.get("deployments", {}).values() {
             names.append(dep["metadata"]["name"]);
+            try {
+                app_labels.append(dep["spec"]["selector"]["matchLabels"]["app"]);
+            } except Exception {
+                _ = 0;
+            }
         }
         if not names {
             return;
@@ -154,9 +161,20 @@ obj KubernetesMicroserviceTarget(KubernetesTarget) {
         total = len(names);
         elapsed = 0;
         ready = 0;
-        # console.status is an in-place spinner that never streams on a non-TTY log (CI); fall back to plain lines so progress isn't stuck at "0/{total}".
-        interactive = bool(getattr(console, "is_terminal", False));
-        last_line = "";
+        interactive = bool(sys.stdout.isatty());
+        fleet_apps: set = set(app_labels);
+        pod_selector = "app in ({})".format(", ".join(app_labels))
+            if app_labels
+            else None;
+        imagepull_reasons: set = {
+            "ImagePullBackOff",
+            "ErrImagePull",
+            "InvalidImageName"
+        };
+        transient_reasons: set = {"PodInitializing", "ContainerCreating"};
+        imagepull_streak: dict[str, int] = {};
+        last_sig = "";
+        last_heartbeat = -90;
 
         with console.status(f"Rolling out fleet: 0/{total} services ready...") as st {
             while elapsed < timeout {
@@ -180,51 +198,172 @@ obj KubernetesMicroserviceTarget(KubernetesTarget) {
                     return;
                 }
 
-                crash = "";
-                phases: list[str] = [];
+                pods = [];
                 try {
-                    for p in core_v1.list_namespaced_pod(namespace=ns).items {
-                        for cs in (p.status.container_statuses or []) {
-                            if (cs.restart_count or 0) >= 3 {
-                                crash = (
-                                    f"pod '{p.metadata.name}' crash-looping "
-                                    f"({cs.restart_count} restarts)"
-                                );
-                            }
-                        }
-                        labels = p.metadata.labels or {};
-                        app = str(labels.get("app", ""));
-                        if app {
-                            phases.append(f"{app}={p.status.phase or '?'}");
-                        }
+                    if pod_selector {
+                        pods = core_v1.list_namespaced_pod(
+                            namespace=ns, label_selector=pod_selector
+                        ).items;
+                    } else {
+                        pods = core_v1.list_namespaced_pod(namespace=ns).items;
                     }
                 } except Exception {
-                    _ = 0;
+                    pods = [];
                 }
-                if crash {
-                    raise Exception(crash);
+
+                phase_tokens: list[str] = [];
+                state_tokens: list[str] = [];
+                failure = "";
+                failed_pod = None;
+                active_imagepull: set = set();
+
+                for p in pods {
+                    pod_name = str(p.metadata.name);
+                    labels = p.metadata.labels or {};
+                    app = str(labels.get("app", ""));
+                    in_fleet = (app in fleet_apps) if fleet_apps else True;
+                    phase = str(p.status.phase or '?');
+                    statuses = (p.status.init_container_statuses or []) + (
+                        p.status.container_statuses or []
+                    );
+                    pod_reason = "";
+                    for cs in statuses {
+                        waiting = cs.state.waiting if cs.state else None;
+                        reason = (waiting.reason if waiting else "") or "";
+                        restarts = cs.restart_count or 0;
+                        state_tokens.append(
+                            f"{pod_name}/{cs.name}={phase}/{reason}/{restarts}"
+                        );
+                        if reason and reason not in transient_reasons {
+                            pod_reason = reason;
+                        }
+                        if not in_fleet {
+                            continue;
+                        }
+                        if reason == "CrashLoopBackOff" and restarts >= 3 {
+                            failure = (
+                                f"pod '{pod_name}' container '{cs.name}' "
+                                f"crash-looping ({restarts} restarts)"
+                            );
+                            failed_pod = p;
+                        } elif reason in imagepull_reasons {
+                            active_imagepull.add(pod_name);
+                            streak = imagepull_streak.get(pod_name, 0) + 1;
+                            imagepull_streak[pod_name] = streak;
+                            if streak >= 2 {
+                                failure = (
+                                    f"pod '{pod_name}' container '{cs.name}' "
+                                    f"cannot pull image ({reason})"
+                                );
+                                failed_pod = p;
+                            }
+                        }
+                    }
+                    if app {
+                        token = f"{app}={phase}";
+                        if pod_reason {
+                            token = f"{app}={phase}/{pod_reason}";
+                        }
+                        phase_tokens.append(token);
+                    }
                 }
-                detail = ", ".join(phases) if phases else "scheduling pods";
+                imagepull_streak = {
+                    k: v
+                    for (k, v) in imagepull_streak.items()
+                    if k in active_imagepull
+                };
+
+                if failure and failed_pod is not None {
+                    detail = self._pod_failure_detail(
+                        core_v1, ns, str(failed_pod.metadata.name), failed_pod
+                    );
+                    raise Exception(f"{failure}.{detail}");
+                }
+
+                summary = ", ".join(phase_tokens)
+                    if phase_tokens
+                    else "scheduling pods";
                 line = (
                     f"Rolling out fleet: {ready}/{total} ready - {elapsed}s "
-                    f"elapsed ({detail}) - pods install jac + start the app"
+                    f"elapsed ({summary}) - pods install jac + start the app"
                 );
                 st.update(line);
-                # Emit to CI when the count moves or ~every 30s; dedupe to avoid spam.
-                if not interactive {
-                    stamp = f"{ready}/{total} {detail}";
-                    if stamp != last_line or elapsed % 30 == 0 {
+
+                sig = f"{ready}/{total}|" + "|".join(sorted(state_tokens));
+                if sig != last_sig or (elapsed - last_heartbeat) >= 90 {
+                    if not interactive {
                         console.print(line);
-                        last_line = stamp;
                     }
+                    last_sig = sig;
+                    last_heartbeat = elapsed;
                 }
                 time.sleep(10);
                 elapsed += 10;
             }
         }
+        timeout_detail = "";
+        try {
+            stuck = core_v1.list_namespaced_pod(
+                namespace=ns, label_selector=pod_selector
+            ).items
+                if pod_selector
+                else [];
+            for p in stuck {
+                timeout_detail += (
+                    f" [pod {p.metadata.name}]" + self._pod_failure_detail(
+                        core_v1, ns, str(p.metadata.name), p
+                    )
+                );
+            }
+        } except Exception {
+            _ = 0;
+        }
         raise Exception(
-            f"timed out after {timeout}s ({ready}/{total} deployments ready)"
+            f"timed out after {timeout}s ({ready}/{total} deployments ready)."
+            f"{timeout_detail}"
         );
+    }
+
+    def _pod_failure_detail(
+        core_v1: any, namespace: str, pod_name: str, pod: any = None
+    ) -> str {
+        import from jaclang.scale.deploy.target.kubernetes.utils.kubernetes_utils {
+            describe_pod_status
+        }
+        detail = describe_pod_status(core_v1, namespace, pod_name, pod);
+        term_lines: list[str] = [];
+        try {
+            if pod is None {
+                pod = core_v1.read_namespaced_pod(pod_name, namespace);
+            }
+            statuses = (pod.status.init_container_statuses or []) + (
+                pod.status.container_statuses or []
+            );
+            for cs in statuses {
+                states: list = [];
+                if cs.state and cs.state.terminated {
+                    states.append(("terminated", cs.state.terminated));
+                }
+                if cs.last_state and cs.last_state.terminated {
+                    states.append(("last-terminated", cs.last_state.terminated));
+                }
+                for (label, term) in states {
+                    message = (term.message or "").strip();
+                    if message or term.reason {
+                        term_lines.append(
+                            f"container '{cs.name}' {label}: "
+                            f"{term.reason or '?'} (exit={term.exit_code}) {message}"
+                        );
+                    }
+                }
+            }
+        } except Exception {
+            _ = 0;
+        }
+        if term_lines {
+            detail = detail + " " + "; ".join(term_lines);
+        }
+        return detail;
     }
 
     def _deploy_observability(app_name: str) -> None {
