@@ -3,11 +3,11 @@ JWT auth handshake (query-token and first-frame, with tagged reject reasons).
 """
 import asyncio;
 import from jaclang.scale.tests.scale_test_client { make_client }
-import from jaclang.scale.server.ws_support {
+import from jaclang.scale.websocket.websocket {
     WebSocketConnectionManager,
     ConnectionContext
 }
-import from jaclang.scale.server.ws_backplane { MemoryBackplane }
+import from jaclang.scale.websocket.backplane { MemoryBackplane }
 
 
 def _ws_client -> any {

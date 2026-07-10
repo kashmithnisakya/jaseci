@@ -3,12 +3,11 @@ import asyncio;
 import logging;
 import mimetypes;
 import from collections.abc { Callable }
-import from datetime { UTC, datetime, timedelta }
+import from datetime { datetime }
 import from pathlib { Path }
-import from pydantic { BaseModel, Field, ValidationError }
+import from pydantic { Field }
 import jwt;
 import json;
-import from os { getenv }
 import from fastapi { Request }
 import from fastapi.middleware.cors { CORSMiddleware }
 import from fastapi.responses { HTMLResponse, JSONResponse, Response, RedirectResponse }
@@ -22,22 +21,19 @@ import from jaclang.scale.jserver.jserver {
 import from jaclang.jac0core.runtime { JacRuntime as Jac }
 import from jaclang.runtimelib.server { JacAPIServer as JServer }
 import from jaclang.runtimelib.server { JsonValue }
-import from jaclang.runtimelib.transport { TransportResponse, Meta, MessageType }
-import from fastapi_sso.sso.google { GoogleSSO }
-import from jaclang.scale.shared.utils {
-    generate_random_password,
-    _extract_path_param_names
-}
+import from jaclang.runtimelib.transport { TransportResponse, Meta }
+import from jaclang.scale.shared.utils { _extract_path_param_names }
 import from jaclang.scale.config.config_loader { get_scale_config }
 import from jaclang.scale.webhook.webhook { ApiKeyManager, WebhookUtils }
 import from jaclang.scale.observability.metrics { MetricsCollector }
 import from jaclang.scale.events.broker { EventStreamBroker }
-import from jaclang.scale.server.ws_support {
+import from jaclang.scale.websocket.websocket {
     WebSocketConnectionManager,
-    ConnectionContext
+    ConnectionContext,
+    _ws_stream_result
 }
-import from jaclang.scale.server.ws_backplane { build_backplane }
-import from jaclang.scale.server.ws_protocol {
+import from jaclang.scale.websocket.backplane { build_backplane }
+import from jaclang.scale.websocket.protocol {
     HEARTBEAT_SECONDS,
     HEARTBEAT_MISSED_ALLOWED,
     SEND_TIMEOUT_SECONDS,
@@ -68,7 +64,6 @@ import from jaclang.scale.admin.ops { JacAPIServerOps }
 import from jaclang.scale.admin.deploy_health { JacAPIServerDeployHealth }
 import from jaclang.scale.admin.network { JacAPIServerNetwork }
 import from jaclang.scale.admin.podenv { JacAPIServerPodEnv }
-import from jaclang.scale.shared.enums { Platforms, Operations }
 import from jaclang.scale.scheduler.scheduler { JacScaleScheduler, TriggerSpec }
 import from jaclang.runtimelib.builtin { ScheduleTrigger }
 import from jaclang.jac0core.constant { Constants as Con }
@@ -105,7 +100,6 @@ glob _jwt_config = get_scale_config().get_jwt_config(),
      JWT_EXP_DELTA_DAYS = _jwt_config['exp_delta_days'],
      SSO_HOST = _sso_config['host'],
      logger = logging.getLogger(__name__),
-     _WS_STREAM_STOP: any = object(),
      PORT_RETRY_LIMIT: int = 10,
      ERRNO_ADDR_IN_USE_LINUX: int = 98,
      ERRNO_ADDR_IN_USE_WINDOWS: int = 10048;

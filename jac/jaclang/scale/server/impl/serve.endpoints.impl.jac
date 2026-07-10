@@ -580,64 +580,14 @@ impl JacAPIServerEndpoints.register_webhook_endpoints -> None {
     }
 }
 
-"""Advance a synchronous generator one step off the event-loop thread, returning
-the `_WS_STREAM_STOP` sentinel on exhaustion (StopIteration cannot cross an
-executor boundary, so it is converted to a sentinel)."""
-def _ws_stream_next(gen: any) -> any {
-    try {
-        return next(gen);
-    } except StopIteration {
-        return _WS_STREAM_STOP;
-    }
-}
-
-"""Stream a generator target result as `chunk` frames through `send_result`,
-followed by a terminating `done` frame. Synchronous generators are advanced in a
-worker thread so a slow step does not block the event loop, and the `done` frame
-is always sent (carrying the error on failure) so a client that reads until
-`done` never hangs."""
-async def _ws_stream_result(send_result: any, result: any) {
-    stream_error: (str | None) = None;
-    try {
-        if isgenerator(result) {
-            loop = asyncio.get_running_loop();
-            while True {
-                item = await loop.run_in_executor(None, _ws_stream_next, result);
-                if item is _WS_STREAM_STOP {
-                    break;
-                }
-                await send_result({'ok': True, 'type': 'chunk', 'data': item});
-            }
-        } else {
-            async for item in result {
-                await send_result({'ok': True, 'type': 'chunk', 'data': item});
-            }
-        }
-    } except Exception as e {
-        logger.error(f"WS stream error: {e}");
-        stream_error = str(e);
-    }
-    if stream_error is None {
-        await send_result({'ok': True, 'type': 'done'});
-    } else {
-        await send_result(
-            {
-                'ok': False,
-                'type': 'done',
-                'error': {'code': 'STREAM_ERROR', 'message': stream_error}
-            }
-        );
-    }
-}
-
 impl JacAPIServerEndpoints.get_ws_manager -> WebSocketConnectionManager {
     if not self._ws_manager {
         ws_cfg = get_scale_config().get_websocket_config();
         backplane = build_backplane(ws_cfg);
         self._ws_manager = WebSocketConnectionManager(
-            max_per_target=ws_cfg['max_connections_per_target'],
-            max_per_user=ws_cfg['max_connections_per_user'],
-            max_anonymous_per_target=ws_cfg['max_anonymous_per_target'],
+            max_per_target=int(ws_cfg['max_connections_per_target']),
+            max_per_user=int(ws_cfg['max_connections_per_user']),
+            max_anonymous_per_target=int(ws_cfg['max_anonymous_per_target']),
             send_timeout=SEND_TIMEOUT_SECONDS,
             backplane=backplane,
             metrics=self._metrics
