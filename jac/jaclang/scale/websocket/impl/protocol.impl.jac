@@ -104,7 +104,14 @@ impl ws_authenticate(
     return (user_manager.validate_jwt_token_detail(token), first_data);
 }
 
-"""Background heartbeat: send periodic pings; close idle connections.
+"""Background heartbeat: enforce token expiry, send pings, close idle connections.
+
+Expiry is enforced here, not only on the inbound message path, because a client
+that sends nothing (or only control frames) never reaches that check. On a
+broadcast target such a connection would keep receiving pushed messages after
+its token expired. This loop is the only one that runs independently of client
+traffic, so it bounds a connection's life by its token, within one heartbeat
+interval.
 
 The ping send is bounded by `SEND_TIMEOUT_SECONDS`: a peer that has stopped
 reading leaves its send buffer full, and an unbounded `send_json` would block
@@ -117,6 +124,18 @@ impl ws_heartbeat_loop(
         while not ctx.closed {
             await asyncio.sleep(heartbeat_seconds);
             if ctx.closed {
+                break;
+            }
+            if ctx.exp is not None and time.time() >= float(ctx.exp) {
+                logger.info(f"WS expiry close conn_id={ctx.conn_id}; token expired");
+                try {
+                    await ctx.websocket.close(
+                        code=WS_CLOSE_UNAUTHORIZED, reason='expired'
+                    );
+                } except Exception as e {
+                    logger.debug(f"WS expiry close failed: {e}");
+                }
+                ctx.closed = True;
                 break;
             }
             now = time.monotonic();
@@ -236,6 +255,11 @@ impl ws_receive_frame(websocket: WebSocket, max_bytes: int) -> (str, dict | None
 
 Returns one of: 'continue' (handled, read next frame), 'break' (close the
 connection), or 'proceed' (dispatch this frame to the target).
+
+The rate limit is charged first, so control frames cannot evade it: a `refresh`
+frame costs a JWT decode and a user-existence lookup, and an unmetered flood of
+them would amplify into unbounded work. Expiry is checked after the control
+frames so an expired connection can still be rescued by a `refresh`.
 """
 impl ws_handle_control(
     websocket: WebSocket,
@@ -246,6 +270,14 @@ impl ws_handle_control(
     msgs_per_sec: float,
     rate_capacity: float
 ) -> str {
+    if not consume_rate_token(ctx, rate_capacity, msgs_per_sec) {
+        await websocket.send_json(
+            ws_error_frame(
+                'RATE_LIMITED', f'Rate limit exceeded ({int(msgs_per_sec)} msg/s)'
+            )
+        );
+        return 'continue';
+    }
     ctrl_type = data.get('type');
     if ctrl_type == 'pong' {
         return 'continue';
@@ -298,14 +330,6 @@ impl ws_handle_control(
         );
         await websocket.close(code=WS_CLOSE_UNAUTHORIZED, reason='expired');
         return 'break';
-    }
-    if not consume_rate_token(ctx, rate_capacity, msgs_per_sec) {
-        await websocket.send_json(
-            ws_error_frame(
-                'RATE_LIMITED', f'Rate limit exceeded ({int(msgs_per_sec)} msg/s)'
-            )
-        );
-        return 'continue';
     }
     return 'proceed';
 }

@@ -10,7 +10,7 @@ import from jaclang.scale.websocket.websocket {
     ConnectionContext
 }
 import from jaclang.scale.websocket.backplane { BaseBackplane, MemoryBackplane }
-import from jaclang.scale.websocket.protocol { ws_handle_control }
+import from jaclang.scale.websocket.protocol { ws_handle_control, ws_heartbeat_loop }
 
 
 def _ws_client -> any {
@@ -55,6 +55,27 @@ obj _FailingBackplane(BaseBackplane) {
     async def start { }
     async def publish(channel: str, message: dict) { }
     async def subscribe(channel: str, handler: any) {
+        raise RuntimeError('backplane unavailable');
+    }
+
+    async def unsubscribe(channel: str, handler: any) { }
+    async def close { }
+    def is_distributed -> bool {
+        return True;
+    }
+}
+
+
+"""Backplane whose subscribe suspends before failing, as a Redis blip would.
+
+The suspend is what lets a second connection register while the first
+connection's subscribe is still in flight.
+"""
+obj _SlowFailingBackplane(BaseBackplane) {
+    async def start { }
+    async def publish(channel: str, message: dict) { }
+    async def subscribe(channel: str, handler: any) {
+        await asyncio.sleep(0.05);
         raise RuntimeError('backplane unavailable');
     }
 
@@ -128,6 +149,69 @@ test "a failed backplane subscribe releases the connection slot" {
         return f"{first}|{second}|{metrics.opened}|{metrics.closed}";
     }
     assert asyncio.run(body()) == "subscribe_unavailable|subscribe_unavailable|0|0";
+}
+
+
+test "a concurrent registration never survives on an unsubscribed target" {
+    async def body -> str {
+        mgr = WebSocketConnectionManager(
+            max_per_target=10,
+            max_anonymous_per_target=10,
+            backplane=_SlowFailingBackplane()
+        );
+        (first, second) = await asyncio.gather(
+            mgr.register(_ctx('X')), mgr.register(_ctx('X'))
+        );
+        live = len(mgr._by_target.get('walker:X', {}));
+        subscribed = len(mgr._subscribed);
+        return f"{first}|{second}|{live}|{subscribed}";
+    }
+    assert (asyncio.run(body()) == "subscribe_unavailable|subscribe_unavailable|0|0");
+}
+
+
+test "control frames are charged against the rate limit" {
+    async def body -> str {
+        ws = _FakeWebSocket();
+        ctx = _ctx('X');
+        ctx.rate_tokens = 1.0;
+        first = await ws_handle_control(
+            ws,
+            ctx,
+            {'type': 'refresh', 'token': 'any'},
+            _FakeUserManager(),
+            False,
+            1.0,
+            1.0
+        );
+        second = await ws_handle_control(
+            ws,
+            ctx,
+            {'type': 'refresh', 'token': 'any'},
+            _FakeUserManager(),
+            False,
+            1.0,
+            1.0
+        );
+        code = ws.sent[0]['error']['code'] if ws.sent else 'no_frame';
+        return f"{first}|{second}|{code}";
+    }
+    assert asyncio.run(body()) == "continue|continue|RATE_LIMITED";
+}
+
+
+test "the heartbeat closes a connection whose token has expired" {
+    async def body -> str {
+        ws = _FakeWebSocket();
+        ctx = _ctx('X', user='u1');
+        ctx.websocket = ws;
+        ctx.exp = time.time() - 1.0;
+        await ws_heartbeat_loop(ctx, 0.01, 2);
+        close_code = ws.closed[0][0] if ws.closed else 0;
+        close_reason = ws.closed[0][1] if ws.closed else '';
+        return f"{ctx.closed}|{close_code}|{close_reason}";
+    }
+    assert asyncio.run(body()) == "True|4401|expired";
 }
 
 

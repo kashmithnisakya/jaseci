@@ -43,7 +43,6 @@ impl WebSocketConnectionManager.register(ctx: ConnectionContext) -> (str | None)
     await lock.acquire();
     rejection: (str | None) = None;
     target_key = f"{ctx.target_kind}:{ctx.target_name}";
-    newly_active = False;
     try {
         per_target = self._by_target.get(target_key);
         if per_target is None {
@@ -67,21 +66,18 @@ impl WebSocketConnectionManager.register(ctx: ConnectionContext) -> (str | None)
                     self._anon_by_target.get(target_key, 0) + 1
                 );
             }
-            newly_active = len(per_target) == 0;
             per_target[ctx.conn_id] = ctx;
         }
     } finally {
         lock.release();
     }
     if rejection is None {
-        if newly_active {
-            try {
-                await self.ensure_subscribed(target_key);
-            } except Exception as e {
-                logger.error(f"WS ensure_subscribed failed for {target_key}: {e}");
-                await self._release_slot(ctx);
-                return 'subscribe_unavailable';
-            }
+        try {
+            await self.ensure_subscribed(target_key);
+        } except Exception as e {
+            logger.error(f"WS ensure_subscribed failed for {target_key}: {e}");
+            await self._release_slot(ctx);
+            return 'subscribe_unavailable';
         }
         self._metric('record_ws_connection_opened');
         logger.info(
@@ -162,6 +158,14 @@ impl WebSocketConnectionManager.shutdown -> None {
     self._backplane_started = False;
 }
 
+"""Subscribe the target's broadcast channel once, idempotently.
+
+Every registering connection calls this, not just the first one on a target. A
+connection that registers while the first connection's subscribe is still in
+flight would otherwise inherit that subscribe's outcome: if it fails and rolls
+back, the survivor would sit on an unsubscribed target forever, silently
+missing every broadcast.
+"""
 impl WebSocketConnectionManager.ensure_subscribed(target_key: str) -> None {
     sub_lock = self._get_sub_lock();
     await sub_lock.acquire();
