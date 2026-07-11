@@ -50,40 +50,25 @@ obj _FakeUserManager {
 }
 
 
-"""Backplane whose subscribe always fails, as a Redis outage would."""
-obj _FailingBackplane(BaseBackplane) {
-    async def start { }
-    async def publish(channel: str, message: dict) { }
-    async def subscribe(channel: str, handler: any) {
-        raise RuntimeError('backplane unavailable');
-    }
+"""Backplane whose subscribe always fails, as a Redis outage would.
 
-    async def unsubscribe(channel: str, handler: any) { }
-    async def close { }
-    def is_distributed -> bool {
-        return True;
-    }
-}
-
-
-"""Backplane whose subscribe suspends before failing, as a Redis blip would.
-
-The suspend is what lets a second connection register while the first
-connection's subscribe is still in flight.
+A non-zero `delay` makes subscribe suspend before it raises, which is what lets
+a second connection register while the first one's subscribe is still in flight.
 """
-obj _SlowFailingBackplane(BaseBackplane) {
+obj _FailingBackplane(BaseBackplane) {
+    has delay: float = 0.0;
+
     async def start { }
     async def publish(channel: str, message: dict) { }
     async def subscribe(channel: str, handler: any) {
-        await asyncio.sleep(0.05);
+        if self.delay {
+            await asyncio.sleep(self.delay);
+        }
         raise RuntimeError('backplane unavailable');
     }
 
     async def unsubscribe(channel: str, handler: any) { }
     async def close { }
-    def is_distributed -> bool {
-        return True;
-    }
 }
 
 
@@ -157,7 +142,7 @@ test "a concurrent registration never survives on an unsubscribed target" {
         mgr = WebSocketConnectionManager(
             max_per_target=10,
             max_anonymous_per_target=10,
-            backplane=_SlowFailingBackplane()
+            backplane=_FailingBackplane(delay=0.05)
         );
         (first, second) = await asyncio.gather(
             mgr.register(_ctx('X')), mgr.register(_ctx('X'))
@@ -279,6 +264,24 @@ test "ws rejects an oversized message frame" {
             resp = ws.receive_json();
             assert resp["ok"] == False , f"got {resp}";
             assert resp["error"]["code"] == "MESSAGE_TOO_LARGE" , f"got {resp}";
+        }
+    } finally {
+        client.close();
+    }
+}
+
+
+test "ws tolerates a per-message token from an older client" {
+    client = _ws_client();
+    try {
+        token = client.register_and_login("wsuser2", "Secret123!");
+        tc = client.raw_client;
+        with tc.websocket_connect(
+            f"/ws/function/ws_private_echo?token={token}"
+        ) as ws {
+            ws.send_json({"message": "hi", "token": token});
+            resp = ws.receive_json();
+            assert resp["ok"] == True , f"got {resp}";
         }
     } finally {
         client.close();

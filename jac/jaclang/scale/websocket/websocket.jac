@@ -50,7 +50,6 @@ obj WebSocketConnectionManager {
     def _get_sub_lock -> Lock;
     def _target_has_connections(target_key: str) -> bool;
     def _get_backplane -> BaseBackplane;
-    def _metric(name: str) -> None;
     async def ensure_backplane_started -> None;
     async def shutdown -> None;
     async def ensure_subscribed(target_key: str) -> None;

@@ -22,7 +22,6 @@ obj BaseBackplane {
     async def subscribe(channel: str, handler: Any) -> None;
     async def unsubscribe(channel: str, handler: Any) -> None;
     async def close -> None;
-    def is_distributed -> bool;
 }
 
 """In-process backplane; messages never leave this worker."""
@@ -35,7 +34,6 @@ obj MemoryBackplane(BaseBackplane) {
     async def subscribe(channel: str, handler: Any);
     async def unsubscribe(channel: str, handler: Any);
     async def close;
-    def is_distributed -> bool;
 }
 
 """Redis pub/sub backplane; broadcasts reach every subscribed worker."""
@@ -55,7 +53,6 @@ obj RedisBackplane(BaseBackplane) {
     async def subscribe(channel: str, handler: Any);
     async def unsubscribe(channel: str, handler: Any);
     async def close;
-    def is_distributed -> bool;
 }
 
 def build_backplane(cfg: dict) -> BaseBackplane;

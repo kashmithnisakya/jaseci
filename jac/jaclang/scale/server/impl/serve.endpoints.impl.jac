@@ -584,7 +584,7 @@ impl JacAPIServerEndpoints.get_ws_manager -> WebSocketConnectionManager {
     if not self._ws_manager {
         ws_cfg = get_scale_config().get_websocket_config();
         backplane = build_backplane(ws_cfg);
-        self._ws_manager = WebSocketConnectionManager(
+        manager = WebSocketConnectionManager(
             max_per_target=int(ws_cfg['max_connections_per_target']),
             max_per_user=int(ws_cfg['max_connections_per_user']),
             max_anonymous_per_target=int(ws_cfg['max_anonymous_per_target']),
@@ -592,6 +592,11 @@ impl JacAPIServerEndpoints.get_ws_manager -> WebSocketConnectionManager {
             backplane=backplane,
             metrics=self._metrics
         );
+        self._ws_manager = manager;
+        async def _shutdown_ws_manager {
+            await manager.shutdown();
+        }
+        self.server.app.router.on_shutdown.append(_shutdown_ws_manager);
     }
     return self._ws_manager;
 }
@@ -602,7 +607,11 @@ Handles the auth handshake (pre-accept query token with a first-frame fallback,
 tagged reject reasons and token refresh), connection-cap registration, the
 heartbeat/idle-close loop, per-message size and rate limits, target execution
 under a timeout, and streamed or single-result delivery. `make_awaitable(data,
-user)` returns the coroutine that runs the target for one request."""
+user)` returns the coroutine that runs the target for one request.
+
+A stray `token` key is dropped from every dispatched frame. The connection is
+authenticated once at the handshake, but clients written against the older
+per-message auth would otherwise pass their token through as a target field."""
 async def _ws_serve_connection(
     websocket: WebSocket,
     ws_manager: WebSocketConnectionManager,
@@ -656,7 +665,7 @@ async def _ws_serve_connection(
     );
     rejection = await ws_manager.register(ctx);
     if rejection {
-        await ws_reject_capacity(websocket, rejection);
+        await ws_reject_registration(websocket, rejection);
         return;
     }
     heartbeat_task = asyncio.create_task(
@@ -699,6 +708,7 @@ async def _ws_serve_connection(
             if control == 'continue' {
                 continue;
             }
+            data.pop('token', None);
             (ok, result) = await ws_execute_target(
                 websocket,
                 label,
@@ -739,30 +749,36 @@ async def _ws_serve_connection(
     }
 }
 
-impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callable {
+"""Shared factory for the walker and function WebSocket handlers.
+
+`target_kind` is 'walker' or 'function'; `execute` is the async runner
+(spawn_walker / execute_function) invoked as execute(target, data, username).
+"""
+impl JacAPIServerEndpoints._create_websocket_target_handler(
+    target_kind: str,
+    target_name: str,
+    target: any,
+    requires_auth: bool,
+    execute: Callable
+) -> Callable {
     ws_manager = self.get_ws_manager();
     ws_cfg = get_scale_config().get_websocket_config();
-    requires_auth = self.introspector.is_auth_required_for_walker(walker_name);
-    walker_cls = self.get_walkers()[walker_name];
-    restspec = walker_cls.restspec
-        if walker_cls?.restspec and walker_cls.restspec
-        else None;
+    restspec = target.restspec if target?.restspec and target.restspec else None;
     is_broadcast = restspec.broadcast if restspec and restspec?.broadcast else False;
     user_manager = self.user_manager;
-    execution_manager = self.execution_manager;
     async def websocket_handler(websocket: WebSocket) {
         def make_awaitable(data: dict, user: str) -> any {
-            return execution_manager.spawn_walker(walker_cls, data, user);
+            return execute(target, data, user);
         }
         await _ws_serve_connection(
             websocket,
             ws_manager,
             user_manager,
             requires_auth,
-            'walker',
-            walker_name,
+            target_kind,
+            target_name,
             bool(is_broadcast),
-            'Walker',
+            target_kind.capitalize(),
             int(ws_cfg['max_message_bytes']),
             float(ws_cfg['target_timeout_seconds']),
             float(ws_cfg['messages_per_second']),
@@ -772,38 +788,27 @@ impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callabl
     return websocket_handler;
 }
 
+impl JacAPIServerEndpoints.create_websocket_handler(walker_name: str) -> Callable {
+    return self._create_websocket_target_handler(
+        'walker',
+        walker_name,
+        self.get_walkers()[walker_name],
+        self.introspector.is_auth_required_for_walker(walker_name),
+        self.execution_manager.spawn_walker
+    );
+}
+
 """Create a WebSocket handler for a specific def/function."""
 impl JacAPIServerEndpoints.create_websocket_function_handler(
     func_name: str
 ) -> Callable {
-    ws_manager = self.get_ws_manager();
-    ws_cfg = get_scale_config().get_websocket_config();
-    requires_auth = self.introspector.is_auth_required_for_function(func_name);
-    func_obj = self.get_functions()[func_name];
-    restspec = func_obj.restspec if func_obj?.restspec and func_obj.restspec else None;
-    is_broadcast = restspec.broadcast if restspec and restspec?.broadcast else False;
-    user_manager = self.user_manager;
-    execution_manager = self.execution_manager;
-    async def websocket_handler(websocket: WebSocket) {
-        def make_awaitable(data: dict, user: str) -> any {
-            return execution_manager.execute_function(func_obj, data, user);
-        }
-        await _ws_serve_connection(
-            websocket,
-            ws_manager,
-            user_manager,
-            requires_auth,
-            'function',
-            func_name,
-            bool(is_broadcast),
-            'Function',
-            int(ws_cfg['max_message_bytes']),
-            float(ws_cfg['target_timeout_seconds']),
-            float(ws_cfg['messages_per_second']),
-            make_awaitable
-        );
-    }
-    return websocket_handler;
+    return self._create_websocket_target_handler(
+        'function',
+        func_name,
+        self.get_functions()[func_name],
+        self.introspector.is_auth_required_for_function(func_name),
+        self.execution_manager.execute_function
+    );
 }
 
 impl JacAPIServerEndpoints.register_websocket_endpoints -> None {

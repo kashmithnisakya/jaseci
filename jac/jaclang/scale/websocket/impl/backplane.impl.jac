@@ -44,10 +44,6 @@ impl MemoryBackplane.close{
     self._subs = {};
 }
 
-impl MemoryBackplane.is_distributed -> bool {
-    return False;
-}
-
 impl RedisBackplane._get_lock -> Any {
     if self._lock is None {
         self._lock = asyncio.Lock();
@@ -196,10 +192,6 @@ impl RedisBackplane.close{
             logger.debug(f"WS Redis client close exception: {e}");
         }
     }
-}
-
-impl RedisBackplane.is_distributed -> bool {
-    return True;
 }
 
 """Select a backplane from WebSocket config.

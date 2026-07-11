@@ -24,20 +24,6 @@ impl WebSocketConnectionManager._get_backplane -> BaseBackplane {
     return self.backplane;
 }
 
-impl WebSocketConnectionManager._metric(name: str) -> None {
-    if self.metrics is None {
-        return;
-    }
-    try {
-        fn = getattr(self.metrics, name, None);
-        if fn {
-            fn();
-        }
-    } except Exception as e {
-        logger.debug(f"WS metric {name} failed: {e}");
-    }
-}
-
 impl WebSocketConnectionManager.register(ctx: ConnectionContext) -> (str | None) {
     lock = self._get_lock();
     await lock.acquire();
@@ -79,7 +65,9 @@ impl WebSocketConnectionManager.register(ctx: ConnectionContext) -> (str | None)
             await self._release_slot(ctx);
             return 'subscribe_unavailable';
         }
-        self._metric('record_ws_connection_opened');
+        if self.metrics is not None {
+            self.metrics.record_ws_connection_opened();
+        }
         logger.info(
             f"WS connected target={ctx.target_kind}:{ctx.target_name} "
             f"user_id={ctx.user_id} conn_id={ctx.conn_id}"
@@ -130,7 +118,9 @@ impl WebSocketConnectionManager._release_slot(ctx: ConnectionContext) -> None {
 
 impl WebSocketConnectionManager.unregister(ctx: ConnectionContext) -> None {
     await self._release_slot(ctx);
-    self._metric('record_ws_connection_closed');
+    if self.metrics is not None {
+        self.metrics.record_ws_connection_closed();
+    }
     logger.info(
         f"WS disconnected target={ctx.target_kind}:{ctx.target_name} "
         f"user_id={ctx.user_id} conn_id={ctx.conn_id}"
@@ -236,7 +226,9 @@ impl WebSocketConnectionManager.broadcast_target(
     await self.ensure_backplane_started();
     backplane = self._get_backplane();
     channel = f"ws:{target_key}";
-    self._metric('record_ws_broadcast');
+    if self.metrics is not None {
+        self.metrics.record_ws_broadcast();
+    }
     await backplane.publish(channel, message);
 }
 

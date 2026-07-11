@@ -18,12 +18,19 @@ glob logger = logging.getLogger(__name__),
      WS_CLOSE_FORBIDDEN: int = 4403,
      WS_CLOSE_IDLE: int = 4408,
      WS_CLOSE_TOO_LARGE: int = 4413,
+     WS_CLOSE_UNAVAILABLE: int = 4503,
      HEARTBEAT_SECONDS: float = 30.0,
      HEARTBEAT_MISSED_ALLOWED: int = 2,
      SEND_TIMEOUT_SECONDS: float = 5.0,
      AUTH_HANDSHAKE_TIMEOUT_SECONDS: float = 10.0;
 
 def ws_error_frame(code: str, message: any, reason: any = None) -> dict;
+
+def _auth_fail(status: str, reason: str) -> dict;
+
+async def _ws_send_then_close(
+    websocket: WebSocket, frame: dict, close_code: int, close_reason: str
+) -> None;
 
 def ws_pre_accept_auth(websocket: WebSocket, user_manager: Any) -> any;
 
@@ -39,7 +46,7 @@ async def ws_heartbeat_loop(
 
 async def ws_reject_auth(websocket: WebSocket, auth_detail: dict);
 
-async def ws_reject_capacity(websocket: WebSocket, rejection: str);
+async def ws_reject_registration(websocket: WebSocket, rejection: str);
 
 async def ws_receive_frame(websocket: WebSocket, max_bytes: int) -> (str, dict | None);
 

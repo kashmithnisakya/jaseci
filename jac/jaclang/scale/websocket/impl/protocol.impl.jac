@@ -7,6 +7,27 @@ impl ws_error_frame(code: str, message: any, reason: any = None) -> dict {
     return {'ok': False, 'error': err};
 }
 
+"""Build a failed auth detail, the shape ws_reject_auth reads."""
+impl _auth_fail(status: str, reason: str) -> dict {
+    return {'status': status, 'user_id': None, 'exp': None, 'reason': reason};
+}
+
+"""Send a final frame then close, tolerating a peer that is already gone."""
+impl _ws_send_then_close(
+    websocket: WebSocket, frame: dict, close_code: int, close_reason: str
+) -> None {
+    try {
+        await websocket.send_json(frame);
+    } except Exception as e {
+        logger.debug(f"WS reject send ignored: {e}");
+    }
+    try {
+        await websocket.close(code=close_code, reason=close_reason);
+    } except Exception as e {
+        logger.debug(f"WS close after reject failed: {e}");
+    }
+}
+
 """Validate `?token=...` before accepting the socket.
 
 Returns auth detail if the query param is present, else None. A non-'ok'
@@ -55,50 +76,18 @@ impl ws_authenticate(
             websocket.receive_text(), timeout=handshake_timeout
         );
     } except asyncio.TimeoutError {
-        return (
-            {
-                'status': 'missing',
-                'user_id': None,
-                'exp': None,
-                'reason': 'Auth handshake timed out'
-            },
-            None
-        );
+        return (_auth_fail('missing', 'Auth handshake timed out'), None);
     }
     if len(str(raw).encode()) > max_bytes {
-        return (
-            {
-                'status': 'invalid',
-                'user_id': None,
-                'exp': None,
-                'reason': 'Handshake payload too large'
-            },
-            None
-        );
+        return (_auth_fail('invalid', 'Handshake payload too large'), None);
     }
     try {
         first_data = json.loads(raw);
     } except Exception {
-        return (
-            {
-                'status': 'invalid',
-                'user_id': None,
-                'exp': None,
-                'reason': 'Handshake payload is not valid JSON'
-            },
-            None
-        );
+        return (_auth_fail('invalid', 'Handshake payload is not valid JSON'), None);
     }
     if not isinstance(first_data, dict) {
-        return (
-            {
-                'status': 'invalid',
-                'user_id': None,
-                'exp': None,
-                'reason': 'Handshake payload must be a JSON object'
-            },
-            None
-        );
+        return (_auth_fail('invalid', 'Handshake payload must be a JSON object'), None);
     }
     token = first_data.pop('token', None);
     return (user_manager.validate_jwt_token_detail(token), first_data);
@@ -194,32 +183,38 @@ impl ws_reject_auth(websocket: WebSocket, auth_detail: dict) {
     };
     msg = message_map.get(str(status), 'Invalid or missing token');
     reason = auth_detail.get('reason') or msg;
-    try {
-        await websocket.send_json(ws_error_frame('UNAUTHORIZED', msg, reason));
-    } except Exception as e {
-        logger.debug(f"WS auth-fail send ignored: {e}");
-    }
-    try {
-        await websocket.close(code=WS_CLOSE_UNAUTHORIZED, reason=str(status));
-    } except Exception as e {
-        logger.debug(f"WS close after auth failure failed: {e}");
-    }
+    await _ws_send_then_close(
+        websocket,
+        ws_error_frame('UNAUTHORIZED', msg, reason),
+        WS_CLOSE_UNAUTHORIZED,
+        str(status)
+    );
 }
 
-"""Reject a connection over capacity caps with a structured error then close 4403."""
-impl ws_reject_capacity(websocket: WebSocket, rejection: str) {
-    try {
-        await websocket.send_json(
-            ws_error_frame('CAPACITY', 'Connection limit reached', rejection)
+"""Reject a connection the manager refused, tagged by why it refused it.
+
+A capacity cap is the client's problem and closes 4403; a backplane that cannot
+be subscribed is the server's problem and closes 4503, so a client can tell a
+transient outage from a limit it should back off from.
+"""
+impl ws_reject_registration(websocket: WebSocket, rejection: str) {
+    if rejection == 'subscribe_unavailable' {
+        await _ws_send_then_close(
+            websocket,
+            ws_error_frame(
+                'SERVICE_UNAVAILABLE', 'Broadcast backplane unavailable', rejection
+            ),
+            WS_CLOSE_UNAVAILABLE,
+            rejection
         );
-    } except Exception as e {
-        logger.debug(f"WS capacity-fail send ignored: {e}");
+        return;
     }
-    try {
-        await websocket.close(code=WS_CLOSE_FORBIDDEN, reason=rejection);
-    } except Exception as e {
-        logger.debug(f"WS close after capacity reject failed: {e}");
-    }
+    await _ws_send_then_close(
+        websocket,
+        ws_error_frame('CAPACITY', 'Connection limit reached', rejection),
+        WS_CLOSE_FORBIDDEN,
+        rejection
+    );
 }
 
 """Receive one JSON frame from the socket, enforcing the message-size limit."""
