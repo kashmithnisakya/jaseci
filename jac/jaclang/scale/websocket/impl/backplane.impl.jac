@@ -3,7 +3,7 @@ impl MemoryBackplane.start{
         logger.warning(
             "WS MemoryBackplane in use: broadcasts are limited to this "
             "process. For multi-worker deployments configure "
-            "[plugins.scale.websocket].backplane = 'redis'."
+            "[scale.websocket].backplane = 'redis'."
         );
         self._warned = True;
     }
@@ -209,16 +209,16 @@ impl build_backplane(cfg: dict) -> BaseBackplane {
     if backplane == 'redis' {
         if not url {
             raise ValueError(
-                "[plugins.scale.websocket].backplane = 'redis' but no redis_url "
-                "is configured (set it in [plugins.scale.websocket] or "
-                "[plugins.scale.database])."
+                "[scale.websocket].backplane = 'redis' but no redis_url "
+                "is configured (set it in [scale.websocket] or "
+                "[scale.database])."
             );
         }
         return RedisBackplane(url=str(url));
     }
     if backplane is not None {
         raise ValueError(
-            f"Unknown [plugins.scale.websocket].backplane value: {backplane!r}. "
+            f"Unknown [scale.websocket].backplane value: {backplane!r}. "
             "Expected 'memory' or 'redis'."
         );
     }

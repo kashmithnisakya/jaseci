@@ -205,10 +205,10 @@ A streamed response always ends with a `done` frame, carrying the error if one o
 
 ## 5. Configuration
 
-Tune limits and the broadcast backplane under `[plugins.scale.websocket]` in `jac.toml`:
+Tune limits and the broadcast backplane under `[scale.websocket]` in `jac.toml`:
 
 ```toml
-[plugins.scale.websocket]
+[scale.websocket]
 max_connections_per_target = 5000   # live connections allowed per target
 max_connections_per_user = 10       # live connections allowed per authenticated user
 max_anonymous_per_target = 100      # live connections allowed per target, unauthenticated
@@ -224,7 +224,7 @@ redis_url = "redis://localhost:6379"
 - **`memory`** (default) keeps broadcasts inside one worker. Correct for a single-process deployment; with multiple workers, a client only sees broadcasts produced by the worker it happens to be connected to.
 - **`redis`** publishes broadcasts over Redis pub/sub so every worker delivers them to its own clients. Required for any multi-worker deployment that uses `broadcast=True`.
 
-If `backplane` is unset but a `redis_url` is configured (here or under `[plugins.scale.database]`), Redis is selected automatically.
+If `backplane` is unset but a `redis_url` is configured (here or under `[scale.database]`), Redis is selected automatically.
 
 ## 6. Important Notes
 

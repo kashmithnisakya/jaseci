@@ -9,7 +9,12 @@ import from jaclang.scale.websocket.websocket {
     WebSocketConnectionManager,
     ConnectionContext
 }
-import from jaclang.scale.websocket.backplane { BaseBackplane, MemoryBackplane }
+import from jaclang.scale.websocket.backplane {
+    BaseBackplane,
+    MemoryBackplane,
+    RedisBackplane,
+    build_backplane
+}
 import from jaclang.scale.websocket.protocol { ws_handle_control, ws_heartbeat_loop }
 
 
@@ -83,6 +88,53 @@ obj _CountingMetrics {
 
     def record_ws_connection_closed {
         self.closed += 1;
+    }
+}
+
+
+test "the websocket config block is read from [scale.websocket]" {
+    import from jaclang.scale.config.config_loader { get_scale_config }
+    cfg = get_scale_config().get_websocket_config();
+    expected = {
+        'max_connections_per_target': 5000,
+        'max_connections_per_user': 10,
+        'max_anonymous_per_target': 100,
+        'max_message_bytes': 65536,
+        'messages_per_second': 20,
+        'target_timeout_seconds': 30
+    };
+    for (key, default) in expected.items() {
+        assert key in cfg , f"get_websocket_config() is missing '{key}'";
+        value = cfg[key];
+        assert isinstance(value, int) , f"'{key}' should be an int, got {value!r}";
+    }
+    assert 'backplane' in cfg;
+    assert 'redis_url' in cfg;
+}
+
+
+test "build_backplane selects the backplane the config names" {
+    assert isinstance(build_backplane({}), MemoryBackplane);
+    assert isinstance(
+        build_backplane({'backplane': 'memory', 'redis_url': 'redis://x:6379'}),
+        MemoryBackplane
+    );
+    assert isinstance(
+        build_backplane({'backplane': 'redis', 'redis_url': 'redis://x:6379'}),
+        RedisBackplane
+    );
+    assert isinstance(build_backplane({'redis_url': 'redis://x:6379'}), RedisBackplane);
+    try {
+        build_backplane({'backplane': 'redis'});
+        assert False , "redis backplane with no redis_url should raise";
+    } except ValueError as e {
+        assert '[scale.websocket]' in str(e) , f"error names the wrong config block: {e}";
+    }
+    try {
+        build_backplane({'backplane': 'kafka'});
+        assert False , "unknown backplane should raise";
+    } except ValueError as e {
+        assert '[scale.websocket]' in str(e) , f"error names the wrong config block: {e}";
     }
 }
 
