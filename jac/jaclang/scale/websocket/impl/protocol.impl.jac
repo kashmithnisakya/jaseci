@@ -268,7 +268,7 @@ impl ws_handle_control(
     if not consume_rate_token(ctx, rate_capacity, msgs_per_sec) {
         await websocket.send_json(
             ws_error_frame(
-                'RATE_LIMITED', f'Rate limit exceeded ({int(msgs_per_sec)} msg/s)'
+                'RATE_LIMITED', f'Rate limit exceeded ({msgs_per_sec:g} msg/s)'
             )
         );
         return 'continue';
@@ -343,7 +343,7 @@ impl ws_execute_target(
         await websocket.send_json(
             ws_error_frame(
                 'EXECUTION_TIMEOUT',
-                f"{label} '{name}' timed out after {int(target_timeout)}s"
+                f"{label} '{name}' timed out after {target_timeout:g}s"
             )
         );
         return (False, None);

@@ -224,6 +224,8 @@ redis_url = "redis://localhost:6379"
 - **`memory`** (default) keeps broadcasts inside one worker. Correct for a single-process deployment; with multiple workers, a client only sees broadcasts produced by the worker it happens to be connected to.
 - **`redis`** publishes broadcasts over Redis pub/sub so every worker delivers them to its own clients. Required for any multi-worker deployment that uses `broadcast=True`.
 
+`messages_per_second` and `target_timeout_seconds` accept fractional values (`0.5`, `1.5`). Every limit must be **greater than zero**; none of them treat `0` as "unlimited", and a zero would wedge the connection rather than loosen it (a `messages_per_second` of `0` leaves the token bucket with nothing to refill it, so the socket is rate-limited forever after its first message). A non-positive or non-numeric value is rejected at startup. To effectively disable a limit, set it high.
+
 If `backplane` is unset but a `redis_url` is configured (here or under `[scale.database]`), Redis is selected automatically.
 
 ## 6. Important Notes
