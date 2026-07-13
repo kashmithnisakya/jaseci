@@ -34,7 +34,7 @@ def _write_bootable_project(src: Path) {
         'def:pub shout(word: str) -> str {\n' + '    return word.upper();\n' + '}\n'
     );
     (src / "server.sv.jac").write_text(
-        'import from lib.helpers { shout }\n\n' + 
+        'import from lib.helpers { shout }\n\n' +
         'walker:pub Greet {\n' + '    has name: str,\n' + '        reports: list[str] = [];\n' + '    can g with Root entry {\n' + '        report f"Hello, {self.name}!";\n' + '    }\n' + '}\n\n' + 'walker:pub Loud {\n' + '    has name: str,\n' + '        reports: list[str] = [];\n' + '    can g with Root entry {\n' + '        report shout(self.name);\n' + '    }\n' + '}\n\n' + 'walker Secret {\n' + '    has reports: list[str] = [];\n' + '    can g with Root entry {\n' + '        report "secret";\n' + '    }\n' + '}\n\n' + 'def:pub ping(word: str) -> str {\n' + '    return f"pong:{word}";\n' + '}\n'
     );
 }
