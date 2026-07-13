@@ -73,9 +73,11 @@ def _run(
     target: object, bundle: dict, apps: object, core: object, timeout: int
 ) -> object {
     err = None;
-    with unittest.mock.patch.object(kubernetes.client, "AppsV1Api", lambda : apps ) {
+    with unittest.mock.patch.object(
+        kubernetes.client, "AppsV1Api", return_value=apps
+    ) {
         with unittest.mock.patch.object(
-            kubernetes.client, "CoreV1Api", lambda : core
+            kubernetes.client, "CoreV1Api", return_value=core
         ) {
             with unittest.mock.patch.object(target, "_load_kube_config") {
                 with unittest.mock.patch.object(time, "sleep") {
