@@ -69,18 +69,39 @@ def _workload_to_service(name: str) -> str {
     return base.replace('-', '_');
 }
 
+"""The metric namespace the app server prefixes its own series with."""
+def _metrics_namespace -> str {
+    try {
+        import from jaclang.scale.config.config_loader { get_scale_config }
+        return str(
+            get_scale_config().get_monitoring_config().get('namespace', 'jaclang_scale')
+        );
+    } except Exception { }
+    return 'jaclang_scale';
+}
+
 """Pick the request-metric family that this deployment actually emits.
 
 Microservice deploys route every request through the gateway, which emits
 `*_gateway_requests_total` (labelled by `service`, with an `outcome` bucket).
 A monolith has no gateway and emits only the app server's own
-`*_http_requests_total` (labelled by `status_code`), so a gateway-only query
-matches zero series and every traffic number reads 0. Probe for the gateway
-family once and fall back to the app's counter.
+`{ns}_http_requests_total` (labelled by a raw `status_code`), so a gateway-only
+query matches zero series and every traffic number reads 0. Probe for the
+gateway family once and fall back to the app's counter.
 
 Deliberately NOT expressed as a PromQL `A or B` fallback: `or` yields B
-whenever A has no series, so a gateway that simply has not served a 5xx yet
-would fall through and report the app counter's errors instead of 0.
+whenever A has no series, and prometheus_client creates a child series only on
+first observation -- so a healthy gateway that has not served a 5xx yet has no
+`outcome="5xx"` series at all, and `or` would charge the app's errors against
+the gateway's denominator (a 100% error rate on a healthy cluster).
+
+`_gateway_requests_total` is a jac-scale-only suffix, so matching it by regex is
+safe. `_http_requests_total` is NOT -- it is a generic name, and
+resolve_prometheus_url() honours a PROMETHEUS_URL override that may point at a
+shared Prometheus where `prometheus_http_requests_total` and friends exist. The
+app family is therefore pinned to this app's configured metric namespace rather
+than matched with a wildcard.
+
 `by_service` says whether per-workload attribution is possible: only the
 gateway counter carries a `service` label.
 """
@@ -93,10 +114,11 @@ def _traffic_queries -> dict {
             'by_service': True
         };
     }
+    ns = _metrics_namespace();
     return {
-        'rate': 'sum(rate({__name__=~".+_http_requests_total"}[1m]))',
-        'errors': 'sum(rate({__name__=~".+_http_requests_total",status_code=~"5.."}[1m]))',
-        'p95': 'histogram_quantile(0.95, sum(rate({__name__=~".+_http_request_duration_seconds_bucket"}[5m])) by (le))',
+        'rate': f'sum(rate({ns}_http_requests_total[1m]))',
+        'errors': f'sum(rate({ns}_http_requests_total{{status_code=~"5.."}}[1m]))',
+        'p95': f'histogram_quantile(0.95, sum(rate({ns}_http_request_duration_seconds_bucket[5m])) by (le))',
         'by_service': False
     };
 }

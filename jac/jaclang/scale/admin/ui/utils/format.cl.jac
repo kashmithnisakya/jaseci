@@ -14,12 +14,15 @@ def:pub formatBytes(b: float) -> str {
     return str(int(b)) + " B";
 }
 
-# CPU cores: millicores under 1 core, else cores with two decimals.
+# CPU cores: millicores under 1 core, else cores to two decimals.
+# Rounds rather than truncates: int(2.3 * 100) is 229 (2.3 has no exact float
+# representation), which rendered 2.3 cores as "2.29 cores".
 def:pub formatCores(c: float) -> str {
     if c < 1 {
         return str(int(c * 1000)) + "m";
     }
-    return str(int(c * 100) / 100) + " cores";
+    v = round(c, 2);
+    return str(v) + (" core" if v == 1 else " cores");
 }
 
 # Age from a unix-seconds creation timestamp ("-" when unknown/future).
