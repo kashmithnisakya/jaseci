@@ -63,9 +63,42 @@ def _workload_to_service(name: str) -> str {
     for suffix in ['-deployment', '-statefulset', '-daemonset'] {
         if base.endswith(suffix) {
             base = base[:len(base) - len(suffix)];
+            break;
         }
     }
     return base.replace('-', '_');
+}
+
+"""Pick the request-metric family that this deployment actually emits.
+
+Microservice deploys route every request through the gateway, which emits
+`*_gateway_requests_total` (labelled by `service`, with an `outcome` bucket).
+A monolith has no gateway and emits only the app server's own
+`*_http_requests_total` (labelled by `status_code`), so a gateway-only query
+matches zero series and every traffic number reads 0. Probe for the gateway
+family once and fall back to the app's counter.
+
+Deliberately NOT expressed as a PromQL `A or B` fallback: `or` yields B
+whenever A has no series, so a gateway that simply has not served a 5xx yet
+would fall through and report the app counter's errors instead of 0.
+`by_service` says whether per-workload attribution is possible: only the
+gateway counter carries a `service` label.
+"""
+def _traffic_queries -> dict {
+    if prom_query('count({__name__=~".+_gateway_requests_total"})') {
+        return {
+            'rate': 'sum(rate({__name__=~".+_gateway_requests_total"}[1m]))',
+            'errors': 'sum(rate({__name__=~".+_gateway_requests_total",outcome=~"5xx|err"}[1m]))',
+            'p95': 'histogram_quantile(0.95, sum(rate({__name__=~".+_gateway_request_duration_seconds_bucket"}[5m])) by (le))',
+            'by_service': True
+        };
+    }
+    return {
+        'rate': 'sum(rate({__name__=~".+_http_requests_total"}[1m]))',
+        'errors': 'sum(rate({__name__=~".+_http_requests_total",status_code=~"5.."}[1m]))',
+        'p95': 'histogram_quantile(0.95, sum(rate({__name__=~".+_http_request_duration_seconds_bucket"}[5m])) by (le))',
+        'by_service': False
+    };
 }
 
 """Build a namespace-scoped PromQL selector for a bare metric.
@@ -227,27 +260,17 @@ impl JacAPIServerWorkloads.admin_workloads_summary(
         )
     );
     nodes_total = int(prom_scalar(prom_query('count(kube_node_info)')));
-    # Cluster traffic comes from the gateway's request counter
-    # (*_gateway_requests_total), the single ingress point Prometheus scrapes
-    # in microservice mode. Its `outcome` label is the classified status bucket
-    # (2xx/3xx/4xx/5xx/err); errors = 5xx + connection errors. The app's own
-    # /metrics series carry no `namespace` label (only k8s SD metrics do), so
-    # these app-traffic queries are NOT namespace-filtered -- safe because
-    # Prometheus is per-namespace and only this app exposes these series.
-    request_rate = prom_scalar(
-        prom_query('sum(rate({__name__=~".+_gateway_requests_total"}[1m]))')
-    );
-    error_rate = prom_scalar(
-        prom_query(
-            'sum(rate({__name__=~".+_gateway_requests_total",outcome=~"5xx|err"}[1m]))'
-        )
-    );
+    # Cluster traffic comes from the gateway's request counter in microservice
+    # mode and from the app server's own HTTP counter on a monolith (see
+    # _traffic_queries). The app's /metrics series carry no `namespace` label
+    # (only k8s SD metrics do), so these app-traffic queries are NOT
+    # namespace-filtered -- safe because Prometheus is per-namespace and only
+    # this app exposes these series.
+    tq = _traffic_queries();
+    request_rate = prom_scalar(prom_query(tq['rate']));
+    error_rate = prom_scalar(prom_query(tq['errors']));
     error_pct = (error_rate / request_rate * 100.0) if request_rate > 0 else 0.0;
-    p95_latency = prom_scalar(
-        prom_query(
-            'histogram_quantile(0.95, sum(rate({__name__=~".+_gateway_request_duration_seconds_bucket"}[5m])) by (le))'
-        )
-    );
+    p95_latency = prom_scalar(prom_query(tq['p95']));
     return TransportResponse.success(
         data={
             'metrics_available': True,
@@ -415,24 +438,42 @@ impl JacAPIServerWorkloads.admin_workloads_list(
     # Per-service traffic: the gateway counter's `service` label is the routed
     # microservice (e.g. builder_sv). One grouped query each for rate, errors,
     # and p95, indexed by service, then joined to each workload by name.
-    svc_rps = _index_by(
-        prom_query(
-            'sum by (service)(rate({__name__=~".+_gateway_requests_total"}[1m]))'
-        ),
-        'service'
-    );
-    svc_err = _index_by(
-        prom_query(
-            'sum by (service)(rate({__name__=~".+_gateway_requests_total",outcome=~"5xx|err"}[1m]))'
-        ),
-        'service'
-    );
-    svc_p95 = _index_by(
-        prom_query(
-            'histogram_quantile(0.95, sum by (service, le)(rate({__name__=~".+_gateway_request_duration_seconds_bucket"}[5m])))'
-        ),
-        'service'
-    );
+    tq = _traffic_queries();
+    svc_rps: dict = {};
+    svc_err: dict = {};
+    svc_p95: dict = {};
+    if tq['by_service'] {
+        svc_rps = _index_by(
+            prom_query(
+                'sum by (service)(rate({__name__=~".+_gateway_requests_total"}[1m]))'
+            ),
+            'service'
+        );
+        svc_err = _index_by(
+            prom_query(
+                'sum by (service)(rate({__name__=~".+_gateway_requests_total",outcome=~"5xx|err"}[1m]))'
+            ),
+            'service'
+        );
+        svc_p95 = _index_by(
+            prom_query(
+                'histogram_quantile(0.95, sum by (service, le)(rate({__name__=~".+_gateway_request_duration_seconds_bucket"}[5m])))'
+            ),
+            'service'
+        );
+    } else {
+        # Monolith: the app's HTTP counter has no `service` label, so per-service
+        # attribution is impossible from it -- but a monolith serves all of its
+        # traffic from one workload, so attribute the app-wide totals to that
+        # workload (K8S_APP_NAME, keyed the same way _workload_to_service keys
+        # a workload name). Other workloads (mongo/redis/grafana) stay unrouted.
+        app_key = os.environ.get("K8S_APP_NAME", "").replace('-', '_');
+        if app_key {
+            svc_rps = {app_key: prom_scalar(prom_query(tq['rate']))};
+            svc_err = {app_key: prom_scalar(prom_query(tq['errors']))};
+            svc_p95 = {app_key: prom_scalar(prom_query(tq['p95']))};
+        }
+    }
 
     workloads: list = [];
     for e in entries {
