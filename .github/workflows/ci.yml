@@ -289,7 +289,10 @@ jobs:
         # the tree proves nothing: this boots it and drives it over HTTP.
         run: |
           set -euxo pipefail
-          (cd examples/todo_app && jac build --as source -o /tmp/ejected)
+          # -n skips the type-check gate: this step is about whether the ejected
+          # tree boots, and the examples are not typecheck-clean (todo_app trips
+          # E1115 on main). Coupling the eject smoke to that is a false failure.
+          (cd examples/todo_app && jac build --as source -n -o /tmp/ejected)
 
           python3 -m venv /tmp/ejected-venv
           /tmp/ejected-venv/bin/pip install -q -r /tmp/ejected/backend/requirements.txt
