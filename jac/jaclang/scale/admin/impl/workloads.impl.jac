@@ -53,7 +53,7 @@ def _finite(v: list) -> float {
 """Map a k8s workload name to the gateway route's `service` label.
 
 The gateway tags request metrics with the route name from
-[plugins.scale.microservices.routes] (underscores, e.g. `builder_sv`), while
+[scale.microservices.routes] (underscores, e.g. `builder_sv`), while
 the workload is named `builder-sv-deployment` (hyphens + a kind suffix). Strip
 the kind suffix and swap hyphens for underscores so per-workload traffic can be
 joined to the gateway counter. Non-routed infra workloads simply won't match.
@@ -82,7 +82,7 @@ def _unavailable_reason -> str {
     try {
         import from jaclang.scale.config.config_loader { get_scale_config }
         if not bool(get_scale_config().get_monitoring_config().get('enabled', False)) {
-            return "Monitoring is disabled. Set [plugins.scale.monitoring] enabled = true in jac.toml and redeploy to see workload metrics.";
+            return "Monitoring is disabled. Set [scale.monitoring] enabled = true in jac.toml and redeploy to see workload metrics.";
         }
     } except Exception { }
     if resolve_prometheus_url() is None {

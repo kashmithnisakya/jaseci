@@ -74,7 +74,10 @@ jobs:
 
       - name: Materialize typeshed stdlib stubs into the checkout
         working-directory: jac
-        run: zig build fetch-typeshed --summary all
+        # -Dno-ninja: typeshed is editor-independent. setup-jac above may have
+        # hit the binary cache (no build), so a bare fetch-typeshed would pull
+        # the neovim + Lua closure just to materialize stubs.
+        run: zig build -Dno-ninja fetch-typeshed --summary all
 
       - name: Hermeticity + smoke (no system Python)
         working-directory: jac
@@ -158,6 +161,10 @@ jobs:
         run: |
           chmod +x "$PWD/bin/jac"
           echo "$PWD/bin" >> "$GITHUB_PATH"
+      - name: Set up Node.js (ES backend for the equivalence suite)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
       - name: Set up Zig 0.16.0 (vendor static-musl runtime)
         uses: mlugg/setup-zig@v2
         with:
@@ -165,7 +172,10 @@ jobs:
           use-cache: false
       - name: Vendor static-musl runtime
         working-directory: jac
-        run: zig build vendor-musl --summary all
+        # -Dno-ninja: harvesting musl from the Zig toolchain is editor-independent;
+        # without it, configuring the build fetches the neovim + Lua closure (incl.
+        # the flaky lua.org tarball) for nothing. This job never bundles the editor.
+        run: zig build -Dno-ninja vendor-musl --summary all
       - name: Compiler suite via the binary
         working-directory: jac
         run: |
@@ -177,6 +187,27 @@ jobs:
             echo "## binary compiler-suite result"
             echo '```'
             grep -E '^(FAILED|ERROR)|passed|failed' /tmp/compiler.log | tail -60 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+      - name: Cross-backend equivalence suite (py/es/native congruence)
+        working-directory: jac
+        # The suite's cross-module tests build fixture paths under jac/tests/
+        # from jaclang.__file__, which only resolve in the checkout, not in the
+        # binary's bundled site copy. Run this one step through the checkout's
+        # `[dev] jaclang_source` loop (as k8s-real-e2e does) so the suite
+        # exercises THIS checkout's compiler and harness.
+        env:
+          JAC_NO_DEV_SOURCE: ""
+        run: |
+          set -uxo pipefail
+          WORK="$(mktemp -d)"
+          rc=0
+          HOME="$WORK" JAC_TEST_JOBS=auto jac test jaclang/compiler/tests | tee /tmp/equivalence.log || rc=$?
+          {
+            echo "## binary equivalence-suite result"
+            echo '```'
+            grep -E '^(FAILED|ERROR)|passed|failed' /tmp/equivalence.log | tail -60 || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"
@@ -210,7 +241,10 @@ jobs:
           use-cache: false
       - name: Vendor static-musl runtime
         working-directory: jac
-        run: zig build vendor-musl --summary all
+        # -Dno-ninja: harvesting musl from the Zig toolchain is editor-independent;
+        # without it, configuring the build fetches the neovim + Lua closure (incl.
+        # the flaky lua.org tarball) for nothing. This job never bundles the editor.
+        run: zig build -Dno-ninja vendor-musl --summary all
       - name: Runtime suite via the binary (everything except compiler)
         working-directory: jac
         run: |
@@ -288,7 +322,7 @@ jobs:
       - name: Warm up compiler cache
         run: jac --version
 
-      - name: Run jac format (check formatting)
+      - name: Run jac fmt (check formatting)
         run: |
           set -euo pipefail
           if [ "${{ steps.changes.outputs.mode }}" = "scoped" ]; then
@@ -302,9 +336,12 @@ jobs:
               exit 0
             fi
             printf '%s\n' "$FILES" | tr '\n' '\0' \
-              | xargs -0 --no-run-if-empty jac format --check --lintfix
+              | xargs -0 --no-run-if-empty jac fmt --check --lintfix
           else
-            find . -type f -name "*.jac" ! -path "*/fixtures/*" ! -path "./scripts/*" ! -path "*/passes/native/llvm/*" ! -name "*_err.jac" ! -name "*_syntax_err.jac" -print0 | xargs -0 --no-run-if-empty jac format --check --lintfix
+            # Sweep only git-tracked files: the build materializes generated
+            # trees in-place (e.g. jac/zig-pkg/ zig package fetches with their
+            # own sample .jac files), and a bare `find .` walks those too.
+            git ls-files -z '*.jac' | grep -zv -E '(/fixtures/|^scripts/|/passes/native/llvm/|_err\.jac$|_syntax_err\.jac$)' | xargs -0 --no-run-if-empty jac fmt --check --lintfix
           fi
 
       - name: Verify jir_registry.jac is up to date
@@ -571,6 +608,33 @@ jobs:
         jac test jac/tests/compiler/passes/native/test_shared_lib.jac
         jac test jac/tests/compiler/passes/native/test_exec_link.jac
 
+  # Launcher unit tests: trailer codec + `.jab`-overlay round-trip
+  # (append / detect / materialize-steps-over-overlay / graft). runtime.zig is
+  # the sole owner of the trailer format, so these guard the whole `--as binary`
+  # boot shape. Host-native, no libpython/LLVM/typeshed -- just checkout + zig.
+  # Cross-platform matrix on purpose: the format code has Linux/macOS-divergent
+  # syscall behavior (a /proc createDirPath livelock once hung this on Linux
+  # only, while macOS was green). -Dno-ninja skips the editor closure this
+  # never needs.
+  test-launcher:
+    needs: changes
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.core == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Zig 0.16.0
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+          use-cache: false
+      - name: Launcher unit tests (zig build test)
+        working-directory: jac
+        run: zig build -Dno-ninja test --summary all
+
   test-cef-build:
     needs: build-jac
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -737,6 +801,10 @@ jobs:
         if: matrix.group == 'failure-path'
         env:
           JAC_TEST_JOBS: "0"
+          # Seal + ship the jac built from this checkout (channel LOCAL) so the
+          # deploy uses the PR binary instead of downloading a stable release
+          # (no published asset for this arch on CI).
+          JAC_SCALE_BINARY_PATH: ${{ github.workspace }}/jac/zig-out/bin/jac
         run: |
           jac test jac/jaclang/scale/tests/test_deploy_k8s.jac -x --test_name "early exit"
 
@@ -755,11 +823,6 @@ jobs:
       with:
         python-version: 3.12
 
-    - name: Install build package
-      run: |
-        python -m pip install --upgrade pip
-        pip install build
-
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
@@ -774,10 +837,6 @@ jobs:
     - name: Precompile all packages
       run: |
         jac run jac/jaclang/utils/precompile_bytecode.jac ./jac
-
-    - name: Clean egg-info to simulate fresh build (like the release publish)
-      run: |
-        rm -rf jac/jaclang.egg-info
 
     - name: Verify cold start with precompiled bytecode
       run: |
@@ -815,158 +874,75 @@ jobs:
         # Serial: byllm tests share a SQLite mock-LLM cache.
         JAC_TEST_JOBS=0 jac test jac/jaclang/byllm/tests/test_byllm.jac
 
-    # ========== jac-gpt test ==========
-    - name: Create jac-gpt from jacpack
+    # ========== this_is_jac fullstack smoke ==========
+    - name: Clone this_is_jac
       run: |
-        jac create jac-gpt --use https://raw.githubusercontent.com/jaseci-labs/jacpacks/refs/heads/main/jac-gpt/jac-gpt.jacpack
-        cd jac-gpt && jac install
+        git clone --depth 1 https://github.com/jaseci-labs/this_is_jac this_is_jac
+        cd this_is_jac && jac install
 
-    - name: Install Playwright dependencies
-      run: |
-        jac install playwright --global
-        jac -m playwright install chromium --with-deps
-
-    - name: Type check jac-gpt
-      working-directory: jac-gpt
+    - name: Type check this_is_jac
+      working-directory: this_is_jac
       run: jac check main.jac
 
-    - name: Restore FAISS index cache
-      uses: actions/cache@v4
-      with:
-        path: jac-gpt/services/faiss_index
-        key: jac-gpt-faiss-v1
-
-    - name: Start jac-gpt server in background
-      working-directory: jac-gpt
-      env:
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    - name: Start this_is_jac server in background
+      working-directory: this_is_jac
       run: |
-        timeout 600 jac start main.jac > /tmp/jac-gpt-server.log 2>&1 &
+        timeout 600 jac start main.jac > /tmp/this-is-jac-server.log 2>&1 &
         SERVER_PID=$!
-        echo "JAC_GPT_PID=$SERVER_PID" >> $GITHUB_ENV
-        echo "jac-gpt server starting with PID $SERVER_PID..."
+        echo "THIS_IS_JAC_PID=$SERVER_PID" >> $GITHUB_ENV
+        echo "this_is_jac server starting with PID $SERVER_PID..."
         sleep 10
         if ! kill -0 $SERVER_PID 2>/dev/null; then
           echo "Server process died during startup"
-          cat /tmp/jac-gpt-server.log
+          cat /tmp/this-is-jac-server.log
           exit 1
         fi
 
-    - name: Wait for jac-gpt server to be ready
+    - name: Wait for this_is_jac server to be ready
       run: |
-        echo "Waiting for jac-gpt server on port 8000..."
+        echo "Waiting for this_is_jac server on port 8000..."
         for i in $(seq 1 24); do
-          if ! kill -0 ${{ env.JAC_GPT_PID }} 2>/dev/null; then
+          if ! kill -0 ${{ env.THIS_IS_JAC_PID }} 2>/dev/null; then
             echo "Server process exited unexpectedly"
-            cat /tmp/jac-gpt-server.log
+            cat /tmp/this-is-jac-server.log
             exit 1
           fi
           if curl -sf --max-time 10 http://localhost:8000 -o /dev/null 2>&1; then
-            echo "jac-gpt server is ready (attempt $i)"
+            echo "this_is_jac server is ready (attempt $i)"
             exit 0
           fi
           echo "Attempt $i/24: not ready, waiting 15s..."
           sleep 15
         done
         echo "Server failed to respond after 24 attempts"
-        tail -100 /tmp/jac-gpt-server.log
+        tail -100 /tmp/this-is-jac-server.log
         exit 1
 
-    - name: Verify jac-gpt HTTP response
+    - name: Verify this_is_jac HTTP response
       run: |
         HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 http://localhost:8000)
-        echo "jac-gpt root endpoint: HTTP $HTTP_CODE"
+        echo "this_is_jac root endpoint: HTTP $HTTP_CODE"
         if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 500 ]; then
-          echo "jac-gpt server responding correctly"
+          echo "this_is_jac server responding correctly"
         else
           echo "Unexpected HTTP $HTTP_CODE"
           exit 1
         fi
 
-    - name: Run E2E tests
-      working-directory: jac-gpt
-      env:
-        SERVER_URL: http://localhost:8000
-      run: jac test tests/test_e2e.jac -vv
-
-    - name: Stop jac-gpt server
+    - name: Stop this_is_jac server
       if: always()
       run: |
-        if [ -n "${{ env.JAC_GPT_PID }}" ]; then
-          kill ${{ env.JAC_GPT_PID }} 2>/dev/null || true
+        if [ -n "${{ env.THIS_IS_JAC_PID }}" ]; then
+          kill ${{ env.THIS_IS_JAC_PID }} 2>/dev/null || true
           sleep 3
-          kill -9 ${{ env.JAC_GPT_PID }} 2>/dev/null || true
-        fi
-
-    # ========== Algo test ==========
-    - name: Create Algo from jacpack
-      run: |
-        jac create algo --use https://raw.githubusercontent.com/jaseci-labs/jacpacks/refs/heads/main/Algo/Algo.jacpack
-        cd algo && jac install
-
-    - name: Type check Algo
-      working-directory: algo
-      run: jac check main.jac
-
-    - name: Start Algo server in background
-      working-directory: algo
-      run: |
-        timeout 600 jac start main.jac > /tmp/algo-server.log 2>&1 &
-        ALGO_PID=$!
-        echo "ALGO_PID=$ALGO_PID" >> $GITHUB_ENV
-        echo "Algo server starting with PID $ALGO_PID..."
-        sleep 10
-        if ! kill -0 $ALGO_PID 2>/dev/null; then
-          echo "Server process died during startup"
-          cat /tmp/algo-server.log
-          exit 1
-        fi
-
-    - name: Wait for Algo server to be ready
-      run: |
-        echo "Waiting for Algo server on port 8000..."
-        for i in $(seq 1 24); do
-          if ! kill -0 ${{ env.ALGO_PID }} 2>/dev/null; then
-            echo "Server process exited unexpectedly"
-            cat /tmp/algo-server.log
-            exit 1
-          fi
-          if curl -sf --max-time 10 http://localhost:8000 -o /dev/null 2>&1; then
-            echo "Algo server is ready (attempt $i)"
-            exit 0
-          fi
-          echo "Attempt $i/24: not ready, waiting 15s..."
-          sleep 15
-        done
-        echo "Server failed to respond after 24 attempts"
-        tail -100 /tmp/algo-server.log
-        exit 1
-
-    - name: Verify Algo HTTP response
-      run: |
-        HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 http://localhost:8000)
-        echo "Algo root endpoint: HTTP $HTTP_CODE"
-        if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 500 ]; then
-          echo "Algo server responding correctly"
-        else
-          echo "Unexpected HTTP $HTTP_CODE"
-          exit 1
-        fi
-
-    - name: Stop Algo server
-      if: always()
-      run: |
-        if [ -n "${{ env.ALGO_PID }}" ]; then
-          kill ${{ env.ALGO_PID }} 2>/dev/null || true
-          sleep 3
-          kill -9 ${{ env.ALGO_PID }} 2>/dev/null || true
+          kill -9 ${{ env.THIS_IS_JAC_PID }} 2>/dev/null || true
         fi
 
     # ========== fullstack eject smoke ==========
     - name: Create fullstack project and eject it
       run: |
         jac create --use web-app fs-smoke
-        jac eject fs-smoke
+        cd fs-smoke && jac build --as source --no_typecheck
 
     - name: Install ejected backend and start it
       working-directory: fs-smoke/ejected/backend
@@ -1009,20 +985,12 @@ jobs:
           kill -9 ${{ env.EJECTED_PID }} 2>/dev/null || true
         fi
 
-    - name: Upload jac-gpt server logs
+    - name: Upload this_is_jac server logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: jac-gpt-test-logs
-        path: /tmp/jac-gpt-server.log
-        retention-days: 7
-
-    - name: Upload Algo server logs
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: algo-test-logs
-        path: /tmp/algo-server.log
+        name: this-is-jac-test-logs
+        path: /tmp/this-is-jac-server.log
         retention-days: 7
 
     - name: Upload fullstack ejected backend logs
@@ -1040,50 +1008,54 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "| Test | Status |" >> $GITHUB_STEP_SUMMARY
         echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
-        echo "| jac-gpt | \`${{ job.status }}\` |" >> $GITHUB_STEP_SUMMARY
-        echo "| algo | \`${{ job.status }}\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| this_is_jac | \`${{ job.status }}\` |" >> $GITHUB_STEP_SUMMARY
         echo "| fullstack (ejected) | \`${{ job.status }}\` |" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "| **Trigger** | \`${{ github.event_name }}\` |" >> $GITHUB_STEP_SUMMARY
 
-  # Heavy microk8s e2e (~25 min); PR-only when jac core changed, never on push.
-  # Not a required check.
+  # Real-app microservice e2e on kind (not microk8s) so it runs on the fast blacksmith runner, whose minimal kernel lacks the ipset modules microk8s' calico needs. PR-only on core changes; not a required check.
+  # Two pod-base legs: `slim` = the plain python default; `official-image` =
+  # an image built from THIS PR's binary via docker/jaclang.Dockerfile, which
+  # exercises the baked-runtime path (container-local cache site, checksum
+  # binary reuse) that only exists on jaseci/jaclang bases.
   k8s-real-e2e:
-    name: microk8s real-app smoke
-    needs: changes
+    name: microservice e2e (k8s, ${{ matrix.base }})
+    needs: [changes, build-jac]
     if: >-
       github.event_name != 'push' &&
       (github.event_name != 'pull_request' || needs.changes.outputs.core == 'true') &&
       !contains(github.event.pull_request.labels.*.name, 'skip-k8s')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        base: [slim, official-image]
     env:
-      # This job overlays the checkout's jaclang onto the downloaded dev binary
-      # via `[dev] jaclang_source`, so the workflow-level opt-out must be unset.
-      JAC_NO_DEV_SOURCE: ""
+      # Ship the jac binary built from THIS PR (the build-jac artifact) to the
+      # pods via channel LOCAL, so the e2e validates the code under test rather
+      # than a published release. JAC_SCALE_BINARY_PATH is set once the artifact
+      # is on disk (below); the deploy driver reads it as the pod binary.
+      JAC_SCALE_BINARY_PATH: ${{ github.workspace }}/jac/zig-out/bin/jac
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
           submodules: true
 
-      - name: Download the prebuilt dev jac binary (host deploy driver)
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Download the jac binary built from this PR (build-jac artifact)
+        uses: actions/download-artifact@v4
+        with:
+          name: jac-binary
+          path: jac/zig-out/bin
+
+      - name: Install the PR jac binary as the deploy driver
         run: |
-          arch="$(uname -m)"
+          chmod +x "$JAC_SCALE_BINARY_PATH"
           mkdir -p "$HOME/.local/bin"
-          gh release download dev --repo jaseci-labs/jaseci \
-            --pattern "jac-dev-linux-${arch}" \
-            --output "$HOME/.local/bin/jac" --clobber
-          chmod +x "$HOME/.local/bin/jac"
+          cp "$JAC_SCALE_BINARY_PATH" "$HOME/.local/bin/jac"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           "$HOME/.local/bin/jac" --version
-
-      - name: Overlay this checkout's jaclang onto the downloaded binary
-        run: |
-          printf '\n[dev]\njaclang_source = "%s/jac"\n' "$GITHUB_WORKSPACE" \
-            >> jac/jaclang/scale/tests/fixtures/k8s_e2e/jac.toml
 
       - name: Install scale deploy deps
         # Pins mirror jac/jaclang/project/capabilities.jac.
@@ -1095,28 +1067,38 @@ jobs:
             "aiohttp>=3.9.0,<4.0.0" "sqlalchemy>=2.0.0,<3.0.0" \
             "email-validator>=2.3.0,<3.0.0" "python-dotenv>=1.2.1,<2.0.0" \
             "pymongo>=4.15.4,<5.0.0" "redis>=7.1.0,<8.0.0" \
-            "kubernetes>=34.1.0,<35.0.0" "docker>=7.1.0,<8.0.0" \
+            "kubernetes>=34.1.0,<35.0.0" "docker>=7.1.0,<8.0.0" "humanize>=4.0.0" \
             --global
 
-      - name: Set up microk8s
+      - name: Set up kind cluster
+        # Single node labelled ingress-ready + host 80/443 mapped so ingress-nginx's kind provider can bind them.
         run: |
-          sudo snap install microk8s --classic --channel=1.30/stable
-          sudo microk8s status --wait-ready --timeout 180
-          sudo microk8s enable dns:8.8.8.8,1.1.1.1
-          # hostpath-storage provides the default StorageClass; without it the
-          # bundle PVC never binds and the loader pod hangs Pending.
-          sudo microk8s enable hostpath-storage
-          sudo microk8s status --wait-ready --timeout 180
-          sudo usermod -aG microk8s "$USER"
-          mkdir -p "$HOME/.kube"
-          sudo microk8s config | sudo tee "$HOME/.kube/config" >/dev/null
-          sudo chown "$USER" "$HOME/.kube/config"
-          chmod 600 "$HOME/.kube/config"
-          kubectl -n kube-system set env daemonset/calico-node IP_AUTODETECTION_METHOD=can-reach=8.8.8.8
-          kubectl -n kube-system rollout restart daemonset/calico-node
-          kubectl -n kube-system rollout status daemonset/calico-node --timeout=240s || true
-          kubectl -n kube-system wait --for=condition=ready pod -l k8s-app=calico-node --timeout=240s || echo "WARN: calico-node not Ready"
-          kubectl -n kube-system wait --for=condition=ready pod -l k8s-app=kube-dns --timeout=120s || echo "WARN: coredns not Ready"
+          # Fetch kind + kubectl and verify their published SHA256 before installing with sudo.
+          curl -fsSL -o ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64
+          curl -fsSL -o ./kind.sha256 https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64.sha256sum
+          echo "$(cut -d' ' -f1 ./kind.sha256)  ./kind" | sha256sum -c -
+          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+          curl -fsSL -o kubectl https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl
+          curl -fsSL -o kubectl.sha256 https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl.sha256
+          echo "$(cat kubectl.sha256)  kubectl" | sha256sum -c -
+          sudo install kubectl /usr/local/bin/kubectl
+          cat > /tmp/kind.yaml <<'EOF'
+          kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          nodes:
+            - role: control-plane
+              kubeadmConfigPatches:
+                - |
+                  kind: InitConfiguration
+                  nodeRegistration:
+                    kubeletExtraArgs:
+                      node-labels: "ingress-ready=true"
+              extraPortMappings:
+                - { containerPort: 80, hostPort: 80, protocol: TCP }
+                - { containerPort: 443, hostPort: 443, protocol: TCP }
+          EOF
+          kind create cluster --name jac --config /tmp/kind.yaml --wait 150s
+          kubectl get nodes -o wide
 
       - name: Verify pod DNS + egress (fail fast)
         run: |
@@ -1133,18 +1115,19 @@ jobs:
           kubectl logs netcheck
           kubectl delete pod netcheck --ignore-not-found
 
-      - name: Pre-pull + enable addons (best-effort)
+      - name: Deploy ingress-nginx + metrics-server (kind, best-effort)
         continue-on-error: true
         run: |
-          for img in registry.k8s.io/metrics-server/metrics-server:v0.7.2 \
-                     registry.k8s.io/ingress-nginx/controller:v1.10.1; do
-            for _ in 1 2 3; do sudo microk8s ctr images pull "$img" && break; sleep 5; done
-          done
-          sudo microk8s enable metrics-server || echo "WARN: metrics-server enable failed"
-          sudo microk8s enable ingress || echo "WARN: ingress enable failed"
-          kubectl wait --namespace ingress --for=condition=ready pod \
-              --selector=name=nginx-ingress-microk8s --timeout=180s \
-              || echo "WARN: ingress controller not ready; K10 path will skip"
+          # ingress-nginx kind provider binds hostPort 80/443, exposed at 127.0.0.1 for the e2e's ingress probe.
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.5/deploy/static/provider/kind/deploy.yaml
+          kubectl wait --namespace ingress-nginx --for=condition=ready pod \
+              --selector=app.kubernetes.io/component=controller --timeout=180s \
+              || echo "WARN: ingress controller not ready; ingress path will skip"
+          # metrics-server for HPA; kind's kubelet serves a self-signed cert.
+          kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.2/components.yaml
+          kubectl -n kube-system patch deployment metrics-server --type=json \
+            -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]' \
+            || echo "WARN: metrics-server patch failed"
 
       - name: Show cluster info
         run: |
@@ -1153,9 +1136,19 @@ jobs:
           kubectl get nodes
           kubectl get pods -A
 
+      - name: Build the official base image from this PR's binary (official-image leg)
+        if: matrix.base == 'official-image'
+        run: |
+          mkdir -p /tmp/imgctx/amd64
+          cp "$JAC_SCALE_BINARY_PATH" /tmp/imgctx/amd64/jac
+          docker build --build-arg TARGETARCH=amd64 \
+              -f docker/jaclang.Dockerfile -t jaclang-e2e:pr /tmp/imgctx
+          kind load docker-image jaclang-e2e:pr --name jac
+          echo "E2E_POD_BASE_IMAGE=jaclang-e2e:pr" >> "$GITHUB_ENV"
+
       - name: Run K8s microservice real-app e2e
         env:
-          CLUSTER_TYPE: microk8s
+          CLUSTER_TYPE: kind
         run: |
           bash jac/jaclang/scale/scripts/k8s_microservice_real_e2e.sh \
               jac/jaclang/scale/tests/fixtures/k8s_e2e
@@ -1185,7 +1178,7 @@ jobs:
           done
           echo "=== ingress status ==="; kubectl describe ingress -n "${NS}" || true
           echo "=== ingress controller logs ==="
-          kubectl logs -n ingress -l name=nginx-ingress-microk8s --tail=50 || true
+          kubectl logs -n ingress-nginx -l app.kubernetes.io/component=controller --tail=50 || true
 
   installer-test:
     needs: changes
@@ -1221,6 +1214,11 @@ jobs:
           fi
 
       - name: "install: download + run the binary"
+        env:
+          # install.sh authenticates its GitHub API calls when a token is set;
+          # shared runners (macOS especially) exhaust the unauthenticated
+          # per-IP rate limit.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/install.sh
 
       - name: "install: verify jac"

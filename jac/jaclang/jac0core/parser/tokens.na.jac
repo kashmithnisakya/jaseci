@@ -64,6 +64,7 @@ enum TokenKind {
     KW_TO = "to",
     KW_BY = "by",
     KW_WHILE = "while",
+    KW_FOREVER = "forever",
     KW_MATCH = "match",
     KW_SWITCH = "switch",
     KW_CASE = "case",
@@ -102,6 +103,8 @@ enum TokenKind {
     KW_NIN = "not in",
     KW_ISN = "is not",
     KW_LAMBDA = "lambda",
+    KW_OWN = "own",
+    KW_MUT = "mut",
     KW_PUB = "pub",
     KW_PRIV = "priv",
     KW_PROT = "protect",
@@ -199,14 +202,9 @@ enum TokenKind {
     F_TEXT_SQ = "F_TEXT_SQ",
     F_TEXT_TDQ = "F_TEXT_TDQ",
     F_TEXT_TSQ = "F_TEXT_TSQ",
-    RF_TEXT_DQ = "RF_TEXT_DQ",
-    RF_TEXT_SQ = "RF_TEXT_SQ",
-    RF_TEXT_TDQ = "RF_TEXT_TDQ",
-    RF_TEXT_TSQ = "RF_TEXT_TSQ",
     D_LBRACE = "{{",
     D_RBRACE = "}}",
     CONV = "CONV",
-    F_FORMAT_TEXT = "F_FORMAT_TEXT",
     JSX_TEXT = "JSX_TEXT",
     JSX_COMMENT = "JSX_COMMENT",
     JSX_OPEN_START = "JSX_OPEN_START",
@@ -218,7 +216,6 @@ enum TokenKind {
     JSX_NAME = "JSX_NAME",
     COMMENT = "COMMENT",
     WS = "WS",
-    NEWLINE = "NEWLINE",
     EOF = "EOF",
     ERROR = "ERROR"
 }
@@ -240,7 +237,6 @@ obj Token {
         value: str,
         loc: SourceLoc;
 
-    def is_keyword -> bool;
     def __str__ -> str;
 }
 
@@ -316,6 +312,7 @@ glob KEYWORDS: dict[str, TokenKind] = {
          "to": TokenKind.KW_TO,
          "by": TokenKind.KW_BY,
          "while": TokenKind.KW_WHILE,
+         "forever": TokenKind.KW_FOREVER,
          "match": TokenKind.KW_MATCH,
          "switch": TokenKind.KW_SWITCH,
          "case": TokenKind.KW_CASE,
@@ -352,6 +349,8 @@ glob KEYWORDS: dict[str, TokenKind] = {
          "in": TokenKind.KW_IN,
          "is": TokenKind.KW_IS,
          "lambda": TokenKind.KW_LAMBDA,
+         "own": TokenKind.KW_OWN,
+         "mut": TokenKind.KW_MUT,
          "pub": TokenKind.KW_PUB,
          "priv": TokenKind.KW_PRIV,
          "protect": TokenKind.KW_PROT,
@@ -374,5 +373,3 @@ def lookup_keyword(text: str) -> TokenKind | None {
     }
     return None;
 }
-
-glob _init = 0;

@@ -64,17 +64,8 @@ obj RedisBackend(CacheMemory) {
     ) -> Generator[Anchor, None, None];
 
     def get_roots -> Generator[Root, None, None];
-    def find(
-        ids: (UUID | Iterable[UUID]), filter: (Callable[[Anchor], Anchor] | None) = None
-    ) -> Generator[Anchor, None, None];
-
-    def find_one(
-        ids: (UUID | Iterable[UUID]), filter: (Callable[[Anchor], Anchor] | None) = None
-    ) -> (Anchor | None);
-
     def commit(anchor: (Anchor | None) = None) -> None;
     def batch_get(ids: list[UUID]) -> dict[UUID, Anchor];
-    def batch_put(anchors: list[Anchor]) -> None;
     def exists(id: UUID) -> bool;
     def put_if_exists(anchor: Anchor) -> bool;
     def invalidate(id: UUID) -> None;
@@ -114,14 +105,6 @@ obj MongoBackend(PersistentMemory) {
     ) -> Generator[Anchor, None, None];
 
     def get_roots -> Generator[Root, None, None];
-    def find(
-        ids: (UUID | Iterable[UUID]), filter: (Callable[[Anchor], Anchor] | None) = None
-    ) -> Generator[Anchor, None, None];
-
-    def find_one(
-        ids: (UUID | Iterable[UUID]), filter: (Callable[[Anchor], Anchor] | None) = None
-    ) -> (Anchor | None);
-
     def commit(anchor: (Anchor | None) = None) -> None;
     def batch_get(ids: list[UUID]) -> dict[UUID, Anchor];
     def capabilities -> set[str];
@@ -169,18 +152,12 @@ obj ScaleTieredMemory(TieredMemory) {
         use_cache: bool = True;
 
     def postinit -> None;
+    def put(anchor: Anchor) -> None;
     def commit(anchor: (Anchor | None) = None) -> None;
     async def acommit(anchor: (Anchor | None) = None) -> None;
     def close -> None;
+    def _mark_committed(anchor: (Anchor | None)) -> None;
     def get(id: UUID) -> (Anchor | None);
-    def find(
-        ids: (UUID | Iterable[UUID]), filter: (Callable[[Anchor], Anchor] | None) = None
-    ) -> Generator[Anchor, None, None];
-
-    def find_one(
-        ids: (UUID | Iterable[UUID]), filter: (Callable[[Anchor], Anchor] | None) = None
-    ) -> (Anchor | None);
-
     def batch_get(ids: list[UUID]) -> dict[UUID, Anchor];
     def query(
         filter: (Callable[[Anchor], bool] | None) = None

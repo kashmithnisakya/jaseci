@@ -79,6 +79,10 @@ obj FormatConfig {
     has outfile: str = "";
 }
 
+obj PrecommitConfig {
+    has typecheck: bool = True;
+}
+
 obj LintConfig {
     has select: list[str] = ["default"],
         ignore: list[str] = [],
@@ -106,12 +110,6 @@ obj DotConfig {
 obj CacheConfig {
     has enabled: bool = True,
         dir: str = "cache";
-}
-
-obj PluginsConfig {
-    has discovery: str = "auto",
-        enabled: list[str] = [],
-        disabled: list[str] = [];
 }
 
 obj StorageConfig {
@@ -160,11 +158,11 @@ obj JacConfig {
         test: TestConfig = TestConfig(),
         serve: ServeConfig = ServeConfig(),
         format: FormatConfig = FormatConfig(),
+        precommit: PrecommitConfig = PrecommitConfig(),
         check: CheckConfig = CheckConfig(),
         dot: DotConfig = DotConfig(),
         cache: CacheConfig = CacheConfig(),
         storage: StorageConfig = StorageConfig(),
-        plugins_config: PluginsConfig = PluginsConfig(),
         environment: EnvironmentConfig = EnvironmentConfig(),
         client_errors: ClientErrorsConfig = ClientErrorsConfig(),
         client: ClientConfig = ClientConfig(),
@@ -195,6 +193,7 @@ obj JacConfig {
     ) -> JacConfig;
 
     def apply_env_interpolation -> None;
+    def _section_map -> dict;
     def apply_profile(profile_name: str, _visited: set | None = None) -> None;
     def apply_profile_overlay(profile_name: str | None = None) -> None;
     def get_plugin_deps(dep_type: str) -> dict[str, any];
@@ -208,6 +207,7 @@ obj JacConfig {
     def is_valid -> bool;
     def save -> None;
     def persist_doc(doc: dict[str, any]) -> None;
+    def _write_toml_text(text: str) -> None;
     def add_dependency(
         name: str, version: str, dev: bool = False, dep_type: str = "python"
     ) -> None;

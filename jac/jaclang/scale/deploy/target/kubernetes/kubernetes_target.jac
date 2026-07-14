@@ -36,7 +36,8 @@ import from jaclang.scale._optdeps.optional_deps { require_optional }
 import from jaclang.scale._optdeps.kubernetes {
     client,
     config as k8s_cluster_config,
-    ApiException
+    ApiException,
+    ConfigException
 }
 import from jaclang.scale.deploy.database.factory { DatabaseProviderFactory }
 import from jaclang.scale.deploy.target.kubernetes.monitoring { MonitoringDeployer }
@@ -54,7 +55,10 @@ obj KubernetesTarget(DeploymentTarget) {
         logger: (Logger | None) = None,
         k8s_config: KubernetesConfig by postinit,
         env_list: list = [],
-        secrets: dict[str, str] = {};
+        secrets: dict[str, str] = {},
+        # Set by the factory for --dry-run: manifest generation must then stay
+        # hermetic -- no cluster reads, downloads, or builds (issue #7431).
+        dry_run: bool = False;
 
     def postinit {
         self.k8s_config = self.config;
@@ -177,11 +181,16 @@ obj KubernetesTarget(DeploymentTarget) {
     }
 
     def _build_runtime_setup_command(app_config: AppConfig) -> list[str] {
+        import from jaclang.scale.deploy.target.kubernetes.runtime_bootstrap {
+            build_service_apt_prefix
+        }
+        apt_prefix = build_service_apt_prefix(self.k8s_config);
         commands = [
             f"cd {self.k8s_config.app_mount_path}",
             f"jac start {app_config.file_name}"
         ];
-        return ['bash', '-c', ' && '.join(commands)];
+        script = ' && '.join(commands);
+        return ['bash', '-c', apt_prefix + script];
     }
 
     def _build_container_config(
@@ -940,6 +949,10 @@ obj KubernetesTarget(DeploymentTarget) {
                 {'namespace': namespace}
             );
         }
+        import from jaclang.scale.injector.binary { resolve_pod_base_image }
+        self.k8s_config.python_image = resolve_pod_base_image(
+            app_config.code_folder, self.k8s_config.python_image
+        );
 
         try {
             validate_resource_limits(
@@ -1007,11 +1020,13 @@ obj KubernetesTarget(DeploymentTarget) {
 
             import from jaclang.scale.injector.binary_injector { select_injector }
             (injector, _tc_key) = select_injector(
-                app_config.dev,
                 self.k8s_config.bundle_storage_class,
                 app_name,
                 namespace,
-                app_config.code_folder
+                app_config.code_folder,
+                provisioned_database=(
+                    "mongo" if self.k8s_config.mongodb_enabled else ""
+                )
             );
             ensure_pvc_exists(
                 core_v1,
@@ -1036,6 +1051,13 @@ obj KubernetesTarget(DeploymentTarget) {
                 needs_root=True
             );
             container_config['env'] = container_config['env'] + runtime_container_env();
+            import from jaclang.scale.deploy.target.kubernetes.runtime_bootstrap {
+                image_pull_policy
+            }
+            pull_policy = image_pull_policy(self.k8s_config.python_image);
+            if pull_policy {
+                container_config['imagePullPolicy'] = pull_policy;
+            }
 
             app_sa_name = f"{app_name}-sa";
             self._create_service_account(app_sa_name, app_name, namespace, core_v1);
@@ -1078,9 +1100,7 @@ obj KubernetesTarget(DeploymentTarget) {
 
             template_spec['initContainers'].append(
                 build_bootstrap_init_container(
-                    self.k8s_config,
-                    self.k8s_config.python_image,
-                    app_config.dev.overlays_source()
+                    self.k8s_config, self.k8s_config.python_image
                 )
             );
             deployment['spec']['template']['spec'] = template_spec;

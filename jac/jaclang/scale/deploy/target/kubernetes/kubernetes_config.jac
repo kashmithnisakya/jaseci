@@ -1,5 +1,14 @@
 import from jaclang.scale.config.base_config { BaseConfig }
 
+def k8s_safe_slug(name: str, fallback: str = 'jaseci') -> str {
+    import re;
+    lowered = (name or '').strip().lower();
+    slug = re.sub(r'[^a-z0-9-]+', '-', lowered);
+    slug = re.sub(r'-+', '-', slug).strip('-');
+    slug = slug[:63].strip('-');
+    return slug or fallback;
+}
+
 obj KubernetesConfig(BaseConfig) {
     has container_port: int = 8000,
         mongodb_enabled: bool = True,
@@ -23,7 +32,9 @@ obj KubernetesConfig(BaseConfig) {
         autoscaler_initial_cooldown: int = 0,
         extra_triggers: list[dict] = [],
         health_check_path: str = '/docs',
-        python_image: str = 'python:3.12-slim',
+        # Empty = auto: the official channel image when published, else
+        # python:3.12-slim (resolve_pod_base_image decides at deploy time).
+        python_image: str = '',
         busybox_image: str = 'busybox:1.36',
         wait_image: str = 'busybox',
         pvc_size: str = '5Gi',
@@ -39,6 +50,7 @@ obj KubernetesConfig(BaseConfig) {
         jaseci_commit: (str | None) = None,
         install_jaseci: bool = True,
         additional_packages: list[str] = [],
+        service_dependencies: list[str] = [],
         plugin_versions: dict[str, str] = {},
         monitoring_enabled: bool = False,
         k8s_metrics_enabled: bool = True,
@@ -114,6 +126,7 @@ obj KubernetesConfig(BaseConfig) {
                 'jaseci_commit': self.jaseci_commit,
                 'install_jaseci': self.install_jaseci,
                 'additional_packages': self.additional_packages,
+                'service_dependencies': self.service_dependencies,
                 'plugin_versions': self.plugin_versions,
                 'monitoring_enabled': self.monitoring_enabled,
                 'k8s_metrics_enabled': self.k8s_metrics_enabled,
@@ -177,7 +190,7 @@ obj KubernetesConfig(BaseConfig) {
             autoscaler_initial_cooldown=config.get('autoscaler_initial_cooldown', 0),
             extra_triggers=config.get('extra_triggers', []),
             health_check_path=config.get('health_check_path', '/docs'),
-            python_image=config.get('python_image', 'python:3.12-slim'),
+            python_image=config.get('python_image', ''),
             busybox_image=config.get('busybox_image', 'busybox:1.36'),
             wait_image=config.get('wait_image', 'busybox'),
             pvc_size=config.get('pvc_size', '5Gi'),
@@ -195,6 +208,7 @@ obj KubernetesConfig(BaseConfig) {
             jaseci_commit=config.get('jaseci_commit'),
             install_jaseci=config.get('install_jaseci', True),
             additional_packages=config.get('additional_packages', []),
+            service_dependencies=config.get('service_dependencies', []),
             plugin_versions=config.get('plugin_versions', {}),
             monitoring_enabled=config.get('monitoring_enabled', False),
             k8s_metrics_enabled=config.get('k8s_metrics_enabled', True),

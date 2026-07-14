@@ -319,7 +319,7 @@ def _serve_fragment(payload: dict) -> tuple {
 
     body = json.dumps(payload).encode();
 
-    def _do_get(handler_self: any) -> None {
+    def _do_get(handler_self: any) {
         handler_self.send_response(200);
         handler_self.send_header("Content-Type", "application/json");
         handler_self.send_header("Content-Length", str(len(body)));
@@ -327,7 +327,7 @@ def _serve_fragment(payload: dict) -> tuple {
         handler_self.wfile.write(body);
     }
 
-    def _log_quiet(handler_self: any, fmt: str, *args: any) -> None {}
+    def _log_quiet(handler_self: any, fmt: str, *args: any) { }
 
     handler_cls = type(
         "_FragmentHandler",
@@ -401,11 +401,7 @@ test "/graph/data merges the graph fragments of every healthy service" {
 }
 
 test "/graph/data still answers when one service is down (partial merge)" {
-    frag_a = {
-        "version": "1.0",
-        "nodes": [{"id": "r", "label": "root"}],
-        "edges": []
-    };
+    frag_a = {"version": "1.0", "nodes": [{"id": "r", "label": "root"}], "edges": []};
     (srv_a, port_a) = _serve_fragment(frag_a);
 
     reg = ServiceRegistry();
@@ -1439,8 +1435,9 @@ test "http_forward_timeout precedence: per-service > global > default" {
         setattr(
             cfg_mod,
             "get_scale_config",
-            lambda :
-                _TimeoutStubCfg(data={"http_forward_timeout": 45.0, "services": {}})
+            lambda { _TimeoutStubCfg(
+                data={"http_forward_timeout": 45.0, "services": {}}
+            ); }
         );
         assert http_forward_timeout(None) == 45.0;
         assert http_forward_timeout("any_service") == 45.0;
@@ -1448,13 +1445,12 @@ test "http_forward_timeout precedence: per-service > global > default" {
         setattr(
             cfg_mod,
             "get_scale_config",
-            lambda :
-                _TimeoutStubCfg(
-                    data={
-                        "http_forward_timeout": 45.0,
-                        "services": {"llm_app": {"http_forward_timeout": 300.0}}
-                    }
-                )
+            lambda { _TimeoutStubCfg(
+                data={
+                    "http_forward_timeout": 45.0,
+                    "services": {"llm_app": {"http_forward_timeout": 300.0}}
+                }
+            ); }
         );
         assert http_forward_timeout("llm_app") == 300.0;
         assert http_forward_timeout("other_service") == 45.0;
@@ -1462,10 +1458,9 @@ test "http_forward_timeout precedence: per-service > global > default" {
         setattr(
             cfg_mod,
             "get_scale_config",
-            lambda :
-                _TimeoutStubCfg(
-                    data={"services": {"llm_app": {"http_forward_timeout": 120.0}}}
-                )
+            lambda { _TimeoutStubCfg(
+                data={"services": {"llm_app": {"http_forward_timeout": 120.0}}}
+            ); }
         );
         assert http_forward_timeout("llm_app") == 120.0;
         assert http_forward_timeout("other_service") == 30.0;
@@ -1473,13 +1468,12 @@ test "http_forward_timeout precedence: per-service > global > default" {
         setattr(
             cfg_mod,
             "get_scale_config",
-            lambda :
-                _TimeoutStubCfg(
-                    data={
-                        "http_forward_timeout": 45.0,
-                        "services": {"llm_app": {"rpc_timeout": 120.0}}
-                    }
-                )
+            lambda { _TimeoutStubCfg(
+                data={
+                    "http_forward_timeout": 45.0,
+                    "services": {"llm_app": {"rpc_timeout": 120.0}}
+                }
+            ); }
         );
         assert http_forward_timeout("llm_app") == 45.0;
     } finally {

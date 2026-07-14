@@ -1,8 +1,14 @@
+import os;
 import shutil;
 import glob;
 import tempfile;
 import contextlib;
 import from pathlib { Path }
+
+# Hash throwaway fixture credentials at minimum bcrypt cost so it does not dominate test time.
+with entry {
+    os.environ.setdefault('JAC_SCALE_BCRYPT_ROUNDS', '4');
+}
 
 def make_client(fixture_file: str = "test_api.jac") -> ScaleTestClient {
     fixtures_dir = Path(__file__).parent / "fixtures";
@@ -154,6 +160,12 @@ obj ScaleTestClient {
             return data["data"]["token"];
         }
         raise RuntimeError(f"User login failed: {data}");
+    }
+
+    """Register a user then log in, returning a usable auth token."""
+    def register_and_login(username: str, password: str) -> str {
+        self.register_user(username, password);
+        return self.login_user(username, password);
     }
 
     def admin_login(username: str = "admin", password: str = "changeme") -> str {

@@ -6,20 +6,31 @@ description: >
 
   The binary is an OUTPUT cache keyed on the content that goes into it (jaclang
   source, build.zig, and the launcher -- including payload.zig, which pins the
-  pbs tag / python version / bundled pip deps). The first job in any workflow on
-  a branch to build it populates the cache; every other job and workflow restores
-  the prebuilt binary in seconds instead of rebuilding. Exact-key match only
-  (no restore-keys), so a stale binary can never be served -- which is why this
-  is safe even though zig's own incremental cache stays disabled (it doesn't
-  reliably invalidate on a jaclang/payload change).
+  pbs tag / python version / bundled pip deps). Merges to main seed the cache;
+  every other job and workflow restores the prebuilt binary in seconds instead
+  of rebuilding (PR branches cross-restore main's entry, and build their own on
+  a miss). Exact-key match only (no restore-keys), so a stale binary can never
+  be served -- which is why this is safe even though zig's own incremental cache
+  stays disabled (it doesn't reliably invalidate on a jaclang/payload change).
 runs:
   using: composite
   steps:
     # typeshed stdlib stubs are vendored as plain files now (no submodule);
-    # third-party stubs are installed per-project by `jac add` (PEP 561 types-*).
+    # third-party stubs are installed per-project by `jac install` (PEP 561 types-*).
+    #
+    # Restore/save split with the SAVE GATED TO MAIN, same as the read-mostly
+    # caches below. The binary key changes on every jaclang/launcher edit, so a
+    # per-PR save has almost no reuse value (only a follow-up push touching
+    # neither jaclang nor the launcher would hit it) yet a high pool cost
+    # (~0.1-0.2 GB each). Left unbounded it dominated the 10 GB pool -- dozens of
+    # per-branch binaries -- and its LRU churn evicted the Linux read-mostly
+    # caches (pbs/bun) this action relies on. PR jobs still build their own
+    # binary on a miss (and ci.yml publishes it as an artifact for the same-run
+    # test jobs); only main seeds the shared copy. Exact-key match only (no
+    # restore-keys), so a stale binary can never be served.
     - name: Restore cached jac binary
       id: cache
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
       with:
         # Also cache the gitignored typeshed stdlib stubs: they are materialized
         # during `zig build` and ci.yml publishes them as an artifact for
@@ -121,6 +132,28 @@ runs:
         restore-keys: |
           jac-precompiled-${{ runner.os }}-${{ runner.arch }}-
 
+    # The Zig package store (.zig-cache/p): every git/tarball dependency
+    # `zig build` fetches -- the pinned neovim fork and, transitively, its PUC
+    # Lua source off lua.org's FTP (historically the flakiest fetch in the whole
+    # build), plus mini.nvim, tree-sitter-jac, libuv, zlua, lpeg, luv, etc.
+    # Content-addressed and immutable (the hash IS the identity), so unlike zig's
+    # build-artifact cache it can never ship stale bits -- which is why we cache
+    # only the `p/` package subdir and leave o/,h/ (the payload-artifact cache,
+    # deliberately disabled via use-cache:false) untouched. mlugg/setup-zig pins
+    # ZIG_GLOBAL_CACHE_DIR to $GITHUB_WORKSPACE/.zig-cache. Keyed on build.zig.zon
+    # (which pins the neovim fork hash, and thus its entire transitive closure);
+    # restore-keys so a zon bump still reuses every unchanged package (Lua
+    # included) instead of re-hitting lua.org. Only engaged on a binary miss.
+    - name: Restore cached Zig package store
+      id: zig-pkgs-cache
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/restore@v4
+      with:
+        path: .zig-cache/p
+        key: zig-pkgs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('jac/build.zig.zon') }}
+        restore-keys: |
+          zig-pkgs-${{ runner.os }}-${{ runner.arch }}-
+
     - name: Set up Zig 0.16.0
       if: steps.cache.outputs.cache-hit != 'true' || steps.typeshed-cache.outputs.cache-hit != 'true'
       uses: mlugg/setup-zig@v2
@@ -144,7 +177,10 @@ runs:
       if: steps.typeshed-cache.outputs.cache-hit != 'true'
       shell: bash
       working-directory: jac
-      run: zig build fetch-typeshed --summary all
+      # -Dno-ninja: typeshed materialization is editor-independent, so skip
+      # configuring (and fetching) the neovim + Lua closure. Load-bearing on a
+      # binary-cache hit, where no full build ran to fetch it otherwise.
+      run: zig build -Dno-ninja fetch-typeshed --summary all
 
     - name: Build the jac binary
       if: steps.cache.outputs.cache-hit != 'true'
@@ -163,6 +199,20 @@ runs:
           SHIM_ARG=(-Dshim-bin=".shim-build/$(ls .shim-build | head -1)")
         fi
         zig build "${SHIM_ARG[@]}" --summary all
+
+    # Seed the shared binary cache from main only (see the note by the restore
+    # step). Saved after the build so both the binary and the materialized
+    # typeshed stdlib stubs (part of this cache's path) exist.
+    - name: Save jac binary cache (main only)
+      if: >-
+        github.ref == 'refs/heads/main' &&
+        steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          jac/zig-out/bin/jac
+          jac/jaclang/vendor/typeshed/stdlib
+        key: jac-bin-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('jac/jaclang/**', 'jac/build.zig', 'jac/launcher/**') }}
 
     # Seed the shared read-mostly caches -- from main only (see the note above
     # the restore steps). Every merge to main runs this action, so a pin bump
@@ -221,6 +271,21 @@ runs:
         path: jac/.precompiled-build
         key: jac-precompiled-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('jac/jaclang/**') }}
 
+    # Seed the Zig package store from main only (see the restore note). Like the
+    # precompile cache, a restore-keys prefix hit still leaves cache-hit != true,
+    # so each merge re-saves the refreshed closure under the current
+    # build.zig.zon hash. Same key as build-binaries.yml's dev-channel entry, so
+    # the two share one ~20 MB entry per os/arch.
+    - name: Save Zig package store cache (main only)
+      if: >-
+        github.ref == 'refs/heads/main' &&
+        steps.cache.outputs.cache-hit != 'true' &&
+        steps.zig-pkgs-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: .zig-cache/p
+        key: zig-pkgs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('jac/build.zig.zon') }}
+
     # Binary cache hits skip `zig build`, which is what normally runs fetch-typeshed.
     # Older cache entries only stored the binary, so materialize stubs when missing.
     - id: typeshed_check
@@ -244,7 +309,10 @@ runs:
       if: steps.cache.outputs.cache-hit == 'true' && steps.typeshed_check.outputs.needed == 'true'
       shell: bash
       working-directory: jac
-      run: zig build fetch-typeshed
+      # -Dno-ninja: this path only runs on a binary-cache hit (no build), so
+      # without it a bare `fetch-typeshed` would fetch the neovim + Lua closure
+      # purely to materialize stubs.
+      run: zig build -Dno-ninja fetch-typeshed
 
     - name: Put jac on PATH
       shell: bash

@@ -63,6 +63,31 @@ impl ViteCompiler._emit_na_wasm(self: ViteCompiler, module_path: Path) -> None {
     console.print(
         f"  Native wasm module: /static/{module_path.stem}.wasm ({len(wasm)} bytes)"
     );
+
+    try {
+        import json;
+        import from jaclang.compiler.passes.native.wasm_build { wasm_import_map }
+        import from jaclang.compiler.passes.native.wasm_host_abi { WASM_HOST_MODULE }
+        imports = wasm_import_map(wasm);
+        manifest_path = dist / f"{module_path.stem}.wasm.imports.json";
+        manifest_path.write_text(
+            json.dumps({"abi": WASM_HOST_MODULE, "imports": imports}, indent=2),
+            encoding='utf-8',
+        );
+        app_ffi = [];
+        for mod_nm in imports {
+            if mod_nm != WASM_HOST_MODULE {
+                app_ffi.extend(imports[mod_nm]);
+            }
+        }
+        if app_ffi {
+            console.print(
+                f"    app FFI imports ({len(app_ffi)}): provide via the shim's" + " env at instantiation (see .wasm.imports.json)"
+            );
+        }
+    } except Exception as e {
+        console.warning(f"Could not write wasm import manifest: {e}");
+    }
 }
 
 impl ViteCompiler.create_entry_file(self: ViteCompiler, module_path: Path) -> None {
@@ -77,6 +102,14 @@ impl ViteCompiler.create_entry_file(self: ViteCompiler, module_path: Path) -> No
     } else {
         entry_content = backend.build_entry_script(module_path.stem);
     }
+    entry_file.parent.mkdir(parents=True, exist_ok=True);
+
+    try {
+        if entry_file.exists()
+        and entry_file.read_text(encoding='utf-8') == entry_content {
+            return;
+        }
+    } except OSError { }
     entry_file.write_text(entry_content, encoding='utf-8');
 }
 
@@ -114,6 +147,7 @@ impl ViteCompiler.compile_runtime_utils(self: ViteCompiler) -> tuple[str, list[s
         raise ClientBundleError('Runtime path not set');
     }
     import from jaclang.runtimelib.runtime_source { resolve_client_runtime_cl_path }
+    import from jaclang.runtimelib.client_surface { prepend_active_runtime_globals }
     runtime_utils_path = Path(resolve_client_runtime_cl_path());
     (runtimeutils_js, mod, runtimeutils_manifest) = self.jac_compiler.compile_module(
         runtime_utils_path
@@ -134,6 +168,7 @@ impl ViteCompiler.compile_runtime_utils(self: ViteCompiler) -> tuple[str, list[s
         core_specifier = './jaclang/runtimelib/client_runtime_core.js';
         if core_specifier in runtimeutils_js {
             (core_js, core_mod, _) = self.jac_compiler.compile_module(core_path);
+            core_js = prepend_active_runtime_globals(core_js);
             runtimeutils_js = runtimeutils_js.replace(
                 core_specifier, './client_runtime_core.js'
             );

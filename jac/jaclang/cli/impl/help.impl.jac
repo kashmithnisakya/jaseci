@@ -1,3 +1,21 @@
+glob _HELP_RESET: str = "\033[0m",
+     _HELP_HEADER: str = "\033[1;34m",
+     _HELP_CMD: str = "\033[32m",
+     _HELP_PROG: str = "\033[1;35m",
+     _HELP_TITLE: str = "\033[1m";
+
+def _help_color(text: str, code: str) -> str {
+    import from jaclang.cli.console { console }
+    try {
+        if not console.use_color {
+            return text;
+        }
+    } except Exception {
+        return text;
+    }
+    return f"{code}{text}{_HELP_RESET}";
+}
+
 impl CommandGroups.get_display_name(group: str) -> str {
     return self.groups.get(group, group.title());
 }
@@ -20,16 +38,18 @@ impl HelpFormatter.format_main_help(
 
     lines: list[str] = [];
 
-    lines.append("Jac Programming Language CLI");
-    if version {
-        lines.append(f"Version: {version}");
-    }
+    lines.append(_help_color("The Jac programming language", _HELP_TITLE));
     lines.append("");
-    lines.append(f"Usage: {prog} [OPTIONS] COMMAND [ARGS]...");
+    lines.append(
+        f"{_help_color('Usage:', _HELP_HEADER)} "
+        f"{_help_color(prog, _HELP_PROG)} [OPTIONS] COMMAND [ARGS]..."
+    );
     lines.append("");
-    lines.append("Options:");
-    lines.append("  -V, --version  Show version and exit");
-    lines.append("  -h, --help     Show this message and exit");
+    lines.append(_help_color("Options:", _HELP_HEADER));
+    lines.append(f"  {_help_color('-V, --version', _HELP_CMD)}");
+    lines.append(f"          Print version info and exit");
+    lines.append(f"  {_help_color('-h, --help', _HELP_CMD)}");
+    lines.append(f"          Print help");
     lines.append("");
 
     grouped: dict[str, list[CommandSpec]] = {};
@@ -41,32 +61,29 @@ impl HelpFormatter.format_main_help(
         grouped[group].append(cmd);
     }
 
+    col = 12;
+    for cmd in commands {
+        if len(cmd.name) >= col {
+            col = len(cmd.name) + 2;
+        }
+    }
+
     ordered_groups = self.groups.get_ordered_groups();
     for group in ordered_groups {
         if group not in grouped {
             continue;
         }
-
         cmds = grouped[group];
         if not cmds {
             continue;
         }
-
         display_name = self.groups.get_display_name(group);
-
-        sources = set(cmd.source for cmd in cmds);
-        if len(sources) == 1 and "jaclang" not in sources {
-            display_name += f"  [{list(sources)[0]}]";
-        }
-
-        lines.append(f"{display_name}:");
-
-        cmds.sort(key=lambda c: str : c.name);
+        lines.append(_help_color(f"{display_name}:", _HELP_HEADER));
+        cmds.sort(key=lambda (c: str) { c.name; });
         for cmd in cmds {
-            padding = " " * (12 - len(cmd.name));
-            lines.append(f"  {cmd.name}{padding}{cmd.help}");
+            padding = " " * (col - len(cmd.name));
+            lines.append(f"    {_help_color(cmd.name, _HELP_CMD)}{padding}{cmd.help}");
         }
-
         lines.append("");
     }
 
@@ -74,16 +91,20 @@ impl HelpFormatter.format_main_help(
         if group not in ordered_groups {
             cmds = grouped[group];
             display_name = self.groups.get_display_name(group);
-            lines.append(f"{display_name}:");
+            lines.append(_help_color(f"{display_name}:", _HELP_HEADER));
             for cmd in cmds {
-                padding = " " * (12 - len(cmd.name));
-                lines.append(f"  {cmd.name}{padding}{cmd.help}");
+                padding = " " * (col - len(cmd.name));
+                lines.append(
+                    f"    {_help_color(cmd.name, _HELP_CMD)}{padding}{cmd.help}"
+                );
             }
             lines.append("");
         }
     }
-    lines.append(f"Run '{prog} COMMAND --help' for command details.");
-    lines.append(f"New to Jac? Run '{prog} guide' for curated docs.");
+
+    lines.append(
+        f"See '{prog} COMMAND --help' for more information on a specific command."
+    );
     return "\n".join(lines);
 }
 
@@ -93,7 +114,12 @@ impl HelpFormatter.format_curated_help(
     import from jaclang.cli.command { CommandSpec }
     lines: list[str] = [];
 
-    lines.append(f"Usage: {prog} COMMAND [ARGS]...");
+    lines.append(_help_color("The Jac programming language", _HELP_TITLE));
+    lines.append("");
+    lines.append(
+        f"{_help_color('Usage:', _HELP_HEADER)} "
+        f"{_help_color(prog, _HELP_PROG)} [OPTIONS] COMMAND [ARGS]..."
+    );
     lines.append("");
 
     by_tier: dict[str, list[CommandSpec]] = {};
@@ -106,16 +132,25 @@ impl HelpFormatter.format_curated_help(
         }
     }
 
+    col = 12;
+    for cmd in commands {
+        if cmd.tier and len(cmd.name) >= col {
+            col = len(cmd.name) + 2;
+        }
+    }
+
     for tier in self.groups.tier_order {
         cmds = by_tier.get(tier, []);
         if not cmds {
             continue;
         }
-        lines.append(f"{self.groups.tier_sections.get(tier, tier)}:");
-        cmds.sort(key=lambda c: str : c.name);
+        lines.append(
+            _help_color(f"{self.groups.tier_sections.get(tier, tier)}:", _HELP_HEADER)
+        );
+        cmds.sort(key=lambda (c: str) { c.name; });
         for cmd in cmds {
-            padding = " " * (12 - len(cmd.name));
-            lines.append(f"  {cmd.name}{padding}{cmd.help}");
+            padding = " " * (col - len(cmd.name));
+            lines.append(f"    {_help_color(cmd.name, _HELP_CMD)}{padding}{cmd.help}");
         }
         lines.append("");
     }
@@ -127,15 +162,6 @@ impl HelpFormatter.format_curated_help(
     lines.append(f"  {prog} --help          Show all commands");
     lines.append(f"  {prog} COMMAND --help  Show help for a command");
     return "\n".join(lines);
-}
-
-impl get_command_groups -> CommandGroups {
-    import from jaclang.cli.help { CommandGroups }
-    global _groups;
-    if _groups is None {
-        _groups = CommandGroups();
-    }
-    return _groups;
 }
 
 impl get_help_formatter -> HelpFormatter {

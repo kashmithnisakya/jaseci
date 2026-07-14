@@ -1,5 +1,4 @@
 import from jaclang.scale.config.app_config { AppConfig }
-import from jaclang.scale.config.dev_config { DevDeploy }
 import from jaclang.scale.models.deploy_context { DeployContext }
 import from jaclang.scale.deploy.target.kubernetes.kubernetes_config {
     KubernetesConfig
@@ -25,11 +24,13 @@ obj MicroserviceManifestBuilder {
         deploy_context: DeployContext = DeployContext(),
         logger: any = None,
         no_image: bool = True,
-        dev: DevDeploy = DevDeploy(),
         project_dir: str = "",
         _bundle_object_key: str = "",
         _toolchain_object_key: str = "",
-        microservices_config: dict[str, any] = {};
+        microservices_config: dict[str, any] = {},
+        # --dry-run: render manifests from config alone -- no client build, no
+        # binary/console download, no cluster reads (issue #7431).
+        dry_run: bool = False;
 
     def _ms_cfg -> dict[str, any] {
         if self.microservices_config {
@@ -53,11 +54,12 @@ obj MicroserviceManifestBuilder {
         proj = self.project_dir or app_config.code_folder;
         self._build_client_bundle(proj);
         selection = select_injector(
-            self.dev,
             self.k8s_config.bundle_storage_class,
             k8s_safe_name(self.k8s_config.app_name),
             self.k8s_config.namespace,
-            proj
+            proj,
+            provisioned_database=("mongo" if self.k8s_config.mongodb_enabled else ""),
+            dry_run=self.dry_run
         );
         injector: PvcInjector = selection[0];
         self._toolchain_object_key = str(selection[1]);
@@ -68,6 +70,7 @@ obj MicroserviceManifestBuilder {
         import os;
         import subprocess;
         import from jaclang.cli.console { console }
+        import from jaclang.scale.runtime.context.util { jac_executable }
         client_entry = self._client_entry();
         if not client_entry {
             return;
@@ -76,11 +79,22 @@ obj MicroserviceManifestBuilder {
         if not os.path.isfile(entry_abs) {
             return;
         }
+        if self.dry_run {
+            # The bundle only affects what ships to the gateway pod, never the
+            # manifests, so a dry run can skip the build outright (issue #7431).
+            console.print(
+                f"dry-run: skipped the host client bundle build ({client_entry})."
+            );
+            return;
+        }
         dist = os.path.join(project_dir, ".jac", "client", "dist");
         console.print(f"Building the client bundle on the host ({client_entry}).");
         try {
             subprocess.run(
-                ["jac", "build", client_entry], cwd=project_dir, check=True, timeout=900
+                [jac_executable(), "build", client_entry, "--client", "web"],
+                cwd=project_dir,
+                check=True,
+                timeout=900
             );
             if os.path.isfile(os.path.join(dist, "index.html")) {
                 console.print("Client bundle built; shipping it to the gateway pod.");
@@ -94,6 +108,7 @@ obj MicroserviceManifestBuilder {
     }
 
     def generate_manifests(app_config: AppConfig, image: str) -> dict[str, any] {
+        self.project_dir = self.project_dir or app_config.code_folder;
         injector = self._prepare_injector(app_config);
         self._bundle_object_key = injector._object_key;
 
@@ -169,7 +184,7 @@ obj MicroserviceManifestBuilder {
         } elif getattr(self.k8s_config, "ops_console_mutations", False) {
             if self.logger {
                 self.logger.warning(
-                    "[plugins.scale.kubernetes].ops_console_mutations is set but "
+                    "[scale.kubernetes].ops_console_mutations is set but "
                     "ops_console is false; no Ops Console RBAC will be provisioned. "
                     "Set ops_console = true to enable it."
                 );
@@ -183,19 +198,23 @@ obj MicroserviceManifestBuilder {
     ) -> dict[str, dict[str, any]] {
         app_name = app_config.app_name or self.k8s_config.app_name;
 
-        ms_cfg = self._ms_cfg();
-        routes: dict[str, str] = ms_cfg.get("routes", {});
+        # Auto-discover services from `sv import` so a microservice app deploys
+        # with no [scale.microservices.routes] section (explicit routes
+        # still win). Mirrors the local-serve path; cache the result so the
+        # gateway's JAC_SV_ROUTES env and the ingress rules see the same routes.
+        import from jaclang.scale.runtime.discovery.discovery { resolve_routes }
+        ms_cfg = dict(self._ms_cfg());
+        proj = self.project_dir or app_config.code_folder;
+        routes: dict[str, str] = resolve_routes(proj, dict(ms_cfg.get("routes", {})));
+        ms_cfg["routes"] = routes;
+        self.microservices_config = ms_cfg;
 
         if not routes {
             raise ValueError(
-                "[plugins.scale.microservices.routes] is empty in jac.toml. "
-                "Microservice mode needs at least one declared service.\n"
-                "Add to your jac.toml:\n"
-                "  [plugins.scale.microservices.routes]\n"
-                "  my_service = \"/my\"\n"
-                "where 'my_service' is the name of a .jac file in the "
-                "project root and '/my' is the URL prefix the gateway "
-                "will route to it."
+                "No microservices found to deploy: declare "
+                "[scale.microservices.routes] in jac.toml, or add "
+                "`sv import` / `sv { }` services under the project root so they "
+                "can be auto-discovered."
             );
         }
 
@@ -569,14 +588,10 @@ obj MicroserviceManifestBuilder {
         return {"exec": {"command": ["sh", "-c", "sleep 5"]}};
     }
 
-    def _k8s_safe_name(svc_name: str) -> str {
-        return k8s_safe_name(svc_name);
-    }
-
     def _build_deployment_manifest(
         svc_name: str, pod_spec: dict[str, any]
     ) -> dict[str, any] {
-        k8s_name = self._k8s_safe_name(svc_name);
+        k8s_name = k8s_safe_name(svc_name);
         role: str = "gateway" if svc_name == GATEWAY_NAME else "microservice";
         labels: dict[str, str] = {
             "app": k8s_name,
@@ -606,7 +621,7 @@ obj MicroserviceManifestBuilder {
     }
 
     def _build_service_manifest(svc_name: str) -> dict[str, any] {
-        k8s_name = self._k8s_safe_name(svc_name);
+        k8s_name = k8s_safe_name(svc_name);
         port: int = self.k8s_config.container_port;
         spec: dict[str, any] = {
             "type": "ClusterIP",
@@ -736,7 +751,7 @@ obj MicroserviceManifestBuilder {
         if not cfg.get("enabled", True) {
             return None;
         }
-        k8s_name = self._k8s_safe_name(svc_name);
+        k8s_name = k8s_safe_name(svc_name);
         max_u: int = int(cfg.get("max_unavailable", 1));
         return {
             "apiVersion": "policy/v1",
@@ -755,6 +770,9 @@ obj MicroserviceManifestBuilder {
 
     def _pod_entrypoint -> dict[str, any] {
         import from jaclang.scale.injector.bundle { APP_MOUNT_PATH }
+        import from jaclang.scale.deploy.target.kubernetes.runtime_bootstrap {
+            build_service_apt_prefix
+        }
         gw_prefix = "";
         client_entry = self._client_entry();
         if client_entry {
@@ -765,11 +783,13 @@ obj MicroserviceManifestBuilder {
                 f'fi; '
             );
         }
+        apt_prefix = build_service_apt_prefix(self.k8s_config);
         return {
             "command": ["bash", "-c"],
             "args": [
                 "set -euo pipefail; "
                 f"cd {APP_MOUNT_PATH}; "
+                f"{apt_prefix}"
                 "export JAC_SV_SIBLING=1; "
                 'if [ "$JAC_SV_NAME" = "__gateway__" ]; then '
                 f"  {gw_prefix}"
@@ -801,6 +821,13 @@ obj MicroserviceManifestBuilder {
             "livenessProbe": self._build_liveness_probe(),
             "lifecycle": {"preStop": self._build_prestop_hook()}
         };
+        import from jaclang.scale.deploy.target.kubernetes.runtime_bootstrap {
+            image_pull_policy
+        }
+        pull_policy = image_pull_policy(resolved_image);
+        if pull_policy {
+            container["imagePullPolicy"] = pull_policy;
+        }
 
         container["startupProbe"] = self._build_startup_probe();
         resources = self._build_resources(svc_cfg, svc_name == GATEWAY_NAME);
@@ -853,7 +880,7 @@ obj MicroserviceManifestBuilder {
             build_bootstrap_init_container(
                 self.k8s_config,
                 self.k8s_config.python_image,
-                self.dev.overlays_source()
+                is_gateway=(svc_name == GATEWAY_NAME)
             )
         );
         return spec;

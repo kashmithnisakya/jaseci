@@ -85,7 +85,7 @@ cl {
         # Closure factory so each card's click captures its own service name
         # (an inline lambda inside the comprehension would capture by reference).
         def makeSelect(svcName: str) -> any {
-            return lambda e: any { selectedService = svcName; };
+            return lambda (e: any) { selectedService = svcName; };
         }
 
         statusClasses = {
@@ -132,7 +132,7 @@ cl {
                     <p className="text-sm text-muted">
                         Enable in jac.toml:
                         <span className="font-mono text-fg ml-1">
-                            [plugins.scale.monitoring] enabled = true
+                            [scale.monitoring] enabled = true
                         </span>
                     </p>
                 </div>;
@@ -285,7 +285,7 @@ cl {
                             <input
                                 type="checkbox"
                                 checked={autoRefresh}
-                                onChange={lambda e: any { autoRefresh = e.target.checked; }}
+                                onChange={lambda (e: any) { autoRefresh = e.target.checked; }}
                                 className="rounded border-line bg-surface-2 text-accent focus:ring-accent"
                             />
                             Auto-refresh
