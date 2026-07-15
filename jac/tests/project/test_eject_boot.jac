@@ -272,3 +272,66 @@ test "harness observes the ejected app even when a stale submodule is cached" {
         }
     }
 }
+
+
+"""Materialize a project mixing plain HTTP targets with a webhook walker, a
+websocket walker, a scheduled walker, and a scheduled function. Only the plain
+HTTP targets should reach the ejected app, matching `jac serve`."""
+def _write_protocol_project(src: Path) {
+    src.mkdir(parents=True, exist_ok=True);
+    (src / "jac.toml").write_text(
+        f'[project]\nname = "protoapp"\nversion = "0.1.0"\nentry-point = "main.jac"\n'
+    );
+    (src / "main.jac").write_text('import from server { Greet }\n');
+    (src / "server.sv.jac").write_text(
+        'import from jaclang.runtimelib.builtin { restspec, schedule, APIProtocol }\n\n' + 'walker:pub Greet {\n' + '    has name: str,\n' + '        reports: list[str] = [];\n' + '    can g with Root entry {\n' + '        report f"Hello, {self.name}!";\n' + '    }\n' + '}\n\n' + '@restspec(protocol=APIProtocol.WEBHOOK)\n' + 'walker:pub Hooky {\n' + '    has reports: list[str] = [];\n' + '    can g with Root entry {\n' + '        report "hooked";\n' + '    }\n' + '}\n\n' + '@restspec(protocol=APIProtocol.WEBSOCKET)\n' + 'walker:pub Socky {\n' + '    has reports: list[str] = [];\n' + '    can g with Root entry {\n' + '        report "socked";\n' + '    }\n' + '}\n\n' + '@schedule(interval=1)\n' + 'walker:pub Cronny {\n' + '    has reports: list[str] = [];\n' + '    can g with Root entry {\n' + '        report "cronned";\n' + '    }\n' + '}\n\n' + 'def:pub ping(word: str) -> str {\n' + '    return f"pong:{word}";\n' + '}\n\n' + '@schedule(interval=1)\n' + 'def:pub tick() -> str {\n' + '    return "tock";\n' + '}\n'
+    );
+}
+
+
+test "ejected app mounts only the targets jac serve would, filtering protocol/schedule" {
+    with TemporaryDirectory() as td {
+        src = Path(str(td)) / "protoapp";
+        _write_protocol_project(src);
+        assert eject.eject(source=str(src), output="", force=False) == 0;
+        with _EjectedApp(src=src) as client {
+            paths = {route.path for route in client.app.routes};
+            assert "/walker/Greet" in paths;
+            assert "/function/ping" in paths;
+            assert "/walker/Hooky" not in paths;
+            assert "/walker/Socky" not in paths;
+            assert "/walker/Cronny" not in paths;
+            assert "/function/tick" not in paths;
+        }
+    }
+}
+
+
+test "ejected app rejects a filtered walker at runtime and still runs the plain one" {
+    with TemporaryDirectory() as td {
+        src = Path(str(td)) / "protoapp";
+        _write_protocol_project(src);
+        assert eject.eject(source=str(src), output="", force=False) == 0;
+        with _EjectedApp(src=src) as client {
+            res = client.post("/walker/Greet", json={"name": "Ada"});
+            assert res.status_code == 200 , res.text;
+            assert "Hello, Ada!" in json.dumps(res.json());
+            assert client.post("/walker/Hooky", json={}).status_code == 404;
+            assert client.post("/walker/Cronny", json={}).status_code == 404;
+        }
+    }
+}
+
+
+test "ejected /__health lists only the HTTP-exposed targets" {
+    with TemporaryDirectory() as td {
+        src = Path(str(td)) / "protoapp";
+        _write_protocol_project(src);
+        assert eject.eject(source=str(src), output="", force=False) == 0;
+        with _EjectedApp(src=src) as client {
+            meta = client.get("/__health").json();
+            assert meta["walkers"] == ["Greet"] , meta;
+            assert meta["functions"] == ["ping"] , meta;
+        }
+    }
+}
