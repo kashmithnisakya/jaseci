@@ -685,11 +685,12 @@ obj TypedCtxBlock(CodeBlockStmt, WalkerStmtOnlyNode, UniScopeNode) {
     def postinit -> None;
 }
 
-obj RegionStmt(CodeBlockStmt, UniScopeNode) {
+obj OpenStmt(CodeBlockStmt, UniScopeNode) {
     def accept_exit(v: UniPass) -> None;
     def accept_enter(v: UniPass) -> None;
 
-    has body: Sequence[CodeBlockStmt];
+    has target: Expr,
+        body: Sequence[CodeBlockStmt];
 
     def postinit -> None;
 }
