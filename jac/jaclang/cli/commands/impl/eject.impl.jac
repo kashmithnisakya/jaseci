@@ -1229,15 +1229,9 @@ def _emit_readme(out: Path, project_name: str, has_frontend: bool, env_files: li
 
 
 def _scan_module_features(py_code: str) -> dict {
-    found: dict = {
-        "websocket": [],
-        "webhook": [],
-        "scheduled": [],
-        "scale_imports": []
-    };
+    found: dict = {"websocket": [], "webhook": [], "scale_imports": []};
     pending_ws = False;
     pending_hook = False;
-    pending_sched = False;
     for raw in py_code.splitlines() {
         line = raw.strip();
         if line.startswith("@restspec(") and ("protocol=" in line) {
@@ -1248,40 +1242,40 @@ def _scan_module_features(py_code: str) -> dict {
             }
             continue;
         }
-        if line.startswith("@schedule(") {
-            pending_sched = True;
-            continue;
-        }
         if line.startswith("@") {
             continue;
         }
         if line.startswith("class ")
         or line.startswith("def ")
         or line.startswith("async def ") {
+            is_class = line.startswith("class ");
             sym = line.split("(")[0].split(":")[0];
             sym = sym.replace("class ", "").replace("async def ", "").replace(
                 "def ", ""
             ).strip();
-            if pending_ws {
+            if pending_ws and not is_class {
                 found["websocket"].append(sym);
             }
-            if pending_hook {
+            if pending_hook and not is_class {
                 found["webhook"].append(sym);
-            }
-            if pending_sched {
-                found["scheduled"].append(sym);
             }
         }
         pending_ws = False;
         pending_hook = False;
-        pending_sched = False;
         is_scale_import = (
             line.startswith("from jaclang.scale")
             or line == "import jaclang.scale"
             or line.startswith("import jaclang.scale.")
             or line.startswith("import jaclang.scale ")
         );
-        if is_scale_import and ("jaclang.scale.jserver.jserver" not in line) {
+        supported = (
+            "jaclang.scale.jserver.jserver" in line
+            or line.startswith("from jaclang.scale.persistence.lib import")
+            or line.startswith("from jaclang.scale.events.broker import")
+            or line.startswith("from jaclang.scale.events.publisher import")
+            or line.startswith("from jaclang.scale.events.subscriber import")
+        );
+        if is_scale_import and not supported {
             found["scale_imports"].append(line);
         }
     }
@@ -1291,9 +1285,8 @@ def _scan_module_features(py_code: str) -> dict {
 
 def _audit_capabilities(compiled: list, reachable: (set | None)) -> list {
     labels: dict = {
-        "websocket": "WebSocket endpoint (protocol=WEBSOCKET)",
-        "webhook": "Webhook endpoint (protocol=WEBHOOK)",
-        "scheduled": "Scheduled job (@schedule)",
+        "websocket": "WebSocket function endpoint (protocol=WEBSOCKET)",
+        "webhook": "Webhook function endpoint (protocol=WEBHOOK)",
         "scale_imports": "jac-scale runtime import",
         "sv": "Microservice split (sv import / sv block)"
     };

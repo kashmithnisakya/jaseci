@@ -137,6 +137,8 @@ def emit_backend(
         style="success"
     );
 
+    needs_kv = _emit_scale_adapters(backend_dir, emitted_codes);
+
     uses_upload = False;
     for f in functions_full {
         for p in f["params"] {
@@ -166,11 +168,158 @@ def emit_backend(
     if uses_upload {
         detected_caps.add("upload");
     }
+    if needs_kv {
+        detected_caps.add("data.redis");
+    }
     reqs: list[str] = [str(dep) for dep in (project_deps or [])];
     reqs.extend(_capability_requirements(detected_caps));
     _emit_requirements(backend_dir, reqs);
     return 0;
 }
+
+
+def _emit_scale_adapters(backend_dir: Path, emitted_codes: list) -> bool {
+    needs_kv = False;
+    needs_events = False;
+    for code in emitted_codes {
+        for raw in str(code).splitlines() {
+            line = raw.strip();
+            if line.startswith("from jaclang.scale.persistence.lib import") {
+                needs_kv = True;
+            }
+            if line.startswith("from jaclang.scale.events.") {
+                needs_events = True;
+            }
+        }
+    }
+    if not needs_kv and not needs_events {
+        return False;
+    }
+    scale_dir = backend_dir / "jaclang" / "scale";
+    scale_dir.mkdir(parents=True, exist_ok=True);
+    (scale_dir / "__init__.py").write_text("", encoding="utf-8");
+    if needs_kv {
+        pdir = scale_dir / "persistence";
+        pdir.mkdir(parents=True, exist_ok=True);
+        (pdir / "__init__.py").write_text("", encoding="utf-8");
+        (pdir / "lib.py").write_text(_KV_ADAPTER, encoding="utf-8");
+        console.print("  ✔ kvstore adapter (redis-py)", style="success");
+    }
+    if needs_events {
+        edir = scale_dir / "events";
+        edir.mkdir(parents=True, exist_ok=True);
+        (edir / "__init__.py").write_text("", encoding="utf-8");
+        (edir / "broker.py").write_text(_EVENTS_BROKER, encoding="utf-8");
+        (edir / "subscriber.py").write_text(_EVENTS_SUBSCRIBER, encoding="utf-8");
+        (edir / "publisher.py").write_text(_EVENTS_PUBLISHER, encoding="utf-8");
+        console.print("  ✔ events adapter (in-process broker)", style="success");
+    }
+    return needs_kv;
+}
+
+
+glob _KV_ADAPTER: str = (
+         '"""Ejected adapter for jaclang.scale.persistence.lib: redis-py kvstore."""\n'
+         "import json\n"
+         "import os\n"
+         "\n"
+         "\n"
+         "class RedisKv:\n"
+         "    def __init__(self, client, db_name):\n"
+         "        self._r = client\n"
+         "        self._prefix = db_name\n"
+         "\n"
+         "    def _k(self, key, col_name):\n"
+         '        return self._prefix + ":" + col_name + ":" + key\n'
+         "\n"
+         '    def set(self, key, value, col_name="default"):\n'
+         "        self._r.set(self._k(key, col_name), json.dumps(value))\n"
+         "        return key\n"
+         "\n"
+         '    def get(self, key, col_name="default"):\n'
+         "        raw = self._r.get(self._k(key, col_name))\n"
+         "        return json.loads(raw) if raw is not None else None\n"
+         "\n"
+         '    def delete(self, key, col_name="default"):\n'
+         "        return int(self._r.delete(self._k(key, col_name)))\n"
+         "\n"
+         "\n"
+         'def kvstore(db_name="jac_db", db_type="redis", uri=None):\n'
+         '    if db_type != "redis":\n'
+         "        raise RuntimeError(\n"
+         '            "ejected kvstore supports db_type=\'redis\' only (got %r)" % db_type\n'
+         "        )\n"
+         '    url = uri or os.environ.get("REDIS_URL")\n'
+         "    if not url:\n"
+         '        raise RuntimeError("Redis URL not found in configuration")\n'
+         "    import redis\n"
+         "    return RedisKv(redis.Redis.from_url(url), db_name)\n"
+     ),
+     _EVENTS_BROKER: str = (
+         '"""Ejected adapter for jaclang.scale.events.broker."""\n'
+         "import time\n"
+         "import uuid\n"
+         "\n"
+         "\n"
+         "class Event:\n"
+         "    def __init__(self, event_type='', data=None, key=None, id=None, ts=None):\n"
+         "        self.event_type = event_type\n"
+         "        self.data = data if data is not None else {}\n"
+         "        self.key = key\n"
+         "        self.id = id or uuid.uuid4().hex\n"
+         "        self.ts = ts or time.time()\n"
+     ),
+     _EVENTS_SUBSCRIBER: str = (
+         '"""Ejected adapter for jaclang.scale.events.subscriber."""\n'
+         "_subscriptions = []\n"
+         "\n"
+         "\n"
+         "class _Subscription:\n"
+         "    def __init__(self, topic, handler, group=None, retry=None):\n"
+         "        self.topic = topic\n"
+         "        self.handler = handler\n"
+         "        self.group = group\n"
+         "        self.retry = retry\n"
+         "\n"
+         "\n"
+         "def subscribe(topic, group=None, retry=None):\n"
+         "    def _register(handler):\n"
+         "        _subscriptions.append(_Subscription(topic, handler, group, retry))\n"
+         "        return handler\n"
+         "    return _register\n"
+         "\n"
+         "\n"
+         "def get_subscriptions():\n"
+         "    return list(_subscriptions)\n"
+     ),
+     _EVENTS_PUBLISHER: str = (
+         '"""Ejected adapter for jaclang.scale.events.publisher: in-process\n'
+         'dispatch to @subscribe handlers (single-process parity with the\n'
+         'LocalEventStream default)."""\n'
+         "import logging\n"
+         "\n"
+         "from jaclang.scale.events.subscriber import get_subscriptions\n"
+         "\n"
+         "logger = logging.getLogger(__name__)\n"
+         "_broker = None\n"
+         "\n"
+         "\n"
+         "def set_broker(broker):\n"
+         "    global _broker\n"
+         "    _broker = broker\n"
+         "\n"
+         "\n"
+         "def publish(topic, event, key=None):\n"
+         "    delivered = False\n"
+         "    for sub in get_subscriptions():\n"
+         "        if sub.topic == topic:\n"
+         "            try:\n"
+         "                sub.handler(event)\n"
+         "                delivered = True\n"
+         "            except Exception:\n"
+         '                logger.exception("event handler for %r failed", topic)\n'
+         "    return delivered\n"
+     );
 
 
 def _capability_requirements(caps: set) -> list[str] {
@@ -503,7 +652,10 @@ def _emit_main_py(
             }
         }
     }
-    fastapi_import = "from fastapi import FastAPI, Header, HTTPException";
+    fastapi_import = (
+        "from fastapi import FastAPI, Header, HTTPException, "
+        "Request, WebSocket, WebSocketDisconnect"
+    );
     if uses_upload {
         fastapi_import += ", File, Form, UploadFile";
     }
@@ -511,9 +663,15 @@ def _emit_main_py(
         f'"""Auto-generated FastAPI app for the ejected Jac project {project_name!r}:',
         'runs the compiled walkers on the jaclang runtime with jaclang-native auth',
         '(register/login via UserManager; :pub walkers open, others token-gated)."""',
+        'import datetime',
+        'import hashlib',
+        'import hmac',
         'import inspect',
         'import json',
         'import os',
+        'import secrets',
+        'import sqlite3',
+        'import time',
         'import traceback',
         'from typing import '
         'Any, Dict, Iterable, List, Literal, Mapping, '
@@ -549,7 +707,8 @@ def _emit_main_py(
     lines += [
         '',
         'from jaclang.runtimelib.server import UserManager, ExecutionManager',
-        'from jaclang.runtimelib.serializer import Serializer as _Serializer'
+        'from jaclang.runtimelib.serializer import Serializer as _Serializer',
+        'from jaclang.runtimelib.scheduler import Scheduler as _Scheduler'
     ];
 
     if entry_module {
@@ -695,6 +854,131 @@ def _emit_main_py(
         '    })',
         '',
         '',
+        '_APIKEY_DB = os.path.join(_BASE, ".jac", "data", "apikeys.db")',
+        '',
+        '',
+        'def _apikey_conn():',
+        '    os.makedirs(os.path.dirname(_APIKEY_DB), exist_ok=True)',
+        '    conn = sqlite3.connect(_APIKEY_DB)',
+        '    conn.execute(',
+        '        "CREATE TABLE IF NOT EXISTS api_keys ("',
+        '        "key_id TEXT PRIMARY KEY, api_key TEXT UNIQUE, user TEXT, "',
+        '        "name TEXT, signing_secret TEXT, created_at TEXT, expires_at TEXT)"',
+        '    )',
+        '    return conn',
+        '',
+        '',
+        'class _ApiKeyReq(BaseModel):',
+        '    name: str',
+        '    expiry_days: int | None = None',
+        '    allowed_walkers: str | None = None',
+        '',
+        '',
+        '@app.post("/api-key/create", status_code=201)',
+        'def create_api_key(req: _ApiKeyReq, authorization: str = Header(default=None)):',
+        '    user = _username(authorization, True)',
+        '    key_id = secrets.token_hex(16)',
+        '    api_key = secrets.token_urlsafe(32)',
+        '    signing_secret = secrets.token_hex(32)',
+        '    now = datetime.datetime.now(datetime.timezone.utc)',
+        '    expires = (',
+        '        now + datetime.timedelta(days=req.expiry_days) if req.expiry_days else None',
+        '    )',
+        '    conn = _apikey_conn()',
+        '    with conn:',
+        '        conn.execute(',
+        '            "INSERT INTO api_keys VALUES (?, ?, ?, ?, ?, ?, ?)",',
+        '            (',
+        '                key_id, api_key, user, req.name, signing_secret,',
+        '                now.isoformat(), expires.isoformat() if expires else None,',
+        '            ),',
+        '        )',
+        '    conn.close()',
+        '    return _envelope({',
+        '        "api_key": api_key,',
+        '        "api_key_id": key_id,',
+        '        "name": req.name,',
+        '        "created_at": now.isoformat(),',
+        '        "expires_at": expires.isoformat() if expires else None,',
+        '        "signing_secret": signing_secret,',
+        '    }, 201)',
+        '',
+        '',
+        'def _resolve_api_key(api_key):',
+        '    conn = _apikey_conn()',
+        '    row = conn.execute(',
+        '        "SELECT user, signing_secret, expires_at FROM api_keys WHERE api_key = ?",',
+        '        (api_key,),',
+        '    ).fetchone()',
+        '    conn.close()',
+        '    if not row:',
+        '        return None',
+        '    user, signing_secret, expires_at = row',
+        '    if expires_at:',
+        '        try:',
+        '            expiry = datetime.datetime.fromisoformat(expires_at)',
+        '            if expiry < datetime.datetime.now(datetime.timezone.utc):',
+        '                return None',
+        '        except ValueError:',
+        '            pass',
+        '    return {"user": user, "signing_secret": signing_secret}',
+        '',
+        '',
+        'def _mount_webhook(cls, name):',
+        '    """HMAC-verified webhook: X-API-Key resolves the caller, the',
+        '    signature covers b"{timestamp}." + raw_body (sha256 hexdigest),',
+        '    and stale timestamps outside 300s are rejected."""',
+        '',
+        '    async def _hook_handler(request: Request):',
+        '        api_key = request.headers.get("X-API-Key")',
+        '        if not api_key:',
+        '            return _error_envelope(',
+        '                "UNAUTHORIZED", "Missing X-API-Key header", status=401',
+        '            )',
+        '        key_doc = _resolve_api_key(api_key)',
+        '        if not key_doc:',
+        '            return _error_envelope(',
+        '                "UNAUTHORIZED", "Invalid or expired API key", status=401',
+        '            )',
+        '        raw_body = await request.body()',
+        '        signature = request.headers.get("X-Webhook-Signature")',
+        '        timestamp = request.headers.get("X-Webhook-Timestamp")',
+        '        if not signature or not timestamp:',
+        '            return _error_envelope(',
+        '                "UNAUTHORIZED", "Missing webhook signature headers", status=401',
+        '            )',
+        '        try:',
+        '            request_ts = int(timestamp)',
+        '        except ValueError:',
+        '            return _error_envelope(',
+        '                "UNAUTHORIZED", "Invalid webhook timestamp", status=401',
+        '            )',
+        '        if abs(int(time.time()) - request_ts) > 300:',
+        '            return _error_envelope(',
+        '                "UNAUTHORIZED",',
+        '                "Webhook timestamp outside allowed window",',
+        '                status=401,',
+        '            )',
+        '        signed = (str(request_ts) + ".").encode() + raw_body',
+        '        expected = hmac.new(',
+        '            key_doc["signing_secret"].encode(), signed, hashlib.sha256',
+        '        ).hexdigest()',
+        '        given = signature.split("=", 1)[-1].strip()',
+        '        if not hmac.compare_digest(given.lower(), expected.lower()):',
+        '            return _error_envelope(',
+        '                "UNAUTHORIZED", "Invalid webhook signature", status=401',
+        '            )',
+        '        try:',
+        '            fields = json.loads(raw_body.decode("utf-8") or "{}")',
+        '        except (ValueError, UnicodeDecodeError):',
+        '            fields = {}',
+        '        if not isinstance(fields, dict):',
+        '            fields = {}',
+        '        return await _run_walker(cls, fields, key_doc["user"])',
+        '',
+        '    app.add_api_route("/webhook/" + name, _hook_handler, methods=["POST"])',
+        '',
+        '',
         'def _envelope(data, status=200):',
         '    """Transport envelope byte-compatible with the `jac start` server."""',
         '    return {',
@@ -747,6 +1031,12 @@ def _emit_main_py(
         '        raise',
         '    except Exception as exc:',
         '        return _error_envelope("EXECUTION_ERROR", str(exc), traceback.format_exc())',
+        '    if isinstance(result, dict) and "error" in result and "result" not in result:',
+        '        return _error_envelope(',
+        '            "EXECUTION_ERROR",',
+        '            str(result.get("error") or ""),',
+        '            str(result.get("traceback") or ""),',
+        '        )',
         '    if inspect.isgenerator(result) or inspect.isasyncgen(result):',
         '        return StreamingResponse(_sse(result), media_type="text/event-stream")',
         '    spec = getattr(cls, "restspec", None)',
@@ -766,15 +1056,107 @@ def _emit_main_py(
         '        raise',
         '    except Exception as exc:',
         '        return _error_envelope("EXECUTION_ERROR", str(exc), traceback.format_exc())',
+        '    if isinstance(result, dict) and "error" in result and "result" not in result:',
+        '        return _error_envelope(',
+        '            "EXECUTION_ERROR",',
+        '            str(result.get("error") or ""),',
+        '            str(result.get("traceback") or ""),',
+        '        )',
         '    if inspect.isgenerator(result) or inspect.isasyncgen(result):',
         '        return StreamingResponse(_sse(result), media_type="text/event-stream")',
         '    return _envelope(result)',
         '',
         '',
-        'def _mount_endpoint(obj, handler, model, default_paths):',
+        '_scheduler = _Scheduler.instance()',
+        '',
+        '_ws_peers = {}',
+        '',
+        '',
+        'def _mount_ws(cls, name, required):',
+        '    """WebSocket walker: ?token= pre-accept auth, one result frame per',
+        '    JSON message; broadcast=True fans every frame out to all peers."""',
+        '    spec = getattr(cls, "restspec", None)',
+        '    broadcast = bool(getattr(spec, "broadcast", False))',
+        '    peers = _ws_peers.setdefault(name, set())',
+        '',
+        '    async def _ws_handler(websocket: WebSocket):',
+        '        token = websocket.query_params.get("token")',
+        '        username = _um.validate_token(token) if token else None',
+        '        if required and not username:',
+        '            await websocket.close(code=4401)',
+        '            return',
+        '        user = username or _GUEST',
+        '        await websocket.accept()',
+        '        peers.add(websocket)',
+        '        try:',
+        '            while True:',
+        '                try:',
+        '                    fields = await websocket.receive_json()',
+        '                except WebSocketDisconnect:',
+        '                    break',
+        '                except (ValueError, TypeError):',
+        '                    await websocket.send_json({',
+        '                        "ok": False,',
+        '                        "error": {',
+        '                            "code": "BAD_FRAME",',
+        '                            "message": "frames must be JSON objects",',
+        '                        },',
+        '                    })',
+        '                    continue',
+        '                fields = dict(fields) if isinstance(fields, dict) else {}',
+        '                fields.pop("token", None)',
+        '                try:',
+        '                    result = await _em.spawn_walker(cls, fields, user)',
+        '                    if (',
+        '                        spec is not None',
+        '                        and isinstance(result, dict)',
+        '                        and isinstance(result.get("result"), dict)',
+        '                    ):',
+        '                        result["result"]["restspec"] = _Serializer.serialize(',
+        '                            spec, api_mode=True',
+        '                        )',
+        '                    frame = {"ok": True, "data": result}',
+        '                except Exception as exc:',
+        '                    frame = {',
+        '                        "ok": False,',
+        '                        "error": {',
+        '                            "code": "EXECUTION_ERROR",',
+        '                            "message": str(exc),',
+        '                        },',
+        '                    }',
+        '                targets = list(peers) if broadcast else [websocket]',
+        '                for peer in targets:',
+        '                    try:',
+        '                        await peer.send_json(frame)',
+        '                    except Exception:',
+        '                        peers.discard(peer)',
+        '        except WebSocketDisconnect:',
+        '            pass',
+        '        finally:',
+        '            peers.discard(websocket)',
+        '',
+        '    app.add_api_websocket_route("/ws/" + name, _ws_handler)',
+        '',
+        '',
+        'def _mount_endpoint(obj, handler, model, default_paths, name="", required=False):',
         '    """Mount at @restspec(path=...) when declared, REPLACING the default',
-        '    /walker|/function path (parity with `jac start`); else the defaults."""',
+        '    /walker|/function path (parity with `jac start`); else the defaults.',
+        '    @schedule symbols become scheduler jobs; protocol=WEBSOCKET walkers',
+        '    become /ws/ routes; neither gets an HTTP endpoint."""',
+        '    sched = getattr(obj, "schedule_spec", None)',
+        '    if sched is not None:',
+        '        job = getattr(obj, "__name__", str(obj))',
+        '        _scheduler.register(job, obj, sched, inspect.isclass(obj))',
+        '        return',
         '    spec = getattr(obj, "restspec", None)',
+        '    raw_proto = getattr(spec, "protocol", None)',
+        '    proto = str(getattr(raw_proto, "value", raw_proto) or "").lower()',
+        '    if proto == "websocket" and inspect.isclass(obj):',
+        '        _mount_ws(obj, name or getattr(obj, "__name__", ""), required)',
+        '        return',
+        '    if proto == "webhook" and inspect.isclass(obj):',
+        '        _mount_webhook(obj, name or getattr(obj, "__name__", ""))',
+        '        return',
         '    path = str(getattr(spec, "path", "") or "")',
         '    if path:',
         '        if not path.startswith("/"):',
@@ -837,7 +1219,9 @@ def _emit_main_py(
             lines.append("");
             lines.append("");
             lines.append(
-                "_mount_endpoint(_W_" + wn + ", run_" + wn + ", None, " + '["/walker/' + wn + '", "/walker/' + wn + '/{node_id}"])'
+                "_mount_endpoint(_W_" + wn + ", run_" + wn + ", None, " + '["/walker/' + wn + '", "/walker/' + wn + '/{node_id}"], ' + repr(
+                    wn
+                ) + ", " + ("False" if w["pub"] else "True") + ")"
             );
             continue;
         }
@@ -875,7 +1259,9 @@ def _emit_main_py(
         lines.append("");
         lines.append("");
         lines.append(
-            "_mount_endpoint(_W_" + wn + ", run_" + wn + ", " + model + ", " + '["/walker/' + wn + '", "/walker/' + wn + '/{node_id}"])'
+            "_mount_endpoint(_W_" + wn + ", run_" + wn + ", " + model + ", " + '["/walker/' + wn + '", "/walker/' + wn + '/{node_id}"], ' + repr(
+                wn
+            ) + ", " + ("False" if w["pub"] else "True") + ")"
         );
     }
 
@@ -962,6 +1348,10 @@ def _emit_main_py(
     walker_list_lit = "[" + ", ".join([repr(str(w["name"])) for w in walkers]) + "]";
     func_list_lit = "[" + ", ".join([repr(str(f["name"])) for f in functions]) + "]";
     lines += [
+        '',
+        '',
+        'if _scheduler.has_pending():',
+        '    _scheduler.start()',
         '',
         '',
         '@app.get("/__health")',
