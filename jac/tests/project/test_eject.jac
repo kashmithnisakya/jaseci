@@ -116,7 +116,7 @@ test "backend exposes the server walker and not the client app" {
         assert rc == 0;
         main_py = _backend(src, "main.py").read_text();
         assert "from server import Greet" in main_py;
-        assert '@app.post("/walker/Greet")' in main_py;
+        assert '"/walker/Greet"' in main_py;
         assert "class GreetIn(BaseModel)" in main_py;
         # The .cl.jac `app` component must never become a backend endpoint.
         assert "/function/app" not in main_py;
@@ -134,7 +134,7 @@ test "backend runs walkers on the jaclang runtime via ExecutionManager" {
         main_py = _backend(src, "main.py").read_text();
         # Walkers run on the real runtime; responses use the {"data": ...} envelope.
         assert "from jaclang.runtimelib.server import UserManager, ExecutionManager" in main_py;
-        assert "_em.spawn_walker(_W_Greet" in main_py;
+        assert "_run_walker(_W_Greet" in main_py;
         assert '"data"' in main_py;
         # The compiled module keeps its real jaclang runtime imports.
         assert _has_jaclang_import(_backend(src, "server.py").read_text());
@@ -149,7 +149,7 @@ test "backend exposes login/register and gates secured walkers by :pub" {
         rc = _silent_eject(str(src));
         assert rc == 0;
         main_py = _backend(src, "main.py").read_text();
-        assert '@app.post("/user/register")' in main_py;
+        assert '@app.post("/user/register", status_code=201)' in main_py;
         assert '@app.post("/user/login")' in main_py;
         # :pub walker is an open endpoint (not auth-required); the bare walker is.
         assert "_username(authorization, False)" in main_py;
@@ -416,7 +416,7 @@ test "walker-only project ejects a backend-only app with no frontend" {
         assert rc == 0;
         # Backend is complete...
         assert _backend(src, "main.py").exists();
-        assert '@app.post("/walker/Ping")' in _backend(src, "main.py").read_text();
+        assert '"/walker/Ping"' in _backend(src, "main.py").read_text();
         # ...and no half-built frontend scaffold is left behind.
         assert not (src / "ejected" / "frontend").exists();
     }
@@ -639,7 +639,7 @@ test "script modules not imported by the entry module get no endpoints" {
         # The module is still emitted for standalone use (python tool.py).
         assert _backend(src, "tool.py").exists();
         # Reachable modules keep their endpoints.
-        assert '@app.post("/walker/Greet")' in main_py;
+        assert '"/walker/Greet"' in main_py;
     }
 }
 
@@ -661,9 +661,9 @@ test "modules transitively imported by the entry module keep endpoints" {
         rc = _silent_eject(str(src));
         assert rc == 0;
         main_py = _backend(src, "main.py").read_text();
-        assert '@app.post("/function/ping")' in main_py;
+        assert '"/function/ping"' in main_py;
         # util is reachable through api, so its functions stay exposed.
-        assert '@app.post("/function/double")' in main_py;
+        assert '"/function/double"' in main_py;
     }
 }
 

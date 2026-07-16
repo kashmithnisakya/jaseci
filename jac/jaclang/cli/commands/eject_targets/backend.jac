@@ -145,6 +145,13 @@ def emit_backend(
             }
         }
     }
+    for w in walkers_full {
+        for fld in w["fields"] {
+            if _is_upload_type(str(fld["type"])) {
+                uses_upload = True;
+            }
+        }
+    }
 
     detected_caps: set = set();
     if sql {
@@ -489,6 +496,13 @@ def _emit_main_py(
             }
         }
     }
+    for w in walkers {
+        for fld in w["fields"] {
+            if _is_upload_type(str(fld["type"])) {
+                uses_upload = True;
+            }
+        }
+    }
     fastapi_import = "from fastapi import FastAPI, Header, HTTPException";
     if uses_upload {
         fastapi_import += ", File, Form, UploadFile";
@@ -500,13 +514,14 @@ def _emit_main_py(
         'import inspect',
         'import json',
         'import os',
+        'import traceback',
         'from typing import '
         'Any, Dict, Iterable, List, Literal, Mapping, '
         'Optional, Sequence, Set, Tuple, Union',
         '',
         fastapi_import,
         'from fastapi.middleware.cors import CORSMiddleware',
-        'from fastapi.responses import StreamingResponse',
+        'from fastapi.responses import JSONResponse, StreamingResponse',
         'from pydantic import BaseModel',
         '',
         '_BASE = os.path.dirname(os.path.abspath(__file__))'
@@ -533,7 +548,8 @@ def _emit_main_py(
 
     lines += [
         '',
-        'from jaclang.runtimelib.server import UserManager, ExecutionManager'
+        'from jaclang.runtimelib.server import UserManager, ExecutionManager',
+        'from jaclang.runtimelib.serializer import Serializer as _Serializer'
     ];
 
     if entry_module {
@@ -651,7 +667,7 @@ def _emit_main_py(
         '    return req.username, req.password',
         '',
         '',
-        '@app.post("/user/register")',
+        '@app.post("/user/register", status_code=201)',
         'def register(req: _RegisterReq) -> dict:',
         '    username, password = _creds_from_register(req)',
         '    if not username or not password:',
@@ -659,7 +675,10 @@ def _emit_main_py(
         '    res = _um.create_user(username, password)',
         '    if res.get("error"):',
         '        raise HTTPException(status_code=400, detail=res["error"])',
-        '    return {"data": res}',
+        '    return _envelope(',
+        '        {"user_id": res.get("root_id"), "message": "User registered successfully"},',
+        '        201,',
+        '    )',
         '',
         '',
         '@app.post("/user/login")',
@@ -668,7 +687,36 @@ def _emit_main_py(
         '    res = _um.authenticate(username, password) if username and password else None',
         '    if not res:',
         '        raise HTTPException(status_code=401, detail="Invalid credentials")',
-        '    return {"data": res}',
+        '    return _envelope({',
+        '        "user_id": res.get("root_id"),',
+        '        "root_id": res.get("root_id"),',
+        '        "role": "user",',
+        '        "token": res.get("token"),',
+        '    })',
+        '',
+        '',
+        'def _envelope(data, status=200):',
+        '    """Transport envelope byte-compatible with the `jac start` server."""',
+        '    return {',
+        '        "ok": True,',
+        '        "type": "response",',
+        '        "data": data,',
+        '        "error": None,',
+        '        "meta": {"extra": {"http_status": status}},',
+        '    }',
+        '',
+        '',
+        'def _error_envelope(code, message, details="", status=500):',
+        '    return JSONResponse(',
+        '        status_code=status,',
+        '        content={',
+        '            "ok": False,',
+        '            "type": "error",',
+        '            "data": None,',
+        '            "error": {"code": code, "message": message, "details": details},',
+        '            "meta": {"extra": {"http_status": status}},',
+        '        },',
+        '    )',
         '',
         '',
         'async def _sse(stream):',
@@ -679,39 +727,121 @@ def _emit_main_py(
         '    else:',
         '        for chunk in stream:',
         '            yield _sse_line(chunk)',
+        '    yield b"event: end\\ndata: {}\\n\\n"',
         '',
         '',
         'def _sse_line(chunk):',
-        '    """Frame any chunk as a Server-Sent Event (`data: ...` per line)."""',
+        '    """Frame any chunk as a Server-Sent Event (`data: <json>` per line)."""',
         '    if isinstance(chunk, (bytes, bytearray)):',
         '        text = bytes(chunk).decode("utf-8", "replace")',
-        '    elif isinstance(chunk, str):',
-        '        text = chunk',
         '    else:',
         '        text = json.dumps(chunk)',
         '    framed = "".join("data: " + line + "\\n" for line in text.split("\\n"))',
         '    return (framed + "\\n").encode("utf-8")',
         '',
         '',
-        'def _respond(result):',
-        '    """A streaming walker returns a generator; stream it as SSE.',
-        '    Everything else is the normal JSON envelope."""',
+        'async def _run_walker(cls, fields, user):',
+        '    try:',
+        '        result = await _em.spawn_walker(cls, fields, user)',
+        '    except HTTPException:',
+        '        raise',
+        '    except Exception as exc:',
+        '        return _error_envelope("EXECUTION_ERROR", str(exc), traceback.format_exc())',
         '    if inspect.isgenerator(result) or inspect.isasyncgen(result):',
         '        return StreamingResponse(_sse(result), media_type="text/event-stream")',
-        '    return {"data": result}',
+        '    spec = getattr(cls, "restspec", None)',
+        '    if (',
+        '        spec is not None',
+        '        and isinstance(result, dict)',
+        '        and isinstance(result.get("result"), dict)',
+        '    ):',
+        '        result["result"]["restspec"] = _Serializer.serialize(spec, api_mode=True)',
+        '    return _envelope(result)',
         '',
         '',
-        'def _respond_fn(result):',
-        '    """Function variant of _respond ({"ok": True, "data": ...} envelope)."""',
+        'async def _run_function(fn, fields, user):',
+        '    try:',
+        '        result = await _em.execute_function(fn, fields, user)',
+        '    except HTTPException:',
+        '        raise',
+        '    except Exception as exc:',
+        '        return _error_envelope("EXECUTION_ERROR", str(exc), traceback.format_exc())',
         '    if inspect.isgenerator(result) or inspect.isasyncgen(result):',
         '        return StreamingResponse(_sse(result), media_type="text/event-stream")',
-        '    return {"ok": True, "data": result}'
+        '    return _envelope(result)',
+        '',
+        '',
+        'def _mount_endpoint(obj, handler, model, default_paths):',
+        '    """Mount at @restspec(path=...) when declared, REPLACING the default',
+        '    /walker|/function path (parity with `jac start`); else the defaults."""',
+        '    spec = getattr(obj, "restspec", None)',
+        '    path = str(getattr(spec, "path", "") or "")',
+        '    if path:',
+        '        if not path.startswith("/"):',
+        '            path = "/" + path',
+        '        raw_method = getattr(spec, "method", None)',
+        '        method = str(getattr(raw_method, "value", raw_method) or "POST").upper()',
+        '        if method in ("GET", "HEAD") and model is not None:',
+        '            async def _bodyless(authorization: str = Header(default=None)):',
+        '                return await handler(model(), authorization=authorization)',
+        '            app.add_api_route(path, _bodyless, methods=[method])',
+        '        else:',
+        '            app.add_api_route(path, handler, methods=[method])',
+        '        return',
+        '    for p in default_paths:',
+        '        app.add_api_route(p, handler, methods=["POST"])'
     ];
 
     for w in walkers {
         wn = str(w["name"]);
-        model = _model_class_name(wn, "In");
         required = "False" if w["pub"] else "True";
+        has_upload = False;
+        for fld in w["fields"] {
+            if _is_upload_type(str(fld["type"])) {
+                has_upload = True;
+            }
+        }
+        if has_upload {
+            sig: list[str] = [];
+            for fld in w["fields"] {
+                fname = str(fld["name"]);
+                if _is_upload_type(str(fld["type"])) {
+                    utype = "list[UploadFile]"
+                        if "list" in str(fld["type"]).lower()
+                        else "UploadFile";
+                    sig.append(fname + ": " + utype + " = File(...)");
+                } else {
+                    ftype = _safe_model_type(str(fld["type"]));
+                    default = _safe_model_default(str(fld["default"]))
+                        if fld["has_default"]
+                        else "...";
+                    sig.append(fname + ": " + ftype + " = Form(" + default + ")");
+                }
+            }
+            sig.append('node_id: str = ""');
+            sig.append("authorization: str = Header(default=None)");
+            kw = ", ".join(
+                [
+                    repr(str(fld["name"])) + ": " + str(fld["name"])
+                    for fld in w["fields"]
+                ]
+            );
+            lines.append("");
+            lines.append("");
+            lines.append("async def run_" + wn + "(" + ", ".join(sig) + "):");
+            lines.append("    user = _username(authorization, " + required + ")");
+            lines.append("    fields = {" + kw + "}");
+            lines.append("    if node_id:");
+            lines.append('        fields["_jac_spawn_node"] = node_id');
+            lines.append("    return await _run_walker(_W_" + wn + ", fields, user)");
+            lines.append("");
+            lines.append("");
+            lines.append(
+                "_mount_endpoint(_W_" + wn + ", run_" + wn + ", None, " + '["/walker/' + wn + '", "/walker/' + wn + '/{node_id}"])'
+            );
+            continue;
+        }
+        model = _model_class_name(wn, "In");
         lines.append("");
         lines.append("");
         lines.append("class " + model + "(BaseModel):");
@@ -734,8 +864,6 @@ def _emit_main_py(
         }
         lines.append("");
         lines.append("");
-        lines.append('@app.post("/walker/' + wn + '")');
-        lines.append('@app.post("/walker/' + wn + '/{node_id}")');
         lines.append(
             "async def run_" + wn + "(body: " + model + ", node_id: str = \"\", authorization: str = Header(default=None)):"
         );
@@ -743,8 +871,11 @@ def _emit_main_py(
         lines.append("    fields = dict(body.model_dump())");
         lines.append("    if node_id:");
         lines.append('        fields["_jac_spawn_node"] = node_id');
+        lines.append("    return await _run_walker(_W_" + wn + ", fields, user)");
+        lines.append("");
+        lines.append("");
         lines.append(
-            "    return _respond(await _em.spawn_walker(_W_" + wn + ", fields, user))"
+            "_mount_endpoint(_W_" + wn + ", run_" + wn + ", " + model + ", " + '["/walker/' + wn + '", "/walker/' + wn + '/{node_id}"])'
         );
     }
 
@@ -780,12 +911,14 @@ def _emit_main_py(
             );
             lines.append("");
             lines.append("");
-            lines.append('@app.post("/function/' + fn + '")');
             lines.append("async def call_" + fn + "(" + ", ".join(sig) + "):");
             lines.append("    user = _username(authorization, " + required + ")");
             lines.append("    fields = {" + kw + "}");
+            lines.append("    return await _run_function(_F_" + fn + ", fields, user)");
+            lines.append("");
+            lines.append("");
             lines.append(
-                "    return _respond_fn(await _em.execute_function(_F_" + fn + ", fields, user))"
+                "_mount_endpoint(_F_" + fn + ", call_" + fn + ", None, " + '["/function/' + fn + '"])'
             );
             continue;
         }
@@ -812,56 +945,18 @@ def _emit_main_py(
         }
         lines.append("");
         lines.append("");
-        lines.append('@app.post("/function/' + fn + '")');
         lines.append(
             "async def call_" + fn + "(body: " + model + ", authorization: str = Header(default=None)):"
         );
         lines.append("    user = _username(authorization, " + required + ")");
         lines.append(
-            "    return _respond_fn(await _em.execute_function(_F_" + fn + ", dict(body.model_dump()), user))"
+            "    return await _run_function(_F_" + fn + ", dict(body.model_dump()), user)"
         );
-    }
-
-    if functions {
-        triple_parts: list = [];
-        for f in functions {
-            fn = str(f["name"]);
-            has_upload = False;
-            for p in f["params"] {
-                if _is_upload_type(str(p["type"])) {
-                    has_upload = True;
-                }
-            }
-            model_ref = "None" if has_upload else _model_class_name(fn, "FnIn");
-            triple_parts.append("(_F_" + fn + ", call_" + fn + ", " + model_ref + ")");
-        }
-        triples = ", ".join(triple_parts);
-        lines += [
-            '',
-            '',
-            '# Functions decorated with @restspec(path=...) are also mounted at',
-            '# their declared paths (parity with `jac start` custom REST routes).',
-            '# GET/HEAD routes carry no body: call the handler with the model',
-            "# defaults instead of FastAPI's required JSON body.",
-            'def _mount_restspec(fn, handler, model):',
-            '    spec = getattr(fn, "restspec", None)',
-            '    path = str(getattr(spec, "path", "") or "")',
-            '    if not path:',
-            '        return',
-            '    if not path.startswith("/"):',
-            '        path = "/" + path',
-            '    method = str(getattr(spec, "method", "") or "POST").upper()',
-            '    if method in ("GET", "HEAD") and model is not None:',
-            '        async def _bodyless(authorization: str = Header(default=None)):',
-            '            return await handler(model(), authorization=authorization)',
-            '        app.add_api_route(path, _bodyless, methods=[method])',
-            '    else:',
-            '        app.add_api_route(path, handler, methods=[method])',
-            '',
-            '',
-            'for _fn, _handler, _model in [' + triples + ']:',
-            '    _mount_restspec(_fn, _handler, _model)'
-        ];
+        lines.append("");
+        lines.append("");
+        lines.append(
+            "_mount_endpoint(_F_" + fn + ", call_" + fn + ", " + model + ", " + '["/function/' + fn + '"])'
+        );
     }
 
     walker_list_lit = "[" + ", ".join([repr(str(w["name"])) for w in walkers]) + "]";
