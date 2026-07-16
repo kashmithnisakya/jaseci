@@ -145,6 +145,8 @@ impl eject(source: str = ".", output: str = "", force: bool = False) -> int {
     remap: dict = {};
     walkers: list = [];
     functions: list = [];
+    mtir_entries: dict = {};
+    import from jaclang.jac0core.runtime { JacRuntime }
     for jac_file in jac_files {
         rel = Path(str(jac_file)).relative_to(src);
         try {
@@ -213,6 +215,17 @@ impl eject(source: str = ".", output: str = "", force: bool = False) -> int {
                     }
                     functions.append(
                         {"name": fn_name, "module": bmod, "pub": _has_pub_access(item)}
+                    );
+                }
+            }
+        }
+        rt_prog = JacRuntime.program;
+        if (rt_prog is not None) and rt_prog.mtir_map {
+            mtir_prefix = stem + ".";
+            for key in list(rt_prog.mtir_map.keys()) {
+                if str(key).startswith(mtir_prefix) {
+                    mtir_entries[bmod + "." + str(key)[len(mtir_prefix):]] = (
+                        rt_prog.mtir_map.pop(key)
                     );
                 }
             }
@@ -358,7 +371,8 @@ impl eject(source: str = ".", output: str = "", force: bool = False) -> int {
         db_cfg,
         project_deps,
         len(env_files) > 0,
-        entry_bmod
+        entry_bmod,
+        mtir_map=mtir_entries
     );
     if rc != 0 {
         return rc;

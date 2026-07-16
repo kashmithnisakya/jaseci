@@ -13,7 +13,8 @@ def emit_backend(
     db: dict,
     project_deps: (list | None) = None,
     has_env: bool = False,
-    entry_module: str = ""
+    entry_module: str = "",
+    mtir_map: (dict | None) = None
 ) -> int {
     backend_dir.mkdir(parents=True, exist_ok=True);
 
@@ -138,6 +139,17 @@ def emit_backend(
     );
 
     needs_kv = _emit_scale_adapters(backend_dir, emitted_codes);
+
+    if mtir_map {
+        import pickle;
+        (backend_dir / "mtir.pkl").write_bytes(
+            pickle.dumps(mtir_map, pickle.HIGHEST_PROTOCOL)
+        );
+        console.print(
+            f"  ✔ meaning-typed metadata ({len(mtir_map)} scopes -> mtir.pkl)",
+            style="success"
+        );
+    }
 
     uses_upload = False;
     for f in functions_full {
@@ -708,7 +720,17 @@ def _emit_main_py(
         '',
         'from jaclang.runtimelib.server import UserManager, ExecutionManager',
         'from jaclang.runtimelib.serializer import Serializer as _Serializer',
-        'from jaclang.runtimelib.scheduler import Scheduler as _Scheduler'
+        'from jaclang.runtimelib.scheduler import Scheduler as _Scheduler',
+        'from jaclang.jac0core.mtp import MTIR_OVERLAY as _MTIR_OVERLAY',
+        '',
+        '# Meaning-typed metadata: prompts/schemas for `by llm()` calls are',
+        '# synthesized from this compiler-captured map; without it the runtime',
+        '# falls back to bare introspection and prompts silently drift.',
+        '_MTIR_PKL = os.path.join(_BASE, "mtir.pkl")',
+        'if os.path.isfile(_MTIR_PKL):',
+        '    import pickle',
+        '    with open(_MTIR_PKL, "rb") as _f:',
+        '        _MTIR_OVERLAY.update(pickle.load(_f))'
     ];
 
     if entry_module {
