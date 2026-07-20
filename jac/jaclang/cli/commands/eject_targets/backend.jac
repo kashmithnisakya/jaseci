@@ -209,6 +209,7 @@ def _emit_scale_adapters(backend_dir: Path, emitted_codes: list) -> bool {
     }
     scale_dir = backend_dir / "jaclang" / "scale";
     scale_dir.mkdir(parents=True, exist_ok=True);
+    (scale_dir.parent / "__init__.py").write_text("", encoding="utf-8");
     (scale_dir / "__init__.py").write_text("", encoding="utf-8");
     if needs_kv {
         pdir = scale_dir / "persistence";

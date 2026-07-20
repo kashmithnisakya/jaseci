@@ -225,7 +225,7 @@ impl eject(source: str = ".", output: str = "", force: bool = False) -> int {
             for key in list(rt_prog.mtir_map.keys()) {
                 if str(key).startswith(mtir_prefix) {
                     mtir_entries[bmod + "." + str(key)[len(mtir_prefix):]] = (
-                        rt_prog.mtir_map.pop(key)
+                        rt_prog.mtir_map[key]
                     );
                 }
             }
@@ -1256,7 +1256,7 @@ def _scan_module_features(py_code: str) -> dict {
             }
             continue;
         }
-        if line.startswith("@") {
+        if line.startswith("@") or not line or line.startswith("#") {
             continue;
         }
         if line.startswith("class ")
