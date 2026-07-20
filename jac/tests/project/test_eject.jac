@@ -374,6 +374,35 @@ test "eject honors an explicit output directory" {
 
 
 # ==================== errors ====================
+test "audit refuses native modules that server code imports" {
+    with TemporaryDirectory() as td {
+        src = Path(td) / "naapp";
+        src.mkdir(parents=True, exist_ok=True);
+        (src / "jac.toml").write_text(
+            '[project]\nname = "naapp"\nentry-point = "main.jac"\n'
+        );
+        (src / "compute.na.jac").write_text(
+            'def double(n: int) -> int {\n    return n * 2;\n}\n'
+        );
+        (src / "main.jac").write_text(
+            'import from compute { double }\n\n' + 'def:pub twice(n: int) -> int {\n    return double(n);\n}\n'
+        );
+        # `.na.jac` modules are never emitted to the backend, so a server module
+        # importing one would raise ImportError at boot. The audit must refuse.
+        assert _silent_eject(str(src)) == 1;
+        assert not (src / "ejected" / "backend" / "main.py").exists();
+        # With the escape hatch the importing module is dropped whole, so
+        # whatever is emitted still boots.
+        (src / "jac.toml").write_text(
+            '[project]\nname = "naapp"\nentry-point = "main.jac"\n' + '\n[eject]\nallow_unsupported = true\n'
+        );
+        assert _silent_eject(str(src), force=True) == 0;
+        emitted = (src / "ejected" / "backend" / "main.py").read_text();
+        assert "twice" not in emitted;
+    }
+}
+
+
 test "eject errors when jac.toml is missing" {
     with TemporaryDirectory() as td {
         src = Path(td) / "myapp";
