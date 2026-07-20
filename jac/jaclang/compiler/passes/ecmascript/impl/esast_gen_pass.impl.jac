@@ -170,6 +170,9 @@ impl EsastGenPass.exit_global_vars(nd: uni.GlobalVars) -> None {
     }
     statements: list[(es.Statement | es.ModuleDeclaration)] = [];
     for assignment in nd.assignments {
+        if assignment.value is None {
+            continue;
+        }
         if assignment.gen.es_ast {
             stmt = assignment.gen.es_ast;
             if (

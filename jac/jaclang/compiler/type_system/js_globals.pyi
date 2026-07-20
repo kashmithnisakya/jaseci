@@ -61,6 +61,14 @@ __all__ = [
     "ReadableStreamReadResult",
     "TextDecoder",
     "TextEncoder",
+    "Blob",
+    "File",
+    "FormData",
+    # Network host globals
+    "WebSocket",
+    "EventSource",
+    "MessageEvent",
+    "CloseEvent",
     # Host globals
     "console",
     "window",
@@ -511,6 +519,111 @@ class TextEncoder:
     def __init__(self) -> None: ...
     def encode(self, input: str = ...) -> Uint8Array: ...
     def encodeInto(self, source: str, destination: Uint8Array) -> object: ...
+
+class Blob:
+    """An immutable blob of bytes (`new(Blob, [parts], options)`)."""
+
+    size: float
+    type: str
+    def __init__(self, parts: object = ..., options: object = ...) -> None: ...
+    def text(self) -> Promise[str]: ...
+    def arrayBuffer(self) -> Promise[ArrayBuffer]: ...
+    def slice(self, *args: object) -> Blob: ...
+
+class File(Blob):
+    """A `Blob` with a filename -- what an `<input type="file">` yields."""
+
+    name: str
+    lastModified: float
+    def __init__(self, parts: object, name: str, options: object = ...) -> None: ...
+
+class FormData:
+    """A multipart form body (`new(FormData)`).
+
+    The only way a client can call a walker that declares an `UploadFile`
+    field: the generated walker client always sends `application/json`, so
+    multipart bodies are hand-built and handed to `fetch` as `body`. Leave
+    `Content-Type` unset when doing so -- the browser must set the boundary.
+    """
+
+    def __init__(self, form: object = ...) -> None: ...
+    def append(self, name: str, value: object, filename: str = ...) -> None: ...
+    def set(self, name: str, value: object, filename: str = ...) -> None: ...
+    def get(self, name: str) -> object: ...
+    def getAll(self, name: str) -> list[object]: ...
+    def has(self, name: str) -> bool: ...
+    def delete(self, name: str) -> None: ...
+    def keys(self) -> object: ...
+    def values(self) -> object: ...
+    def entries(self) -> object: ...
+
+# ── Network host globals ───────────────────────────────────────────────
+# The push-side transports, mirroring what a Jac server actually mounts:
+# `@restspec(protocol=APIProtocol.WEBSOCKET)` walkers serve `/ws/<Walker>`,
+# and a generator-reporting walker streams SSE. Client code reaches both
+# through these globals, since neither has a typed `spawn` form.
+
+class MessageEvent:
+    """An inbound frame. `data` is `object`: re-type it at the boundary."""
+
+    data: object
+    origin: str
+    lastEventId: str
+
+class CloseEvent:
+    """A socket close notification."""
+
+    code: float
+    reason: str
+    wasClean: bool
+
+class WebSocket:
+    """A WebSocket client (`new(WebSocket, url)`).
+
+    A browser cannot set headers on the handshake, so an auth-gated Jac
+    socket takes its token as a `?token=` query parameter rather than the
+    `Authorization` header every other walker call uses.
+    """
+
+    CONNECTING: float
+    OPEN: float
+    CLOSING: float
+    CLOSED: float
+    url: str
+    readyState: float
+    bufferedAmount: float
+    protocol: str
+    binaryType: str
+    onopen: object
+    onmessage: object
+    onerror: object
+    onclose: object
+    def __init__(self, url: str, protocols: object = ...) -> None: ...
+    def send(self, data: object) -> None: ...
+    def close(self, code: float = ..., reason: str = ...) -> None: ...
+    def addEventListener(self, type: str, listener: object, *args: object) -> None: ...
+    def removeEventListener(
+        self, type: str, listener: object, *args: object
+    ) -> None: ...
+
+class EventSource:
+    """A Server-Sent Events stream (`new(EventSource, url)`)."""
+
+    CONNECTING: float
+    OPEN: float
+    CLOSED: float
+    url: str
+    readyState: float
+    withCredentials: bool
+    onopen: object
+    onmessage: object
+    onerror: object
+    def __init__(self, url: str, options: object = ...) -> None: ...
+    def close(self) -> None: ...
+    def addEventListener(self, type: str, listener: object, *args: object) -> None: ...
+    def removeEventListener(
+        self, type: str, listener: object, *args: object
+    ) -> None: ...
 
 # ── Host globals ───────────────────────────────────────────────────────
 

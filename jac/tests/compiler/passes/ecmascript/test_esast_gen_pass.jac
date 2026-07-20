@@ -1197,3 +1197,35 @@ test "augmented reactive assignments do not double-apply the lhs" {
         "double-application bug detected in:\n" + js
     );
 }
+
+test "initializer-less glob is ambient and emits no binding" {
+    # Regression #7522: `glob WebSocket: any;` is an EXTERN declaration naming a
+    # host global, not a definition. Emitting `let WebSocket;` for it shadows the
+    # browser's real constructor, so the page throws "undefined is not a
+    # constructor" at runtime while jac check stays green — a silent trap.
+    # The server codespace lowers the same construct to annotation-only (no
+    # binding), so emitting nothing here is what makes the codespaces agree.
+    es_ast = compile_to_esast(fixture_path("ambient_glob_decl.cl.jac"));
+    js = es_to_js(es_ast);
+
+    assert "let WebSocket" not in js , (
+        "ambient glob must not emit a binding that shadows the host global:\n" + js
+    );
+    assert "var WebSocket" not in js , (
+        "ambient glob must not emit a binding that shadows the host global:\n" + js
+    );
+    assert "const WebSocket" not in js , (
+        "ambient glob must not emit a binding that shadows the host global:\n" + js
+    );
+
+    # The reference itself must survive: the whole point is to USE the global.
+    assert "WebSocket" in js , (
+        "the ambient name must still be referenced at its use site:\n" + js
+    );
+
+    # Control: a glob WITH an initializer still declares normally.
+    assert "initialized" in js , (
+        "an initialized glob must still emit its declaration:\n" + js
+    );
+    assert "42" in js , ("an initialized glob must keep its value:\n" + js);
+}
