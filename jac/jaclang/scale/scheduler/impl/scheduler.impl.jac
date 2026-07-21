@@ -685,10 +685,19 @@ impl JacScaleScheduler.update_job(
         previous['args'] = existing.get('args') or {};
         previous['updated_at'] = existing.get('updated_at');
         try {
-            self._require_store().update(job_id, previous);
+            rolled_back = self._require_store().update(
+                job_id, previous, where={'updated_at': updates['updated_at']}
+            );
+            if not rolled_back {
+                logger.warning(
+                    f"Skipped rollback of job {job_id}: a newer update landed "
+                    f"after the failed reschedule"
+                );
+            }
         } except Exception as rollback_err {
             logger.error(
-                f"Failed to roll back job {job_id} after reschedule failure: "
+                f"Failed to roll back job {job_id} after reschedule failure; "
+                f"stored spec no longer matches the live scheduler: "
                 f"{type(rollback_err).__name__}: {rollback_err}"
             );
         }
