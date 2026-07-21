@@ -22,8 +22,7 @@ obj ScheduledTask {
         spec: ScheduleSpec,
         is_walker: bool,
         next_run: (datetime.datetime | None) = None,
-        last_run: (datetime.datetime | None) = None,
-        in_flight: bool = False;
+        last_run: (datetime.datetime | None) = None;
 }
 
 obj Scheduler {
@@ -32,6 +31,7 @@ obj Scheduler {
         _running: bool = False,
         _stop_event: (threading.Event | None) = None,
         _done_event: (threading.Event | None) = None,
+        _in_flight_names: (set | None) = None,
         dynamic_handler: (Callable | None) = None;
 
     static def instance -> Scheduler;

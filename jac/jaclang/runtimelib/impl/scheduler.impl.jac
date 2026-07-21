@@ -56,6 +56,9 @@ impl Scheduler.start -> None {
         return;
     }
     self._running = True;
+    if self._in_flight_names is None {
+        self._in_flight_names = set();
+    }
     self._stop_event = threading.Event();
     self._done_event = threading.Event();
     self._thread = threading.Thread(target=self._run_loop, daemon=True);
@@ -72,6 +75,11 @@ impl Scheduler.stop -> None {
     }
     if self._thread is not None and self._thread.is_alive() {
         self._thread.join(timeout=5);
+    }
+    import time;
+    deadline = time.monotonic() + 5.0;
+    while self._in_flight_names and time.monotonic() < deadline {
+        time.sleep(0.1);
     }
     self._tasks = [];
 }
@@ -131,9 +139,9 @@ impl Scheduler._run_loop -> None {
             continue;
         }
         now = datetime.datetime.now(datetime.timezone.utc);
-        if not task.in_flight {
+        if task.name not in self._in_flight_names {
+            self._in_flight_names.add(task.name);
             task.last_run = now;
-            task.in_flight = True;
             threading.Thread(target=self._execute, args=(task, ), daemon=True).start();
         }
         new_next = self._compute_next_run(task.spec, now);
@@ -300,6 +308,8 @@ impl Scheduler._execute(task: ScheduledTask) -> None {
     } except Exception as e {
         logger.error(f"Error executing task '{task.name}': {e}");
     } finally {
-        task.in_flight = False;
+        if self._in_flight_names is not None {
+            self._in_flight_names.discard(task.name);
+        }
     }
 }
