@@ -101,7 +101,7 @@ obj SchedulerLeaderLease {
 
     def postinit -> None;
     def start -> None;
-    def stop -> None;
+    def stop(release: bool = True) -> None;
     def _tick -> None;
     def _run_loop -> None;
 }

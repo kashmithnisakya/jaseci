@@ -323,20 +323,27 @@ impl SchedulerLeaderLease.start -> None {
     self._thread.start();
 }
 
-impl SchedulerLeaderLease.stop -> None {
+impl SchedulerLeaderLease.stop(release: bool = True) -> None {
     self._stop_event.set();
     if self._thread is not None {
         self._thread.join(timeout=5);
         self._thread = None;
     }
     if self.is_leader {
-        try {
-            self._db.delete_one(
-                self._collection,
-                {'lease_key': self._lease_key, 'holder': self._holder_id}
+        if release {
+            try {
+                self._db.delete_one(
+                    self._collection,
+                    {'lease_key': self._lease_key, 'holder': self._holder_id}
+                );
+            } except Exception as e {
+                logger.debug(f"Could not release scheduler lease: {e}");
+            }
+        } else {
+            logger.info(
+                "Leaving scheduler lease to expire so in-flight work cannot "
+                "overlap with the next leader"
             );
-        } except Exception as e {
-            logger.debug(f"Could not release scheduler lease: {e}");
         }
         self.is_leader = False;
     }
@@ -575,7 +582,7 @@ impl JacScaleScheduler.stop(drain: bool = False) -> None {
     }
     if self._lease is not None {
         try {
-            self._lease.stop();
+            self._lease.stop(release=drain);
         } except Exception as e {
             logger.debug(f"Error releasing scheduler lease: {e}");
         }
