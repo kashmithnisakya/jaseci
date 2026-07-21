@@ -669,14 +669,31 @@ impl JacScaleScheduler.update_job(
         return None;
     }
     effective_args = updates.get('args', existing.get('args') or {});
-    self._schedule_apscheduler_job(
-        job_id=job_id,
-        name=name,
-        spec=spec,
-        user_id=user_id,
-        is_walker=is_walker,
-        args=effective_args
-    );
+    try {
+        self._schedule_apscheduler_job(
+            job_id=job_id,
+            name=name,
+            spec=spec,
+            user_id=user_id,
+            is_walker=is_walker,
+            args=effective_args
+        );
+    } except Exception {
+        previous: dict[str, Any] = {
+            k: existing.get(k) for k in ('trigger', 'interval', 'cron', 'date')
+        };
+        previous['args'] = existing.get('args') or {};
+        previous['updated_at'] = existing.get('updated_at');
+        try {
+            self._require_store().update(job_id, previous);
+        } except Exception as rollback_err {
+            logger.error(
+                f"Failed to roll back job {job_id} after reschedule failure: "
+                f"{type(rollback_err).__name__}: {rollback_err}"
+            );
+        }
+        raise;
+    }
 
     updated = dict(existing);
     updated.update(updates);
