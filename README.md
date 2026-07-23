@@ -168,7 +168,27 @@ The checker tracks only what you tag, so `node`, `edge`, and `walker` stay fully
 
 The two properties compound, and the dissolved database is the proof: continuity without motion still calls a store outside the language's semantics, and motion without continuity is a graph paradigm marooned in one process. Jac is the first language that is both. And the boundaries that *are* physics stay visible on purpose: a cross-tier call is `async` because the network is real, write conflicts surface as typed errors, and sharing data across users takes an explicit `grant`. Jac deletes the paperwork, not the physics.
 
-The full argument: [Why Jac Exists](https://docs.jaseci.org/quick-guide/why-jac/) and [The Two Ideas](https://docs.jaseci.org/quick-guide/ideas-behind-jac/), or the side-by-side count in [One App, Two Stacks](https://docs.jaseci.org/quick-guide/jac-vs-traditional-stack/).
+The full argument can be found in "the ninja book": [*A Synechic and Topokinetic Programming Language*](https://zenodo.org/records/21498692) develops both language classes and the theory, design and implementation underlying Jac. ([DOI: 10.5281/zenodo.21498692](https://doi.org/10.5281/zenodo.21498692)).
+
+<details>
+<summary><strong>Cite the book (BibTeX)</strong></summary>
+
+<br>
+
+Mars, J. (2026). *A Synechic and Topokinetic Programming Language*. Zenodo. https://doi.org/10.5281/zenodo.21498692
+
+```bibtex
+@book{mars2026synechic,
+  author    = {Mars, Jason},
+  title     = {A Synechic and Topokinetic Programming Language},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.21498692},
+  url       = {https://doi.org/10.5281/zenodo.21498692}
+}
+```
+
+</details>
 
 ## For AI agents
 
@@ -429,7 +449,7 @@ Jac's core ideas are peer-reviewed research, not just design taste:
 - **MTP: A Meaning-Typed Language Abstraction for AI-Integrated Programming** -- `by llm()` and `sem`, evaluated against hand-built prompt pipelines: comparable-or-better accuracy with substantially less code and lower token cost (OOPSLA 2025, [arXiv:2405.08965](https://arxiv.org/abs/2405.08965))
 - **The Jaseci Programming Paradigm and Runtime Stack** -- the production lineage: walkers served as scale-out endpoints in commercial products (IEEE Computer Architecture Letters, 2023)
 
-A book-length treatment, developing the synechic and topokinetic language classes and the theory beneath Jac's design, is in preparation. The project grew out of research at the University of Michigan and is now developed in the open by a global community. Citing Jac in your own work? GitHub's "Cite this repository" button (powered by [CITATION.cff](CITATION.cff)) gives a ready-made reference. More on [docs.jaseci.org: Research & Papers](https://docs.jaseci.org/community/research/).
+The book-length treatment is published: [*A Synechic and Topokinetic Programming Language*](https://zenodo.org/records/21498692) develops the synechic and topokinetic language classes and the theory beneath Jac's design ([DOI: 10.5281/zenodo.21498692](https://doi.org/10.5281/zenodo.21498692)). The project grew out of research at the University of Michigan and is now developed in the open by a global community. Citing Jac in your own work? GitHub's "Cite this repository" button (powered by [CITATION.cff](CITATION.cff)) gives a ready-made reference. More on [docs.jaseci.org: Research & Papers](https://docs.jaseci.org/community/research/).
 
 ## Built with Jac
 
