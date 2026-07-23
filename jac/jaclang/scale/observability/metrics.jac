@@ -23,10 +23,7 @@ class MetricsCollector {
     def record_ws_connection_closed(self: MetricsCollector) -> None;
     def record_ws_broadcast(self: MetricsCollector) -> None;
     def get_endpoint_handler(self: MetricsCollector) -> Callable[..., any];
-    """Render the Prometheus exposition for this collector's own registry."""
     def expose(self: MetricsCollector) -> bytes;
-
-    """Check if metrics collection is enabled."""
     def is_enabled(self: MetricsCollector) -> bool;
 }
 

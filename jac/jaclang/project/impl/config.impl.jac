@@ -306,6 +306,26 @@ impl JacConfig.merge_from_toml_file(toml_path: Path) -> None {
             }
         }
     }
+    if "gc" in data {
+        gc_data = data["gc"];
+        if "default" in gc_data {
+            _gcd = str(gc_data["default"]).strip().lower();
+            if _gcd in ("cycles", "rc", "none") {
+                self.gc.default = _gcd;
+            }
+        }
+        if "enforce" in gc_data and isinstance(gc_data["enforce"], dict) {
+            enf = gc_data["enforce"];
+            if "modules" in enf {
+                self.gc.enforce.modules = [str(_m) for _m in enf["modules"]];
+            }
+            if "grandfathered" in enf {
+                self.gc.enforce.grandfathered = [
+                    str(_m) for _m in enf["grandfathered"]
+                ];
+            }
+        }
+    }
     for _feat in ("byllm", "scale", "client", "mcp", "desktop") {
         if _feat in data and isinstance(data[_feat], dict) {
             if _feat in self.plugins {
@@ -1073,17 +1093,69 @@ impl _parse_toml_data(
             session=run_data.get("session", ""),
             main=run_data.get("main", True),
             cache=run_data.get("cache", True),
-            autonative=run_data.get("autonative", False),
             topology_index=run_data.get("topology_index", True),
             diagnostics=run_data.get("diagnostics", "error")
         );
     }
     if "build" in data {
         build_data = data["build"];
+        _codespace_aliases = {"sv": "server", "na": "native"};
+        _builtin_cs = BuildConfig().default_codespace;
+        _default_cs = str(
+            build_data.get("default_codespace", _builtin_cs)
+        ).strip().lower();
+        _default_cs = _codespace_aliases.get(_default_cs, _default_cs);
+        if _default_cs not in ("server", "native") {
+            import from jaclang.cli.console { console }
+            console.warning(
+                f"[build] default_codespace='{build_data.get('default_codespace')}' "
+                f"is not one of 'server'/'sv', 'native'/'na'; "
+                f"defaulting to '{_builtin_cs}'."
+            );
+            _default_cs = _builtin_cs;
+        }
+        _builtin_cap = BuildConfig().native_closure_cap;
+        try {
+            _cap = int(build_data.get("native_closure_cap", _builtin_cap));
+        } except (TypeError, ValueError) {
+            _cap = 0;
+        }
+        if _cap < 1 {
+            import from jaclang.cli.console { console }
+            console.warning(
+                f"[build] native_closure_cap="
+                f"'{build_data.get('native_closure_cap')}' must be a positive "
+                f"integer; defaulting to {_builtin_cap}."
+            );
+            _cap = _builtin_cap;
+        }
         config.build = BuildConfig(
             typecheck=build_data.get("typecheck", False),
-            dir=build_data.get("dir", ".jac")
+            dir=build_data.get("dir", ".jac"),
+            default_codespace=_default_cs,
+            native_closure_cap=_cap
         );
+    }
+    if "gc" in data {
+        gc_data = data["gc"];
+        _gc_default = str(gc_data.get("default", "cycles")).strip().lower();
+        if _gc_default not in ("cycles", "rc", "none") {
+            import from jaclang.cli.console { console }
+            console.warning(
+                f"[gc] default='{gc_data.get('default')}' is not one of "
+                "'cycles', 'rc', 'none'; defaulting to 'cycles'."
+            );
+            _gc_default = "cycles";
+        }
+        enforce_cfg = GcEnforceConfig();
+        if "enforce" in gc_data and isinstance(gc_data["enforce"], dict) {
+            enf = gc_data["enforce"];
+            enforce_cfg = GcEnforceConfig(
+                modules=[str(_m) for _m in enf.get("modules", [])],
+                grandfathered=[str(_m) for _m in enf.get("grandfathered", [])]
+            );
+        }
+        config.gc = GcConfig(default=_gc_default, enforce=enforce_cfg);
     }
     if "test" in data {
         test_data = data["test"];
@@ -1243,7 +1315,6 @@ impl _interpolate_recursive(`obj: any) -> any {
 impl get_config(
     start_path: Path | None = None, force_discover: bool = False
 ) -> JacConfig | None {
-    global _config,_config_explicit,_config_by_root;
     if _config is None or force_discover {
         _config = JacConfig.discover(start_path=start_path);
 
@@ -1257,7 +1328,6 @@ impl get_config(
 }
 
 impl set_config(config: JacConfig) -> None {
-    global _config,_config_explicit,_config_by_root;
     _config = config;
 
     _config_explicit = config is not None;
@@ -1270,7 +1340,6 @@ impl get_explicit_config -> JacConfig | None {
 }
 
 impl get_config_for_path(start_path: Path) -> JacConfig | None {
-    global _config_by_root;
     explicit = get_explicit_config();
     if explicit is not None {
         return explicit;

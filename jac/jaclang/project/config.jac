@@ -40,7 +40,6 @@ obj RunConfig {
     has session: str = "",
         main: bool = True,
         cache: bool = True,
-        autonative: bool = False,
         topology_index: bool = True,
         diagnostics: str = "error";
 }
@@ -50,9 +49,21 @@ obj NativeBuildConfig {
         dump_ir: str = "";
 }
 
+obj GcEnforceConfig {
+    has modules: list[str] = [],
+        grandfathered: list[str] = [];
+}
+
+obj GcConfig {
+    has default: str = "cycles",
+        enforce: GcEnforceConfig = GcEnforceConfig();
+}
+
 obj BuildConfig {
     has typecheck: bool = False,
         dir: str = ".jac",
+        default_codespace: str = "native",
+        native_closure_cap: int = 256,
         native: NativeBuildConfig = NativeBuildConfig();
 }
 
@@ -155,6 +166,7 @@ obj JacConfig {
     has project: ProjectConfig = ProjectConfig(),
         run: RunConfig = RunConfig(),
         build: BuildConfig = BuildConfig(),
+        gc: GcConfig = GcConfig(),
         test: TestConfig = TestConfig(),
         serve: ServeConfig = ServeConfig(),
         format: FormatConfig = FormatConfig(),

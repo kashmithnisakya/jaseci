@@ -50,14 +50,6 @@ def _finite(v: list) -> float {
     return val if math.isfinite(val) else 0.0;
 }
 
-"""Map a k8s workload name to the gateway route's `service` label.
-
-The gateway tags request metrics with the route name from
-[scale.microservices.routes] (underscores, e.g. `builder_sv`), while
-the workload is named `builder-sv-deployment` (hyphens + a kind suffix). Strip
-the kind suffix and swap hyphens for underscores so per-workload traffic can be
-joined to the gateway counter. Non-routed infra workloads simply won't match.
-"""
 def _workload_to_service(name: str) -> str {
     base = name;
     for suffix in ['-deployment', '-statefulset', '-daemonset'] {
@@ -69,7 +61,6 @@ def _workload_to_service(name: str) -> str {
     return base.replace('-', '_');
 }
 
-"""The metric namespace the app server prefixes its own series with."""
 def _metrics_namespace -> str {
     try {
         import from jaclang.scale.config.config_loader { get_scale_config }
@@ -80,31 +71,6 @@ def _metrics_namespace -> str {
     return 'jaclang_scale';
 }
 
-"""Pick the request-metric family that this deployment actually emits.
-
-Microservice deploys route every request through the gateway, which emits
-`*_gateway_requests_total` (labelled by `service`, with an `outcome` bucket).
-A monolith has no gateway and emits only the app server's own
-`{ns}_http_requests_total` (labelled by a raw `status_code`), so a gateway-only
-query matches zero series and every traffic number reads 0. Probe for the
-gateway family once and fall back to the app's counter.
-
-Deliberately NOT expressed as a PromQL `A or B` fallback: `or` yields B
-whenever A has no series, and prometheus_client creates a child series only on
-first observation -- so a healthy gateway that has not served a 5xx yet has no
-`outcome="5xx"` series at all, and `or` would charge the app's errors against
-the gateway's denominator (a 100% error rate on a healthy cluster).
-
-`_gateway_requests_total` is a jac-scale-only suffix, so matching it by regex is
-safe. `_http_requests_total` is NOT -- it is a generic name, and
-resolve_prometheus_url() honours a PROMETHEUS_URL override that may point at a
-shared Prometheus where `prometheus_http_requests_total` and friends exist. The
-app family is therefore pinned to this app's configured metric namespace rather
-than matched with a wildcard.
-
-`by_service` says whether per-workload attribution is possible: only the
-gateway counter carries a `service` label.
-"""
 def _traffic_queries -> dict {
     if prom_query('count({__name__=~".+_gateway_requests_total"})') {
         return {
@@ -123,12 +89,6 @@ def _traffic_queries -> dict {
     };
 }
 
-"""Build a namespace-scoped PromQL selector for a bare metric.
-
-`scoped("kube_deployment_created", 'namespace="x"')` ->
-`kube_deployment_created{namespace="x"}`; with an empty filter returns the
-bare metric name.
-"""
 def _scoped(metric: str, ns_filter: str) -> str {
     return f'{metric}{{{ns_filter}}}' if ns_filter else metric;
 }
@@ -282,12 +242,7 @@ impl JacAPIServerWorkloads.admin_workloads_summary(
         )
     );
     nodes_total = int(prom_scalar(prom_query('count(kube_node_info)')));
-    # Cluster traffic comes from the gateway's request counter in microservice
-    # mode and from the app server's own HTTP counter on a monolith (see
-    # _traffic_queries). The app's /metrics series carry no `namespace` label
-    # (only k8s SD metrics do), so these app-traffic queries are NOT
-    # namespace-filtered -- safe because Prometheus is per-namespace and only
-    # this app exposes these series.
+
     tq = _traffic_queries();
     request_rate = prom_scalar(prom_query(tq['rate']));
     error_rate = prom_scalar(prom_query(tq['errors']));
@@ -457,9 +412,6 @@ impl JacAPIServerWorkloads.admin_workloads_list(
         restarts_by_owner[owner] = restarts_by_owner.get(owner, 0) + int(_finite(v));
     }
 
-    # Per-service traffic: the gateway counter's `service` label is the routed
-    # microservice (e.g. builder_sv). One grouped query each for rate, errors,
-    # and p95, indexed by service, then joined to each workload by name.
     tq = _traffic_queries();
     svc_rps: dict = {};
     svc_err: dict = {};
@@ -484,11 +436,6 @@ impl JacAPIServerWorkloads.admin_workloads_list(
             'service'
         );
     } else {
-        # Monolith: the app's HTTP counter has no `service` label, so per-service
-        # attribution is impossible from it -- but a monolith serves all of its
-        # traffic from one workload, so attribute the app-wide totals to that
-        # workload (K8S_APP_NAME, keyed the same way _workload_to_service keys
-        # a workload name). Other workloads (mongo/redis/grafana) stay unrouted.
         app_key = os.environ.get("K8S_APP_NAME", "").replace('-', '_');
         if app_key {
             svc_rps = {app_key: prom_scalar(prom_query(tq['rate']))};
@@ -518,9 +465,6 @@ impl JacAPIServerWorkloads.admin_workloads_list(
                 'memory_bytes': int(mem_by_owner.get(name, 0.0)),
                 'restarts_last_hour': restarts,
                 'created': e["created"],
-                # `routed` distinguishes a gateway-fronted microservice (show
-                # numbers) from infra workloads (grafana/mongo) that the gateway
-                # never sees, so the UI can label them differently.
                 'traffic': {
                     'requests_per_sec': round(wl_rps, 2),
                     'error_rate_pct': round(wl_err_pct, 2),
