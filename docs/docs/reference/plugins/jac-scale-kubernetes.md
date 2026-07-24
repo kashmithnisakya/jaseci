@@ -542,7 +542,7 @@ additional_packages = ["xz-utils", "zstd"]
 
 ### Version Pinning
 
-Runtime version selection lives under [Runtime Binary](#runtime-binary). Scale, the frontend/client framework, byLLM, and the MCP server all ship inside the `jac` binary, so there are no separate packages to pin. The former `jaseci_repo_url` / `jaseci_branch` / `jaseci_commit` / `install_jaseci` and `plugin_versions` keys were parsed but honored by no deploy path and have been removed; a `jac.toml` that still carries them is ignored harmlessly.
+Runtime version selection is the `[scale-runtime] version` pin added in #7698 (see [Runtime Binary](#runtime-binary)). Scale, the frontend/client framework, byLLM, and the MCP server all ship inside the `jac` binary, so there are no separate packages to pin. The former `jaseci_repo_url` / `jaseci_branch` / `jaseci_commit` / `install_jaseci` and `plugin_versions` keys were parsed but honored by no deploy path and have been removed; a `jac.toml` that still carries them is ignored harmlessly.
 
 ---
 
